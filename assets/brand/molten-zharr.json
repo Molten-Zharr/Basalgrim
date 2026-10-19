@@ -1,0 +1,102 @@
+{
+  "name": "Molten-Zharr",
+  "version": 2,
+  "colors": [
+    {
+      "token": "background",
+      "hex": "#000000",
+      "role_en": "Main background; panels and windows",
+      "role_ru": "основной фон, фон панелей и окон"
+    },
+    {
+      "token": "text",
+      "hex": "#F8F8F2",
+      "role_en": "Primary text",
+      "role_ru": "основной текст"
+    },
+    {
+      "token": "button_text",
+      "hex": "#F9F9FE",
+      "role_en": "Confirm and cancel button text",
+      "role_ru": "текст кнопок подтверждения и отмены"
+    },
+    {
+      "token": "active",
+      "hex": "#FF0000",
+      "role_en": "Active borders; cursor; bright gradient edge",
+      "role_ru": "активные рамки, курсор, яркий край градиента"
+    },
+    {
+      "token": "sidebar_title",
+      "hex": "#DD0000",
+      "role_en": "Sidebar heading",
+      "role_ru": "заголовок боковой панели"
+    },
+    {
+      "token": "error",
+      "hex": "#D70000",
+      "role_en": "Errors",
+      "role_ru": "ошибки"
+    },
+    {
+      "token": "inactive_file_border",
+      "hex": "#9A0000",
+      "role_en": "Inactive file-panel border",
+      "role_ru": "неактивная рамка файловой панели"
+    },
+    {
+      "token": "inactive_panel_border",
+      "hex": "#790000",
+      "role_en": "Inactive sidebar and bottom-panel borders",
+      "role_ru": "неактивные рамки боковой и нижней панелей"
+    },
+    {
+      "token": "gradient_dark",
+      "hex": "#720000",
+      "role_en": "Dark gradient edge",
+      "role_ru": "темный край градиента"
+    },
+    {
+      "token": "folder_icon",
+      "hex": "#FF522E",
+      "role_en": "Current folder icon",
+      "role_ru": "значок текущей папки"
+    },
+    {
+      "token": "selection_accent",
+      "hex": "#FF8D34",
+      "role_en": "Selected file text; selected sidebar item background; shortcut labels",
+      "role_ru": "текст выбранного файла, фон выбранного пункта боковой панели, обозначения горячих клавиш"
+    },
+    {
+      "token": "confirm_background",
+      "hex": "#FFB86C",
+      "role_en": "Confirm button background",
+      "role_ru": "фон кнопки подтверждения"
+    },
+    {
+      "token": "help_heading",
+      "hex": "#FF6666",
+      "role_en": "Help menu headings",
+      "role_ru": "заголовки меню помощи"
+    },
+    {
+      "token": "folder_path",
+      "hex": "#FF9999",
+      "role_en": "Current folder path",
+      "role_ru": "путь текущей папки"
+    },
+    {
+      "token": "separator",
+      "hex": "#615250",
+      "role_en": "Sidebar separators",
+      "role_ru": "разделители боковой панели"
+    },
+    {
+      "token": "selected_file_background",
+      "hex": "#524549",
+      "role_en": "Selected file background",
+      "role_ru": "фон выбранного файла"
+    }
+  ]
+}

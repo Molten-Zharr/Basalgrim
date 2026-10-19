@@ -1,0 +1,12 @@
+Visual palette and the shared GUI/TUI rendering approach follow Molten-Zharr/Almavorn:
+https://github.com/Molten-Zharr/Almavorn
+The fixed-cell font clipping approach in src/raster.rs is adapted from its gui_fonts.rs.
+The theme palettes, typography choices and settings interaction model are adapted
+from its preferences.rs, app/settings.rs, ui/settings.rs and ui/dialogs/bindings.rs.
+
+Fira Code fonts are distributed under the SIL Open Font License 1.1.
+See assets/fonts/FiraCode-LICENSE.txt.
+DejaVu Sans Mono is bundled under the license in assets/fonts/DejaVu-LICENSE.txt.
+
+Layout and interaction inspiration: clarkarch/tfm-tui (no source code copied).
+https://github.com/clarkarch/tfm-tui
