@@ -92,6 +92,20 @@ fn main() -> Result<()> {
     app.update_preview();
     settle(&mut app)?;
     render(&mut app, &out, "grid", 150, 44)?;
+    let file = app
+        .hits
+        .iter()
+        .find_map(|(area, target)| {
+            matches!(target, Target::Entry { index: i, .. } if *i == index).then_some(*area)
+        })
+        .unwrap();
+    app.handle(Input::SecondaryClick {
+        x: file.x,
+        y: file.y,
+    });
+    render(&mut app, &out, "context-menu", 150, 44)?;
+    app.cancel_dialog();
+    render(&mut app, &out, "grid", 150, 44)?;
     let hover = app
         .hits
         .iter()
@@ -213,6 +227,25 @@ fn main() -> Result<()> {
     app.settings_tab(SettingsTab::Icons);
     app.settings_view.focus = SettingsFocus::Parameters;
     render(&mut app, &out, "settings-icons", 120, 36)?;
+    app.cancel_dialog();
+    let destination = demo.path().join("Operations");
+    fs::create_dir(&destination)?;
+    app.start_operation(basalgrim::fs::Operation::Transfer {
+        sources: vec![demo.path().join("browser.rs"), demo.path().join("notes.md")],
+        destination: destination.clone(),
+        cut: false,
+    });
+    settle(&mut app)?;
+    app.start_operation(basalgrim::fs::Operation::Transfer {
+        sources: vec![demo.path().join("browser.rs")],
+        destination,
+        cut: false,
+    });
+    settle(&mut app)?;
+    app.action(Action::Operations);
+    app.operations_selected = 1;
+    render(&mut app, &out, "operations", 120, 36)?;
+    render(&mut app, &out, "operations-compact", 50, 18)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

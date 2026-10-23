@@ -131,6 +131,10 @@ fn run() -> Result<()> {
                             toggle: mouse.modifiers.contains(KeyModifiers::CONTROL),
                         });
                     }
+                    MouseEventKind::Down(MouseButton::Right) => {
+                        previous_click = None;
+                        app.handle(Input::SecondaryClick { x, y });
+                    }
                     MouseEventKind::ScrollUp => app.handle(Input::Scroll { x, y, delta: -1 }),
                     MouseEventKind::ScrollDown => app.handle(Input::Scroll { x, y, delta: 1 }),
                     _ => {}

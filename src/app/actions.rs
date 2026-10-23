@@ -2,6 +2,25 @@ use super::*;
 
 impl App {
     pub fn action(&mut self, action: Action) {
+        if action == Action::Commands && self.dialog.is_none() {
+            self.open_commands(self.pointer.unwrap_or(Position::new(2, 4)));
+            return;
+        }
+        if action == Action::CancelOperation {
+            self.cancel_operation();
+            return;
+        }
+        if action == Action::Operations && matches!(self.dialog, None | Some(Dialog::Operations)) {
+            self.dialog = if self.dialog.is_some() {
+                None
+            } else {
+                Some(Dialog::Operations)
+            };
+            self.operations_selected = 0;
+            self.operations_offset = 0;
+            self.operations_detail_offset = 0;
+            return;
+        }
         if matches!(action, Action::Quit) {
             if self.busy {
                 self.message("Перед выходом дождитесь завершения файловой операции", true);
@@ -195,7 +214,9 @@ impl App {
                     .clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
                 self.preferences_changed();
             }
-            Action::Quit => unreachable!(),
+            Action::Quit | Action::Operations | Action::CancelOperation | Action::Commands => {
+                unreachable!()
+            }
         }
         self.update_preview();
     }
@@ -230,7 +251,8 @@ impl App {
             Dialog::Settings | Dialog::CaptureBinding { .. } => {
                 self.dialog = Some(Dialog::Settings)
             }
-            Dialog::Help => {}
+            Dialog::Help | Dialog::Commands(_) => {}
+            Dialog::Operations => self.dialog = Some(Dialog::Operations),
             Dialog::Trash(sources) => self.start_operation(Operation::Trash { sources }),
             Dialog::Edit { kind, text, .. } => {
                 if let EditKind::Setting(edit) = kind {

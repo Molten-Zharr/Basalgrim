@@ -120,6 +120,44 @@ fn icon_mode_is_editable_and_persists_independently_of_backend_capabilities() {
 }
 
 #[test]
+fn legacy_bindings_receive_operation_commands_without_overwriting_custom_keys() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("settings.json");
+    let mut old = Settings::default();
+    old.bindings
+        .retain(|binding| !matches!(binding.action, Action::Operations | Action::CancelOperation));
+    for binding in &mut old.bindings {
+        if binding.action == Action::Help {
+            binding.key = KeyPress::plain(Key::F(6));
+        }
+        if binding.action == Action::Quit {
+            binding.key = KeyPress {
+                ctrl: true,
+                ..KeyPress::plain(Key::F(6))
+            };
+        }
+    }
+    let original = serde_json::to_vec(&old).unwrap();
+    fs::write(&path, &original).unwrap();
+    let migrated = Settings::load(&path).unwrap();
+    migrated.validate_bindings().unwrap();
+    for binding in &old.bindings {
+        assert!(migrated.bindings.contains(binding));
+    }
+    for action in [Action::Operations, Action::CancelOperation] {
+        assert!(
+            migrated
+                .bindings
+                .iter()
+                .any(|binding| binding.action == action)
+        );
+    }
+    assert_eq!(fs::read(&path).unwrap(), original);
+    migrated.save(&path).unwrap();
+    assert_eq!(Settings::load(&path).unwrap().bindings, migrated.bindings);
+}
+
+#[test]
 fn keyboard_settings_navigation_changes_theme_and_font_without_affecting_files() {
     let (root, mut app) = app();
     fs::write(root.path().join("keep"), "unchanged").unwrap();

@@ -1,5 +1,8 @@
 mod actions;
+mod commands;
+pub use commands::{CommandItem, CommandMenu};
 mod events;
+mod operations;
 mod settings;
 pub use settings::{
     SettingControl, SettingRow, SettingsEdit, SettingsFocus, SettingsSection, SettingsTab,
@@ -18,6 +21,14 @@ use std::path::{Path, PathBuf};
 
 #[derive(Clone)]
 pub enum Target {
+    Command(usize),
+    CommandScroll(isize),
+    MenuBackground,
+    EntryMark {
+        pane: usize,
+        index: usize,
+    },
+    Operation(usize),
     Action(Action),
     Place(PathBuf),
     Entry {
@@ -64,6 +75,8 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    Commands(CommandMenu),
+    Operations,
     Edit {
         kind: EditKind,
         text: String,
@@ -114,7 +127,16 @@ pub struct App {
     pub hits: Vec<(Rect, Target)>,
     pub pointer: Option<Position>,
     pub preview_area: Rect,
+    pub pane_areas: [Rect; 2],
     pub operation_count: usize,
+    pub operations: std::collections::VecDeque<crate::operations::OperationRecord>,
+    pub operations_selected: usize,
+    pub operations_offset: usize,
+    pub operations_capacity: usize,
+    pub operations_detail_offset: usize,
+    pub operations_detail_max: usize,
+    pub operations_details_area: Rect,
+    running_operation: Option<operations::RunningOperation>,
     worker: Worker,
     serial: u64,
     preview_token: u64,
@@ -179,7 +201,16 @@ impl App {
             hits: vec![],
             pointer: None,
             preview_area: Rect::default(),
+            pane_areas: [Rect::default(); 2],
             operation_count: 0,
+            operations: Default::default(),
+            operations_selected: 0,
+            operations_offset: 0,
+            operations_capacity: 1,
+            operations_detail_offset: 0,
+            operations_detail_max: 0,
+            operations_details_area: Rect::default(),
+            running_operation: None,
             worker: Worker::new(),
             serial: 0,
             preview_token: 0,
@@ -253,6 +284,9 @@ impl App {
         self.update_preview();
     }
     pub fn tick(&mut self) {
+        if let Some((token, progress)) = self.worker.take_progress() {
+            self.accept_operation_progress(token, progress);
+        }
         while let Ok(event) = self.worker.events.try_recv() {
             match event {
                 Event::Directory { token, result } => {
@@ -293,30 +327,7 @@ impl App {
                     }
                 }
                 Event::Preview { .. } => {}
-                Event::Operation(report) => {
-                    self.busy = false;
-                    self.operation_count += 1;
-                    if let Some(clip) = &mut self.clipboard
-                        && clip.cut
-                    {
-                        clip.paths.retain(|p| !report.completed.contains(p));
-                    }
-                    self.message(
-                        match report.error.as_ref() {
-                            Some(e) => {
-                                format!("Готово {}/{} · {e}", report.completed.len(), report.total)
-                            }
-                            None => format!("Готово · {} элемент(ов)", report.completed.len()),
-                        },
-                        report.error.is_some(),
-                    );
-                    for pane in 0..2 {
-                        for tab in 0..self.panes[pane].tabs.len() {
-                            self.reload(pane, tab);
-                        }
-                    }
-                    self.preview_path = None;
-                }
+                Event::Operation { token, report } => self.finish_operation(token, report),
                 Event::Open(result) => {
                     if let Err(e) = result {
                         self.message(e, true);
@@ -344,15 +355,6 @@ impl App {
         if let Some(path) = path {
             self.worker.preview(self.preview_token, path);
         }
-    }
-    pub fn start_operation(&mut self, op: Operation) {
-        if self.busy {
-            self.message("Дождитесь завершения файловой операции", true);
-            return;
-        }
-        self.busy = true;
-        self.message("Файловая операция выполняется…", false);
-        self.worker.operate(op);
     }
     pub fn open_selected(&mut self) {
         if let Some(entry) = self.tab().entry() {

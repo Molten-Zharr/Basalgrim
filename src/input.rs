@@ -87,6 +87,10 @@ pub enum Input {
     Pointer(Option<ratatui::layout::Position>),
     Key(KeyPress),
     Text(String),
+    SecondaryClick {
+        x: u16,
+        y: u16,
+    },
     Click {
         x: u16,
         y: u16,
@@ -102,6 +106,9 @@ pub enum Input {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
+    Commands,
+    Operations,
+    CancelOperation,
     Back,
     Forward,
     Parent,
@@ -137,6 +144,7 @@ pub enum Action {
 
 impl Action {
     pub const ALL: &'static [Self] = &[
+        Self::Commands,
         Self::Back,
         Self::Forward,
         Self::Parent,
@@ -168,9 +176,14 @@ impl Action {
         Self::NextPane,
         Self::FontLarger,
         Self::FontSmaller,
+        Self::Operations,
+        Self::CancelOperation,
     ];
     pub fn name(self) -> &'static str {
         match self {
+            Self::Commands => "Меню действий",
+            Self::Operations => "Операции",
+            Self::CancelOperation => "Отменить текущую операцию",
             Self::Back => "История: назад",
             Self::Forward => "История: вперёд",
             Self::Parent => "Родительская папка",
@@ -234,6 +247,24 @@ pub fn default_bindings() -> Vec<Binding> {
         key: KeyPress::plain(key),
     })
     .collect();
+    result.push(Binding {
+        action: Commands,
+        key: KeyPress {
+            shift: true,
+            ..KeyPress::plain(Key::F(10))
+        },
+    });
+    result.push(Binding {
+        action: Operations,
+        key: KeyPress::plain(Key::F(6)),
+    });
+    result.push(Binding {
+        action: CancelOperation,
+        key: KeyPress {
+            ctrl: true,
+            ..KeyPress::plain(Key::F(6))
+        },
+    });
     for (action, c) in [
         (Quit, 'q'),
         (Copy, 'c'),

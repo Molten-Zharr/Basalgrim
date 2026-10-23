@@ -21,6 +21,7 @@ fn image_slot(entry: &fs::Entry, area: Rect, palette: Palette) -> crate::icons::
 }
 
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Palette) {
+    app.pane_areas[pane] = area;
     let focused = app.active == pane;
     let block = panel(
         palette,
@@ -170,7 +171,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette
     };
     frame.render_widget(Paragraph::new(footer).style(palette.muted()), parts[4]);
 }
-fn shorten_name(name: &str, width: usize) -> String {
+pub(super) fn shorten_name(name: &str, width: usize) -> String {
     if name.width() <= width {
         return name.into();
     }
@@ -320,6 +321,12 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
             );
         }
         hit(app, rect, Target::Entry { pane, index });
+        let mark_area = Rect::new(rect.right().saturating_sub(3), rect.y, 3.min(rect.width), 1);
+        frame.render_widget(
+            Paragraph::new(if marked { "[●]" } else { "[ ]" }).style(base),
+            mark_area,
+        );
+        hit(app, mark_area, Target::EntryMark { pane, index });
     }
 }
 fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Palette) {
@@ -350,12 +357,8 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
         };
         let mark = if tab.marked.contains(&entry.path) {
             "●"
-        } else if images {
-            " "
-        } else if entry.directory {
-            "/"
         } else {
-            "·"
+            "□"
         };
         let name = format!(
             " {mark} {}{}{}",
@@ -406,6 +409,16 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
             app,
             Rect::new(area.x, area.y + 1 + (index - start) as u16, area.width, 1),
             Target::Entry { pane, index },
+        );
+        hit(
+            app,
+            Rect::new(
+                area.x,
+                area.y + 1 + (index - start) as u16,
+                3.min(area.width),
+                1,
+            ),
+            Target::EntryMark { pane, index },
         );
     }
 }

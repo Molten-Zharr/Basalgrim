@@ -1,8 +1,13 @@
 use crate::fs::{self, Entry, Operation, Preview, Report};
+use crate::operations::{Cancellation, Progress};
 use std::{
     path::PathBuf,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{
+        Arc, Mutex,
+        mpsc::{self, Receiver, Sender},
+    },
     thread,
+    time::{Duration, Instant},
 };
 
 pub enum Event {
@@ -14,11 +19,18 @@ pub enum Event {
         token: u64,
         result: Result<Preview, String>,
     },
-    Operation(Report),
+    Operation {
+        token: u64,
+        report: Report,
+    },
     Open(Result<(), String>),
 }
 enum Task {
-    Operation(Operation),
+    Operation {
+        token: u64,
+        operation: Operation,
+        cancellation: Cancellation,
+    },
     Open(PathBuf),
 }
 pub struct Worker {
@@ -26,6 +38,7 @@ pub struct Worker {
     previews: Sender<(u64, PathBuf)>,
     tasks: Sender<Task>,
     pub events: Receiver<Event>,
+    progress: Arc<Mutex<Option<(u64, Progress)>>>,
 }
 impl Default for Worker {
     fn default() -> Self {
@@ -74,10 +87,34 @@ impl Worker {
             }
         });
         let (tasks, rx) = mpsc::channel();
+        let progress = Arc::new(Mutex::new(None));
+        let latest = Arc::clone(&progress);
         thread::spawn(move || {
             for task in rx {
                 let event = match task {
-                    Task::Operation(op) => Event::Operation(fs::operate(op)),
+                    Task::Operation {
+                        token,
+                        operation,
+                        cancellation,
+                    } => {
+                        let mut last = Instant::now()
+                            .checked_sub(Duration::from_secs(1))
+                            .unwrap_or_else(Instant::now);
+                        let mut phase = None;
+                        let report =
+                            fs::operate_with_control(operation, &cancellation, &mut |progress| {
+                                if phase != Some(progress.phase)
+                                    || last.elapsed() >= Duration::from_millis(50)
+                                {
+                                    if let Ok(mut slot) = latest.lock() {
+                                        *slot = Some((token, progress.clone()));
+                                    }
+                                    phase = Some(progress.phase);
+                                    last = Instant::now();
+                                }
+                            });
+                        Event::Operation { token, report }
+                    }
                     Task::Open(path) => {
                         Event::Open(fs::open_external(&path).map_err(|e| format!("{e:#}")))
                     }
@@ -92,6 +129,7 @@ impl Worker {
             previews,
             tasks,
             events,
+            progress,
         }
     }
     pub fn scan(&self, token: u64, path: PathBuf) {
@@ -100,8 +138,17 @@ impl Worker {
     pub fn preview(&self, token: u64, path: PathBuf) {
         let _ = self.previews.send((token, path));
     }
-    pub fn operate(&self, op: Operation) {
-        let _ = self.tasks.send(Task::Operation(op));
+    pub fn operate(&self, token: u64, operation: Operation, cancellation: Cancellation) -> bool {
+        self.tasks
+            .send(Task::Operation {
+                token,
+                operation,
+                cancellation,
+            })
+            .is_ok()
+    }
+    pub fn take_progress(&self) -> Option<(u64, Progress)> {
+        self.progress.lock().ok()?.take()
     }
     pub fn open(&self, path: PathBuf) {
         let _ = self.tasks.send(Task::Open(path));

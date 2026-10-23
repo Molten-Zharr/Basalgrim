@@ -49,3 +49,8 @@ rustix = { version = "1.1", features = ["fs", "event"] }
 
 [profile.dev]
 opt-level = 1
+
+# Preserve clipboard key presses for configurable file commands, including
+# Ctrl+V when the OS clipboard has no text. See vendor/egui-winit/BASALGRIM.md.
+[patch.crates-io]
+egui-winit = { path = "vendor/egui-winit" }

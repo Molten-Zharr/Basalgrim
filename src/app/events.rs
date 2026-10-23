@@ -4,7 +4,10 @@ use ratatui::layout::Position;
 
 impl App {
     pub fn handle(&mut self, input: Input) {
-        if let Input::Click { x, y, .. } | Input::Scroll { x, y, .. } = &input {
+        if let Input::Click { x, y, .. }
+        | Input::SecondaryClick { x, y }
+        | Input::Scroll { x, y, .. } = &input
+        {
             self.pointer = Some(Position::new(*x, *y));
         }
         match input {
@@ -14,6 +17,35 @@ impl App {
             }
             Input::Text(text) => self.insert_text(&text),
             Input::Key(key) => self.key(key),
+            Input::SecondaryClick { .. } if matches!(self.dialog, Some(Dialog::Commands(_))) => {
+                self.dialog = None;
+            }
+            Input::SecondaryClick { x, y } if self.dialog.is_none() => {
+                let point = Position::new(x, y);
+                let target = self
+                    .hits
+                    .iter()
+                    .rev()
+                    .find(|(r, _)| r.contains(point))
+                    .map(|(_, t)| t.clone());
+                if let Some(Target::Entry { pane, index } | Target::EntryMark { pane, index }) =
+                    target
+                {
+                    self.active = pane;
+                    self.tab_mut().selected = index;
+                    if self
+                        .tab()
+                        .entry()
+                        .is_some_and(|e| !self.tab().marked.contains(&e.path))
+                    {
+                        self.tab_mut().marked.clear();
+                    }
+                    self.open_commands(point);
+                } else if let Some(pane) = self.pane_areas.iter().position(|r| r.contains(point)) {
+                    self.active = pane;
+                    self.open_commands(point);
+                }
+            }
             Input::Click {
                 x,
                 y,
@@ -27,6 +59,24 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::Command(index)) => self.choose_command(index),
+                    Some(Target::CommandScroll(delta))
+                        if matches!(self.dialog, Some(Dialog::Commands(_))) =>
+                    {
+                        self.scroll_commands(delta)
+                    }
+                    Some(Target::Operation(index))
+                        if matches!(self.dialog, Some(Dialog::Operations)) =>
+                    {
+                        self.operations_selected =
+                            index.min(self.operations.len().saturating_sub(1));
+                        self.operations_detail_offset = 0;
+                    }
+                    Some(Target::Action(Action::CancelOperation))
+                        if matches!(self.dialog, Some(Dialog::Operations)) =>
+                    {
+                        self.cancel_operation()
+                    }
                     Some(Target::Confirm) => self.confirm_dialog(),
                     Some(Target::Cancel) => self.cancel_dialog(),
                     Some(Target::SettingsSection(section))
@@ -85,7 +135,29 @@ impl App {
                             self.open_selected();
                         }
                     }
+                    Some(Target::EntryMark { pane, index }) => {
+                        self.active = pane;
+                        self.tab_mut().selected = index;
+                        self.toggle_mark();
+                    }
                     _ => {}
+                }
+            }
+            Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::Commands(_))) => {
+                self.scroll_commands(delta as isize * 3)
+            }
+            Input::Scroll { x, y, delta } if matches!(self.dialog, Some(Dialog::Operations)) => {
+                if self.operations_details_area.contains(Position::new(x, y)) {
+                    self.operations_detail_offset = self
+                        .operations_detail_offset
+                        .saturating_add_signed(delta as isize * 3)
+                        .min(self.operations_detail_max);
+                } else {
+                    self.operations_selected = self
+                        .operations_selected
+                        .saturating_add_signed(delta as isize)
+                        .min(self.operations.len().saturating_sub(1));
+                    self.operations_detail_offset = 0;
                 }
             }
             Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::Help)) => {
@@ -196,12 +268,26 @@ impl App {
             self.settings_key(press);
             return;
         }
+        if matches!(self.dialog, Some(Dialog::Commands(_))) {
+            self.commands_key(press);
+            return;
+        }
+        if matches!(self.dialog, Some(Dialog::Operations)) {
+            self.operations_key(press);
+            return;
+        }
         let KeyPress {
             key,
             ctrl,
             alt,
             shift,
         } = press;
+        if self.settings.action_for(press) == Some(Action::CancelOperation)
+            && (self.dialog.is_none() || ctrl || alt)
+        {
+            self.cancel_operation();
+            return;
+        }
         if self.settings.action_for(press) == Some(Action::Quit)
             && (self.dialog.is_none() || ctrl || alt)
         {

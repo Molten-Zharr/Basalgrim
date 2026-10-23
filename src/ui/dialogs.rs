@@ -3,11 +3,15 @@ use crate::app::Dialog;
 use ratatui::widgets::{Clear, Wrap};
 
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
+    if matches!(app.dialog, Some(Dialog::Commands(_))) {
+        super::commands::render(app, frame, palette);
+        return;
+    }
     if let Some(Dialog::CaptureBinding { index, error }) = &app.dialog {
         super::settings::capture(app, frame, palette, *index, error.clone());
         return;
     }
-    if matches!(app.dialog, Some(Dialog::Settings)) {
+    if matches!(app.dialog, Some(Dialog::Settings | Dialog::Operations)) {
         return;
     }
     let Some(dialog) = &app.dialog else {
@@ -39,14 +43,20 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Dialog::Edit { kind, .. } => kind.title(),
         Dialog::Trash(_) => "Отправить в корзину?",
         Dialog::Help => "Управление · basalgrim",
-        Dialog::Settings | Dialog::CaptureBinding { .. } => unreachable!(),
+        Dialog::Settings
+        | Dialog::CaptureBinding { .. }
+        | Dialog::Operations
+        | Dialog::Commands(_) => unreachable!(),
     };
     let block = panel(palette, format!(" {title} "), true);
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
     let mut lines = vec![Line::raw("")];
     match dialog {
-        Dialog::Settings | Dialog::CaptureBinding { .. } => unreachable!(),
+        Dialog::Settings
+        | Dialog::CaptureBinding { .. }
+        | Dialog::Operations
+        | Dialog::Commands(_) => unreachable!(),
         Dialog::Edit {
             text: value, error, ..
         } => {
@@ -133,6 +143,11 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     }
     // Only modal hit regions remain interactive while a dialog is open.
     app.hits.clear();
+    if rect.width >= 4 && rect.height > 0 {
+        let close = Rect::new(rect.right() - 4, rect.y, 3, 1);
+        frame.render_widget(Paragraph::new(" × ").style(palette.accent()), close);
+        hit(app, close, Target::Cancel);
+    }
     let bottom = Rect::new(
         inner.x + 1,
         inner.bottom().saturating_sub(1),

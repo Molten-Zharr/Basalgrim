@@ -160,11 +160,12 @@ fn run() -> Result<()> {
                     pointer_cell(image_rect, Size::new(columns, rows), pos)
                         .map(|point| (point.x, point.y))
                 };
-                let text_active = app.text_active();
                 let events = ctx.input(|i| i.events.clone());
                 if !events.is_empty() {
                     ctx.request_repaint();
                 }
+                let mut suppress_text = false;
+                let mut paste_into_text = app.text_active();
                 for event in events {
                     match event {
                         egui::Event::Key {
@@ -174,24 +175,35 @@ fn run() -> Result<()> {
                             modifiers,
                             ..
                         } => {
-                            let physical = if key == egui::Key::Plus
-                                || (physical_key == Some(egui::Key::Equals) && modifiers.shift)
-                            {
-                                egui::Key::Plus
-                            } else {
-                                physical_key.unwrap_or(key)
-                            };
-                            if let Some(key) = convert_key(physical) {
+                            paste_into_text = app.text_active();
+                            if let Some(key) = event_key(key, physical_key, modifiers.shift) {
                                 app.handle(Input::Key(KeyPress {
                                     key,
                                     ctrl: modifiers.ctrl || modifiers.command,
                                     alt: modifiers.alt,
                                     shift: modifiers.shift,
                                 }));
+                                // A plain shortcut such as / opens an editor;
+                                // its accompanying Text must not type / into it.
+                                suppress_text = !paste_into_text && app.text_active();
                             }
                         }
-                        egui::Event::Text(text) | egui::Event::Paste(text) if text_active => {
+                        egui::Event::Text(text) if app.text_active() && !suppress_text => {
                             app.handle(Input::Text(text))
+                        }
+                        egui::Event::Paste(text) if app.text_active() && paste_into_text => {
+                            app.handle(Input::Text(text))
+                        }
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Secondary,
+                            pressed: true,
+                            ..
+                        } => {
+                            previous_click = None;
+                            if let Some((x, y)) = to_cell(pos) {
+                                app.handle(Input::SecondaryClick { x, y });
+                            }
                         }
                         egui::Event::PointerButton {
                             pos,
@@ -229,7 +241,10 @@ fn run() -> Result<()> {
                                 });
                             }
                         }
-                        egui::Event::PointerGone => app.handle(Input::Pointer(None)),
+                        egui::Event::PointerGone | egui::Event::WindowFocused(false) => {
+                            previous_click = None;
+                            app.handle(Input::Pointer(None));
+                        }
                         _ => {}
                     }
                 }
@@ -252,6 +267,20 @@ fn pointer_cell(
     let x = ((point.x - image.left()) / image.width() * f32::from(size.width)).floor() as u16;
     let y = ((point.y - image.top()) / image.height() * f32::from(size.height)).floor() as u16;
     (x < size.width && y < size.height).then(|| ratatui::layout::Position::new(x, y))
+}
+fn event_key(key: egui::Key, physical: Option<egui::Key>, shift: bool) -> Option<Key> {
+    // egui-winit already falls back to the physical key for non-Latin layouts.
+    // Overriding a recognized logical key breaks remapped layouts and virtual
+    // keyboards (their physical codes can mean entirely different commands).
+    convert_key(
+        if key == egui::Key::Plus
+            || (key == egui::Key::Equals && physical == Some(egui::Key::Equals) && shift)
+        {
+            egui::Key::Plus
+        } else {
+            key
+        },
+    )
 }
 fn convert_key(key: egui::Key) -> Option<Key> {
     Some(match key {
@@ -300,6 +329,34 @@ fn convert_key(key: egui::Key) -> Option<Key> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn logical_keys_survive_remapped_and_virtual_keyboard_codes() {
+        assert_eq!(
+            event_key(egui::Key::C, Some(egui::Key::Equals), true),
+            Some(Key::Char('c'))
+        );
+        assert_eq!(
+            event_key(egui::Key::A, Some(egui::Key::Q), false),
+            Some(Key::Char('a'))
+        );
+        assert_eq!(
+            event_key(egui::Key::V, Some(egui::Key::Escape), false),
+            Some(Key::Char('v'))
+        );
+        assert_eq!(
+            event_key(egui::Key::Enter, Some(egui::Key::Escape), false),
+            Some(Key::Enter)
+        );
+        // Non-Latin layouts have already fallen back to physical in egui-winit.
+        assert_eq!(
+            event_key(egui::Key::C, Some(egui::Key::C), false),
+            Some(Key::Char('c'))
+        );
+        assert_eq!(
+            event_key(egui::Key::Equals, Some(egui::Key::Equals), true),
+            Some(Key::Char('+'))
+        );
+    }
     #[test]
     fn gui_delivers_every_key_offered_by_the_binding_picker() {
         for expected in basalgrim::input::shortcut_choices() {

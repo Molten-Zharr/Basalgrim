@@ -75,6 +75,42 @@ impl Settings {
         for binding in &mut self.bindings {
             binding.key = binding.key.normalized();
         }
+        // Older settings do not have these commands. Keep custom bindings intact,
+        // including keys that were free before the commands were introduced.
+        for action in [
+            Action::Operations,
+            Action::CancelOperation,
+            Action::Commands,
+        ] {
+            if self.bindings.iter().any(|binding| binding.action == action) {
+                continue;
+            }
+            let default = input::default_bindings()
+                .into_iter()
+                .find(|binding| binding.action == action)
+                .unwrap();
+            let mut candidates = vec![default.key];
+            for n in 1..=12 {
+                for (ctrl, alt, shift) in [
+                    (true, false, false),
+                    (false, true, false),
+                    (true, true, false),
+                    (true, false, true),
+                ] {
+                    candidates.push(KeyPress {
+                        key: input::Key::F(n),
+                        ctrl,
+                        alt,
+                        shift,
+                    });
+                }
+            }
+            let key = candidates
+                .into_iter()
+                .find(|key| !self.bindings.iter().any(|binding| binding.key == *key))
+                .context("Нет свободного сочетания для новой команды")?;
+            self.bindings.push(Binding { action, key });
+        }
         self.validate_bindings()
     }
     pub fn validate_bindings(&self) -> Result<()> {

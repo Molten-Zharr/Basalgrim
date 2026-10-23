@@ -1,5 +1,7 @@
+mod commands;
 mod dialogs;
 mod files;
+mod operations;
 mod settings;
 pub mod theme;
 
@@ -73,6 +75,11 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     app.hits.clear();
     app.preview_area = Rect::default();
+    app.pane_areas = [Rect::default(); 2];
+    if matches!(app.dialog, Some(crate::app::Dialog::Operations)) {
+        operations::render(app, frame, palette);
+        return;
+    }
     if matches!(
         app.dialog,
         Some(crate::app::Dialog::Settings)
@@ -97,6 +104,12 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
             .style(palette.accent()),
             area,
         );
+        if area.width >= 12 && area.height >= 4 {
+            let menu = Rect::new(area.x + 1, area.y + 3, 10, 1);
+            frame.render_widget(Paragraph::new(" Действия ").style(palette.accent()), menu);
+            hit(app, menu, Target::Action(Action::Commands));
+        }
+        dialogs::render(app, frame, palette);
         return;
     }
     let compact = area.height < 20;
@@ -190,20 +203,25 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     } else {
         " · "
     };
-    frame.render_widget(
-        Paragraph::new(format!("{prefix}{}", app.notice)).style(if app.notice_error {
-            palette.text().fg(palette.color("help_heading"))
-        } else {
-            palette.muted()
-        }),
-        zones[4],
-    );
+    if app.busy && app.current_operation().is_some() {
+        operations::status(app, frame, zones[4], palette);
+    } else {
+        frame.render_widget(
+            Paragraph::new(format!("{prefix}{}", app.notice)).style(if app.notice_error {
+                palette.text().fg(palette.color("help_heading"))
+            } else {
+                palette.muted()
+            }),
+            zones[4],
+        );
+    }
     dialogs::render(app, frame, palette);
 }
 
 fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
     if width < 80 {
         return vec![
+            (" Действия ".into(), Action::Commands),
             (" ← ".into(), Action::Back),
             (" ↑ ".into(), Action::Parent),
             (" ⌂ ".into(), Action::Home),
@@ -220,12 +238,14 @@ fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
         ];
     }
     vec![
+        (" Действия ".into(), Action::Commands),
         (" ← ".into(), Action::Back),
         (" → ".into(), Action::Forward),
         (" ↑ ".into(), Action::Parent),
         (" ⌂ ".into(), Action::Home),
         (" + Папка ".into(), Action::NewFolder),
         (" Копия ".into(), Action::Copy),
+        (" Вырезать ".into(), Action::Cut),
         (" Вставить ".into(), Action::Paste),
         (
             format!(" {} Поиск ", app.settings.shortcut(Action::Search)),
@@ -245,6 +265,10 @@ fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
         (
             format!(" {}Панели ", if app.settings.dual { "● " } else { "" }),
             Action::Dual,
+        ),
+        (
+            format!(" {} Операции ", app.settings.shortcut(Action::Operations)),
+            Action::Operations,
         ),
         (
             format!(" {} Настройки ", app.settings.shortcut(Action::Settings)),

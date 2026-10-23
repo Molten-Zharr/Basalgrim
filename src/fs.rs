@@ -1,10 +1,16 @@
-use anyhow::{Context, Result, bail, ensure};
+mod operations;
+pub use operations::{
+    Operation, Report, operate, operate_with_control, rename_new, transfer_one, trash_one,
+    validate_name,
+};
+
+use anyhow::{Context, Result, ensure};
 use chrono::{DateTime, Local};
 use std::{
     cmp::Reverse,
-    fs::{self, File, OpenOptions},
-    io::{Read, Write},
-    path::{Component, Path, PathBuf},
+    fs::{self, File},
+    io::Read,
+    path::{Path, PathBuf},
     time::SystemTime,
 };
 
@@ -217,254 +223,6 @@ pub fn preview(path: &Path) -> Result<Preview> {
     Ok(result)
 }
 
-#[derive(Debug, Clone)]
-pub enum Operation {
-    Create {
-        parent: PathBuf,
-        name: String,
-        directory: bool,
-    },
-    Rename {
-        source: PathBuf,
-        name: String,
-    },
-    Transfer {
-        sources: Vec<PathBuf>,
-        destination: PathBuf,
-        cut: bool,
-    },
-    Trash {
-        sources: Vec<PathBuf>,
-    },
-}
-
-#[derive(Debug, Default)]
-pub struct Report {
-    pub completed: Vec<PathBuf>,
-    pub total: usize,
-    pub error: Option<String>,
-}
-
-pub fn validate_name(name: &str) -> Result<()> {
-    let mut parts = Path::new(name).components();
-    ensure!(
-        !name.is_empty()
-            && !name
-                .chars()
-                .any(|c| c.is_control() || c == '/' || c == '\\')
-            && matches!(parts.next(), Some(Component::Normal(_)))
-            && parts.next().is_none(),
-        "Укажите имя без пути, /, \\ и управляющих символов"
-    );
-    Ok(())
-}
-
-/// Linux's RENAME_NOREPLACE prevents a concurrent writer from being overwritten.
-pub fn rename_new(source: &Path, destination: &Path) -> Result<()> {
-    #[cfg(target_os = "linux")]
-    {
-        rustix::fs::renameat_with(
-            rustix::fs::CWD,
-            source,
-            rustix::fs::CWD,
-            destination,
-            rustix::fs::RenameFlags::NOREPLACE,
-        )
-        .with_context(|| {
-            format!(
-                "Перемещение {} → {} (без перезаписи; только в пределах файловой системы)",
-                source.display(),
-                destination.display()
-            )
-        })?;
-        Ok(())
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (source, destination);
-        bail!("Безопасное перемещение пока поддерживается только в Linux")
-    }
-}
-
-fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
-    let meta = fs::symlink_metadata(source)?;
-    if meta.is_symlink() {
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(fs::read_link(source)?, destination)?;
-        #[cfg(not(unix))]
-        bail!("Копирование ссылок пока поддерживается только в Unix");
-    } else if meta.is_dir() {
-        fs::create_dir(destination)?;
-        for entry in fs::read_dir(source)? {
-            let entry = entry?;
-            copy_tree(&entry.path(), &destination.join(entry.file_name()))?;
-        }
-        fs::set_permissions(destination, meta.permissions())?;
-    } else if meta.is_file() {
-        let mut input = File::open(source)?;
-        let mut output = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(destination)?;
-        std::io::copy(&mut input, &mut output)?;
-        output.flush()?;
-        fs::set_permissions(destination, meta.permissions())?;
-    } else {
-        bail!("Специальные файлы не копируются: {}", source.display());
-    }
-    Ok(())
-}
-
-pub fn transfer_one(source: &Path, destination: &Path, cut: bool) -> Result<()> {
-    let parent = destination
-        .parent()
-        .context("Нет родительской папки")?
-        .canonicalize()?;
-    let meta = fs::symlink_metadata(source)?;
-    if meta.is_dir() {
-        ensure!(
-            !parent.starts_with(source.canonicalize()?),
-            "Нельзя поместить папку в неё саму или её подпапку"
-        );
-    }
-    ensure!(
-        fs::symlink_metadata(destination).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound),
-        "Цель уже существует или недоступна: {}",
-        destination.display()
-    );
-    if cut {
-        return rename_new(source, destination);
-    }
-    // Stage each item on the target filesystem. Failure never exposes a partial destination.
-    let staging = tempfile::Builder::new()
-        .prefix(".basalgrim-copy-")
-        .tempdir_in(parent)?;
-    let staged = staging.path().join("item");
-    let result = copy_tree(source, &staged).and_then(|()| rename_new(&staged, destination));
-    let staging_path = staging.path().to_path_buf();
-    // Preserved read-only directory modes must not prevent cleanup of our own staging tree.
-    let cleanup = if result.is_err() {
-        writable_directories(&staged)
-    } else {
-        Ok(())
-    }
-    .and_then(|()| staging.close().map_err(Into::into));
-    match (result, cleanup) {
-        // Publication succeeded; failure to remove an empty staging folder is not a failed copy.
-        (Ok(()), _) => Ok(()),
-        (Err(error), Ok(())) => Err(error),
-        (result, Err(error)) => bail!(
-            "{}; не удалось очистить временную папку {}: {error:#}",
-            result
-                .err()
-                .map_or_else(|| "Копирование завершено".into(), |e| format!("{e:#}")),
-            staging_path.display()
-        ),
-    }
-}
-
-fn writable_directories(path: &Path) -> Result<()> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(error.into()),
-    };
-    if metadata.is_dir() {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(
-                path,
-                fs::Permissions::from_mode(metadata.permissions().mode() | 0o700),
-            )?;
-        }
-        for entry in fs::read_dir(path)? {
-            writable_directories(&entry?.path())?;
-        }
-    }
-    Ok(())
-}
-
-pub fn operate(operation: Operation) -> Report {
-    let tasks: Vec<(PathBuf, Result<()>)> = match operation {
-        Operation::Create {
-            parent,
-            name,
-            directory,
-        } => {
-            let path = parent.join(&name);
-            let result = (|| {
-                validate_name(&name)?;
-                if directory {
-                    fs::create_dir(&path)?;
-                } else {
-                    OpenOptions::new()
-                        .write(true)
-                        .create_new(true)
-                        .open(&path)?;
-                }
-                Ok(())
-            })();
-            vec![(path, result)]
-        }
-        Operation::Rename { source, name } => {
-            let result = (|| {
-                validate_name(&name)?;
-                let destination = source
-                    .parent()
-                    .context("Нельзя переименовать корень")?
-                    .join(name);
-                rename_new(&source, &destination)
-            })();
-            vec![(source, result)]
-        }
-        Operation::Transfer {
-            sources,
-            destination,
-            cut,
-        } => {
-            return run_batch(sources, |source| {
-                let name = source.file_name().context("Нельзя копировать корень")?;
-                transfer_one(source, &destination.join(name), cut)
-            });
-        }
-        Operation::Trash { sources } => {
-            return run_batch(sources, trash_one);
-        }
-    };
-    let mut report = Report {
-        total: tasks.len(),
-        ..Report::default()
-    };
-    for (path, result) in tasks {
-        match result {
-            Ok(()) => report.completed.push(path),
-            Err(e) => {
-                report.error = Some(format!("{e:#}"));
-                break;
-            }
-        }
-    }
-    report
-}
-
-fn run_batch(sources: Vec<PathBuf>, mut run: impl FnMut(&Path) -> Result<()>) -> Report {
-    let mut report = Report {
-        total: sources.len(),
-        ..Report::default()
-    };
-    for source in sources {
-        match run(&source) {
-            Ok(()) => report.completed.push(source),
-            Err(e) => {
-                report.error = Some(format!("{e:#}"));
-                break;
-            }
-        }
-    }
-    report
-}
-
 pub fn open_external(path: &Path) -> Result<()> {
     #[cfg(target_os = "linux")]
     let mut command = std::process::Command::new("xdg-open");
@@ -485,21 +243,6 @@ pub fn open_external(path: &Path) -> Result<()> {
     ensure!(
         status.success(),
         "Внешнее приложение завершилось с {status}"
-    );
-    Ok(())
-}
-
-pub fn trash_one(path: &Path) -> Result<()> {
-    let output = std::process::Command::new("gio")
-        .args(["trash", "--"])
-        .arg(path)
-        .stdin(std::process::Stdio::null())
-        .output()
-        .context("Для системной корзины установите gio (Debian/Ubuntu: libglib2.0-bin)")?;
-    ensure!(
-        output.status.success(),
-        "Корзина: {}",
-        clean(&String::from_utf8_lossy(&output.stderr))
     );
     Ok(())
 }
