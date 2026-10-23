@@ -1,5 +1,6 @@
 pub mod app;
 pub mod fs;
+pub mod icons;
 pub mod input;
 pub mod model;
 pub mod options;

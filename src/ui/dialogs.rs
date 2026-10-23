@@ -32,6 +32,8 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         area.width.min(width),
         area.height.min(height),
     );
+    app.icon_slots
+        .retain(|slot| slot.area.intersection(rect).is_empty());
     frame.render_widget(Clear, rect);
     let title = match dialog {
         Dialog::Edit { kind, .. } => kind.title(),

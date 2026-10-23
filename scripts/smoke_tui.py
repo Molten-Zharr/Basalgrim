@@ -29,6 +29,8 @@ def main():
         data.mkdir()
         env = dict(os.environ, TERM="xterm-256color", XDG_CONFIG_HOME=str(config), XDG_DATA_HOME=str(data))
         env.pop("NO_COLOR", None)  # Exercise actual color updates in the isolated test terminal.
+        for name in ("TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION"):
+            env.pop(name, None)
         master, slave = pty.openpty()
         original = termios.tcgetattr(slave)
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 140, 0, 0))
@@ -65,8 +67,7 @@ def main():
             send(b"\r")
 
         try:
-            pump(0.4)
-            assert b"BASALGRIM" in output
+            wait_for(lambda: b"BASALGRIM" in output, "terminal graphics probe and first frame")
             start = len(output)
             send(b"\x1b[<35;50;13M")  # SGR mouse motion over an unselected file
             assert b"48;2;" in output[start:], "Mouse motion did not repaint the hover background"
@@ -138,7 +139,7 @@ def main():
             assert (restored[3] & (termios.ECHO | termios.ICANON)) == (original[3] & (termios.ECHO | termios.ICANON))
             child = subprocess.Popen([str(binary), str(folder)], stdin=slave, stdout=slave, stderr=slave, env=env)
             output.clear()
-            pump(0.4)
+            wait_for(lambda: b"BASALGRIM" in output, "first frame after restart")
             send(b"\x1bOS")  # Persisted F4 opens help after restart
             assert "Управление".encode() in output
             send(b"\x1b")

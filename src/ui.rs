@@ -47,6 +47,7 @@ pub fn hit(app: &mut App, rect: Rect, target: Target) {
     }
 }
 pub fn render(app: &mut App, frame: &mut Frame) {
+    app.icon_slots.clear();
     let palette = Palette::new(&app.settings);
     render_content(app, frame, palette);
     // Use the same topmost hit region as clicking. Modal rendering has already
@@ -59,6 +60,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
                 let cell = &mut buffer[(x, y)];
                 cell.bg = palette.hover_background(cell.bg);
             }
+        }
+    }
+    for slot in &mut app.icon_slots {
+        if let ratatui::style::Color::Rgb(r, g, b) =
+            frame.buffer_mut()[(slot.area.x, slot.area.y)].bg
+        {
+            slot.background = [r, g, b];
         }
     }
 }

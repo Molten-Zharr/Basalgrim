@@ -1,7 +1,7 @@
 use basalgrim::{
     app::{App, Dialog, EditKind, SettingsFocus, SettingsSection, SettingsTab, Target},
     input::{self, Action, Input, Key, KeyPress},
-    preferences::{BorderWeight, Corners, FontFace, Theme},
+    preferences::{BorderWeight, Corners, FontFace, IconMode, Theme},
     settings::Settings,
     ui,
 };
@@ -56,11 +56,67 @@ fn legacy_settings_keep_font_size_and_receive_default_themes_and_bindings() {
     assert!(settings.dual && settings.hidden);
     assert_eq!(settings.appearance.font_size, 24);
     assert_eq!(settings.appearance.theme, Theme::MoltenZharr);
+    assert_eq!(settings.appearance.icon_mode, IconMode::Images);
     assert_eq!(settings.bindings, input::default_bindings());
     settings.save(&path).unwrap();
     let json: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     assert_eq!(json["font_size"], 24);
     assert!(json.get("appearance").is_none());
+}
+
+#[test]
+fn icon_mode_is_editable_and_persists_independently_of_backend_capabilities() {
+    use basalgrim::icons::IconBackend;
+
+    let (root, mut app) = app();
+    let path = root.path().join("settings.json");
+    page(&mut app, SettingsTab::Icons);
+    let buffer = render(&mut app, 120, 36);
+    assert!(text(&buffer).contains("Иконки файлов"));
+    assert!(
+        app.settings_rows()[0]
+            .description
+            .contains("не поддерживает")
+    );
+    key(&mut app, Key::Right);
+    assert_eq!(app.settings.appearance.icon_mode, IconMode::Symbols);
+    app.persist_preferences(Some(&path));
+    assert_eq!(
+        Settings::load(&path).unwrap().appearance.icon_mode,
+        IconMode::Symbols
+    );
+    app.icon_backend = IconBackend::Gui;
+    assert!(app.settings_rows()[0].description.contains("В окне"));
+    assert_eq!(app.settings.appearance.icon_mode, IconMode::Symbols);
+    let button = app
+        .hits
+        .iter()
+        .find_map(|(area, target)| {
+            matches!(
+                target,
+                Target::Setting {
+                    index: 0,
+                    activate: false,
+                    ..
+                }
+            )
+            .then_some(*area)
+        })
+        .unwrap();
+    app.handle(Input::Click {
+        x: button.x,
+        y: button.y,
+        double: false,
+        toggle: false,
+    });
+    assert_eq!(app.settings.appearance.icon_mode, IconMode::Images);
+    app.persist_preferences(Some(&path));
+    let restored = Settings::load(&path).unwrap();
+    assert_eq!(restored.appearance.icon_mode, IconMode::Images);
+    app.icon_backend = IconBackend::Symbols;
+    render(&mut app, 120, 36);
+    assert_eq!(app.settings.appearance.icon_mode, IconMode::Images);
+    assert!(app.icon_slots.is_empty());
 }
 
 #[test]

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use basalgrim::{
     app::App,
+    icons::{IconBackend, terminal::TerminalIcons},
     input::{Input, Key, KeyPress},
     options::Options,
     settings::Settings,
@@ -55,9 +56,13 @@ fn run() -> Result<()> {
     }
     enable_raw_mode()?;
     let _session = Session;
+    execute!(stdout(), EnterAlternateScreen)?;
+    let mut icons = TerminalIcons::detect();
+    app.icon_backend = icons
+        .as_ref()
+        .map_or(IconBackend::Symbols, TerminalIcons::backend);
     execute!(
         stdout(),
-        EnterAlternateScreen,
         EnableMouseCapture,
         EnableBracketedPaste,
         EnableFocusChange
@@ -72,7 +77,14 @@ fn run() -> Result<()> {
     while !app.quit {
         app.tick();
         app.persist_preferences(settings_path.as_deref());
-        terminal.draw(|frame| ui::render(&mut app, frame))?;
+        terminal.draw(|frame| {
+            ui::render(&mut app, frame);
+            if let Some(icons) = &mut icons
+                && !icons.render(frame, &app.icon_slots)
+            {
+                app.icon_backend = IconBackend::Symbols;
+            }
+        })?;
         if !event::poll(Duration::from_millis(50))? {
             continue;
         }
@@ -125,6 +137,15 @@ fn run() -> Result<()> {
                 }
             }
             Event::FocusLost => app.handle(Input::Pointer(None)),
+            Event::Resize(_, _) => {
+                if let Some(icons) = &mut icons
+                    && let Ok(size) = crossterm::terminal::window_size()
+                    && size.columns > 0
+                    && size.rows > 0
+                {
+                    icons.resize_cells(size.width / size.columns, size.height / size.rows);
+                }
+            }
             _ => {}
         }
     }

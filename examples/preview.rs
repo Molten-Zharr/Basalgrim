@@ -41,7 +41,11 @@ fn render(app: &mut App, out: &Path, name: &str, width: u16, height: u16) -> Res
         backend.get_pixmap_width(),
         backend.get_pixmap_height()
     )?;
-    file.write_all(backend.get_pixmap_data())?;
+    file.write_all(&raster::compose_icons(
+        backend,
+        &app.icon_slots,
+        &mut Default::default(),
+    )?)?;
     Ok(())
 }
 fn main() -> Result<()> {
@@ -76,6 +80,7 @@ fn main() -> Result<()> {
     )?;
     fs::write(demo.path().join(".hidden"), "hidden")?;
     let mut app = App::new(demo.path().to_path_buf(), Settings::default());
+    app.icon_backend = basalgrim::icons::IconBackend::Gui;
     settle(&mut app)?;
     let index = app
         .tab()
@@ -163,6 +168,51 @@ fn main() -> Result<()> {
     app.settings.dual = false;
     app.settings.appearance.theme = Theme::Light;
     render(&mut app, &out, "light", 150, 44)?;
+    for name in [
+        "balena-etcher_2.1.6_amd64.AppImage",
+        "batocera-rk3588-sdimage-20261023.img.gz",
+        "cloudflared-linux-amd64.deb",
+        "detect_record(1).py",
+        "detect_record(2).py",
+        "discord-1.0.154.deb",
+        "drone-detect(1).service",
+        "FreeCAD_1.1.1-Linux-x86_64.AppImage",
+        "google-chrome-stable_current_amd64.deb",
+        "README_WITH_AN_EXTREMELY_LONG_NAME",
+        "Очень-длинное-название-документа.txt",
+        "資料ファイルの非常に長い名前.txt",
+    ] {
+        fs::write(demo.path().join(name), "")?;
+    }
+    app.settings.grid = true;
+    app.settings.preview = false;
+    app.refresh();
+    settle(&mut app)?;
+    render(&mut app, &out, "grid-long-names-light", 132, 44)?;
+    app.settings.appearance.theme = Theme::MoltenZharr;
+    render(&mut app, &out, "grid-long-names", 132, 44)?;
+    for name in [
+        "album.flac",
+        "archive.zip",
+        "Font.ttf",
+        "manual.pdf",
+        "movie.mkv",
+        "photo.png",
+    ] {
+        fs::write(demo.path().join(name), "")?;
+    }
+    std::os::unix::fs::symlink("browser.rs", demo.path().join("browser-link.rs"))?;
+    app.refresh();
+    settle(&mut app)?;
+    app.settings.appearance.font_size = 20;
+    app.settings.appearance.theme = Theme::Light;
+    render(&mut app, &out, "icons-light", 132, 52)?;
+    app.settings.grid = false;
+    render(&mut app, &out, "icons-list", 132, 44)?;
+    app.action(Action::Settings);
+    app.settings_tab(SettingsTab::Icons);
+    app.settings_view.focus = SettingsFocus::Parameters;
+    render(&mut app, &out, "settings-icons", 120, 36)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

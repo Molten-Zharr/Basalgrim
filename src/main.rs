@@ -30,6 +30,7 @@ fn run() -> Result<()> {
     };
     let (settings, settings_path, warning) = Settings::startup();
     let mut app = App::new(options.directory, settings);
+    app.icon_backend = basalgrim::icons::IconBackend::Gui;
     if let Some(warning) = warning {
         app.message(warning, true);
     }
@@ -49,6 +50,8 @@ fn run() -> Result<()> {
         ..Default::default()
     };
     let mut uploaded: Option<Buffer> = None;
+    let mut uploaded_icons = Vec::new();
+    let mut icons = basalgrim::icons::images::IconRasterizer::default();
     let mut previous_click: Option<(egui::Pos2, Instant)> = None;
     eframe::run_ui_native("Basalgrim · Molten-Zharr", options, move |root, _| {
         let ctx = root.ctx().clone();
@@ -103,8 +106,27 @@ fn run() -> Result<()> {
                 app.handle(Input::Pointer(pointer));
                 let _ = terminal.draw(|frame| ui::render(&mut app, frame));
                 let backend = terminal.backend_mut();
-                if uploaded.as_ref() != Some(&backend.soft_backend.buffer) {
-                    let image = backend.to_egui_image();
+                if uploaded.as_ref() != Some(&backend.soft_backend.buffer)
+                    || uploaded_icons != app.icon_slots
+                {
+                    let rgb =
+                        raster::compose_icons(&backend.soft_backend, &app.icon_slots, &mut icons)
+                            .unwrap_or_else(|error| {
+                                app.icon_backend = basalgrim::icons::IconBackend::Symbols;
+                                app.message(
+                                    format!("Не удалось отрисовать иконки: {error:#}"),
+                                    true,
+                                );
+                                ctx.request_repaint();
+                                backend.soft_backend.get_pixmap_data().to_vec()
+                            });
+                    let image = egui::ColorImage::from_rgb(
+                        [
+                            backend.soft_backend.get_pixmap_width(),
+                            backend.soft_backend.get_pixmap_height(),
+                        ],
+                        &rgb,
+                    );
                     if let Some(texture) = &mut backend.text_handle {
                         texture.set(image, egui::TextureOptions::NEAREST);
                     } else {
@@ -115,6 +137,7 @@ fn run() -> Result<()> {
                         ));
                     }
                     uploaded = Some(backend.soft_backend.buffer.clone());
+                    uploaded_icons = app.icon_slots.clone();
                 }
                 let image_size = egui::vec2(
                     backend.soft_backend.get_pixmap_width() as f32,

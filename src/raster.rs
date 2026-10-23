@@ -57,6 +57,34 @@ impl RasterBackend for CellFont {
 pub fn backend(size: u16, columns: u16, rows: u16) -> SoftBackend<CellFont> {
     font_backend(FontFace::default(), size, columns, rows)
 }
+
+/// Composite onto a copy: the cached terminal raster remains clean between frames.
+pub fn compose_icons(
+    backend: &SoftBackend<CellFont>,
+    slots: &[crate::icons::IconSlot],
+    icons: &mut crate::icons::images::IconRasterizer,
+) -> anyhow::Result<Vec<u8>> {
+    let mut rgb = backend.get_pixmap_data().to_vec();
+    let width = backend.get_pixmap_width();
+    let height = backend.get_pixmap_height();
+    for slot in slots {
+        let image = icons.image(crate::icons::images::IconKey::new(
+            slot,
+            backend.char_width as u32,
+            backend.char_height as u32,
+        ))?;
+        let left = usize::from(slot.area.x) * backend.char_width;
+        let top = usize::from(slot.area.y) * backend.char_height;
+        for y in 0..(image.height() as usize).min(height.saturating_sub(top)) {
+            for x in 0..(image.width() as usize).min(width.saturating_sub(left)) {
+                let pixel = image.get_pixel(x as u32, y as u32);
+                let offset = ((top + y) * width + left + x) * 3;
+                rgb[offset..offset + 3].copy_from_slice(&pixel.0[..3]);
+            }
+        }
+    }
+    Ok(rgb)
+}
 pub fn font_backend(face: FontFace, size: u16, columns: u16, rows: u16) -> SoftBackend<CellFont> {
     let bytes: &'static [u8] = match face {
         FontFace::FiraCode => include_bytes!("../assets/fonts/FiraCode-Regular.ttf"),

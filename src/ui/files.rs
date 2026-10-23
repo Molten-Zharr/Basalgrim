@@ -1,8 +1,24 @@
 use super::*;
 use ratatui::{
     layout::Alignment,
+    style::Style,
     widgets::{Cell, Row, Table},
 };
+
+fn image_slot(entry: &fs::Entry, area: Rect, palette: Palette) -> crate::icons::IconSlot {
+    let kind = crate::icons::IconKind::for_entry(entry);
+    let rgb = |token| match palette.color(token) {
+        ratatui::style::Color::Rgb(r, g, b) => [r, g, b],
+        _ => unreachable!("Palette colors are RGB"),
+    };
+    crate::icons::IconSlot {
+        kind,
+        area,
+        foreground: rgb("text"),
+        accent: rgb(kind.color_role()),
+        background: rgb("background"),
+    }
+}
 
 pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Palette) {
     let focused = app.active == pane;
@@ -154,6 +170,49 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette
     };
     frame.render_widget(Paragraph::new(footer).style(palette.muted()), parts[4]);
 }
+fn shorten_name(name: &str, width: usize) -> String {
+    if name.width() <= width {
+        return name.into();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let available = width - 1; // Reserve one column for the ellipsis.
+    let extension_width = name
+        .rsplit_once('.')
+        .filter(|(stem, extension)| !stem.is_empty() && !extension.is_empty())
+        .map(|(_, extension)| extension.width() + 1)
+        .filter(|&width| width < available)
+        .unwrap_or(0);
+    let mut tail_width = (available / 2).max(extension_width);
+    let mut head_width = available - tail_width;
+    // Use the renderer's graphemes so wide and combined symbols stay intact.
+    let span = Span::raw(name);
+    let graphemes: Vec<_> = span
+        .styled_graphemes(Style::default())
+        .map(|grapheme| grapheme.symbol)
+        .collect();
+    let mut head = String::new();
+    for grapheme in &graphemes {
+        let width = grapheme.width();
+        if width > head_width {
+            break;
+        }
+        head.push_str(grapheme);
+        head_width -= width;
+    }
+    let mut tail_start = graphemes.len();
+    for grapheme in graphemes.iter().rev() {
+        let width = grapheme.width();
+        if width > tail_width {
+            break;
+        }
+        tail_start -= 1;
+        tail_width -= width;
+    }
+    format!("{head}…{}", graphemes[tail_start..].concat())
+}
+
 fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Palette) {
     let columns = (usize::from(area.width) / 18).max(1);
     let rows = (usize::from(area.height) / 5).max(1);
@@ -210,24 +269,41 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
         } else {
             "folder_path"
         }));
-        frame.render_widget(
-            Paragraph::new(icon.join("\n"))
-                .alignment(Alignment::Center)
-                .style(icon_style),
-            Rect::new(rect.x, rect.y, rect.width, 2.min(rect.height)),
-        );
-        if rect.height > 2 {
-            let label = format!(
-                "{}{}{}",
-                if marked { "● " } else { "" },
-                entry.name,
-                if entry.symlink { " ↗" } else { "" }
+        let icon_area = Rect::new(rect.x, rect.y, rect.width, 2.min(rect.height));
+        if app.icon_backend.supports_images()
+            && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images
+        {
+            let width = icon_area.width.min(6);
+            app.icon_slots.push(image_slot(
+                entry,
+                Rect::new(
+                    icon_area.x + (icon_area.width - width) / 2,
+                    icon_area.y,
+                    width,
+                    icon_area.height,
+                ),
+                palette,
+            ));
+        } else {
+            frame.render_widget(
+                Paragraph::new(icon.join("\n"))
+                    .alignment(Alignment::Center)
+                    .style(icon_style),
+                icon_area,
             );
+        }
+        if rect.height > 2 && rect.width > 2 {
+            let prefix = if marked { "● " } else { "" };
+            let suffix = if entry.symlink { " ↗" } else { "" };
+            let label_width = rect.width - 2;
+            let name_width =
+                usize::from(label_width).saturating_sub(prefix.width() + suffix.width());
+            let label = format!("{prefix}{}{suffix}", shorten_name(&entry.name, name_width));
             frame.render_widget(
                 Paragraph::new(label)
                     .alignment(Alignment::Center)
                     .style(base),
-                Rect::new(rect.x, rect.y + 2, rect.width, 1),
+                Rect::new(rect.x + 1, rect.y + 2, label_width, 1),
             );
         }
         if rect.height > 3 {
@@ -248,6 +324,8 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
 }
 fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Palette) {
     let rows = usize::from(area.height.saturating_sub(1));
+    let images = app.icon_backend.supports_images()
+        && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images;
     let tab = app.panes[pane].tab_mut();
     tab.columns = 1;
     tab.page_size = rows.max(1);
@@ -272,16 +350,26 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
         };
         let mark = if tab.marked.contains(&entry.path) {
             "●"
+        } else if images {
+            " "
         } else if entry.directory {
             "/"
         } else {
             "·"
         };
         let name = format!(
-            " {mark} {}{}",
+            " {mark} {}{}{}",
+            if images { "   " } else { "" },
             entry.name,
             if entry.symlink { " ↗" } else { "" }
         );
+        if images {
+            app.icon_slots.push(image_slot(
+                entry,
+                Rect::new(area.x + 3, area.y + 1 + (index - start) as u16, 2, 1),
+                palette,
+            ));
+        }
         rendered.push(
             Row::new(vec![
                 Cell::from(name).style(if entry.directory {

@@ -88,6 +88,8 @@ pub struct Place {
 }
 
 pub struct App {
+    pub icon_backend: crate::icons::IconBackend,
+    pub icon_slots: Vec<crate::icons::IconSlot>,
     pub panes: [Pane; 2],
     pub active: usize,
     pub settings: Settings,
@@ -142,6 +144,8 @@ impl App {
             path: PathBuf::from("/"),
         });
         let mut app = Self {
+            icon_backend: crate::icons::IconBackend::Symbols,
+            icon_slots: Vec::new(),
             panes: [
                 Pane {
                     tabs: vec![Tab::new(directory.clone())],

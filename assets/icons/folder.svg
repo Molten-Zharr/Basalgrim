@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <path d="M7 18a5 5 0 0 1 5-5h14l6 7h20a5 5 0 0 1 5 5v24a5 5 0 0 1-5 5H12a5 5 0 0 1-5-5Z" fill="@FOLD@" stroke="@ACCENT@" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M7 29a5 5 0 0 1 5-5h40a5 5 0 0 1 5 5v20a5 5 0 0 1-5 5H12a5 5 0 0 1-5-5Z" fill="@ACCENT@"/>
+  <path d="M15 32h34" stroke="@PAPER@" stroke-opacity=".45" stroke-width="2" stroke-linecap="round"/>
+</svg>

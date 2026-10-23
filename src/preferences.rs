@@ -7,6 +7,23 @@ pub const MIN_FONT_SIZE: u16 = 10;
 pub const MAX_FONT_SIZE: u16 = 32;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum IconMode {
+    #[default]
+    Images,
+    Symbols,
+}
+impl IconMode {
+    pub const ALL: [Self; 2] = [Self::Images, Self::Symbols];
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Images => "Изображения",
+            Self::Symbols => "Символы",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FontFace {
     #[default]
     FiraCode,
@@ -90,6 +107,7 @@ pub struct Appearance {
     pub font_size: u16,
     pub borders: BorderWeight,
     pub corners: Corners,
+    pub icon_mode: IconMode,
     pub colors: BTreeMap<Theme, BTreeMap<String, [u8; 3]>>,
 }
 impl Default for Appearance {
@@ -100,6 +118,7 @@ impl Default for Appearance {
             font_size: 16,
             borders: BorderWeight::default(),
             corners: Corners::default(),
+            icon_mode: IconMode::default(),
             colors: BTreeMap::new(),
         }
     }

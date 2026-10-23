@@ -2,7 +2,8 @@ use super::*;
 use crate::{
     input::{self, Key, KeyPress},
     preferences::{
-        self, Appearance, BorderWeight, Corners, FontFace, MAX_FONT_SIZE, MIN_FONT_SIZE, Theme,
+        self, Appearance, BorderWeight, Corners, FontFace, IconMode, MAX_FONT_SIZE, MIN_FONT_SIZE,
+        Theme,
     },
 };
 
@@ -27,14 +28,16 @@ pub enum SettingsTab {
     Presets,
     Palette,
     Typography,
+    Icons,
 }
 impl SettingsTab {
-    pub const ALL: [Self; 3] = [Self::Presets, Self::Palette, Self::Typography];
+    pub const ALL: [Self; 4] = [Self::Presets, Self::Palette, Self::Typography, Self::Icons];
     pub fn name(self) -> &'static str {
         match self {
             Self::Presets => "Пресеты",
             Self::Palette => "Палитра",
             Self::Typography => "Шрифт и геометрия",
+            Self::Icons => "Иконки",
         }
     }
 }
@@ -74,6 +77,7 @@ impl SettingsEdit {
 }
 #[derive(Clone)]
 pub enum SettingControl {
+    IconMode,
     Theme(Theme),
     ResetAppearance,
     Color(String),
@@ -136,6 +140,25 @@ impl App {
             }
         } else {
             match self.settings_view.tab {
+                SettingsTab::Icons => {
+                    let availability = match self.icon_backend {
+                        crate::icons::IconBackend::Gui => "В окне изображения доступны.",
+                        crate::icons::IconBackend::Symbols => {
+                            "Этот терминал не поддерживает изображения: используются символы. Выбор изображений сохранится для совместимого терминала и GUI."
+                        }
+                        _ => "Терминал поддерживает изображения.",
+                    };
+                    push(
+                        "Иконки файлов".into(),
+                        self.settings.appearance.icon_mode.name().into(),
+                        format!(
+                            "Изображения или текстовые символы. {availability} Изменение применяется сразу."
+                        ),
+                        SettingControl::IconMode,
+                        true,
+                        None,
+                    );
+                }
                 SettingsTab::Presets => {
                     for theme in Theme::ALL {
                         push(theme.name().into(),if theme==self.settings.appearance.theme {"Текущая"} else {"Применить"}.into(),"Палитра из Almavorn. Применяется сразу; выбранные шрифт и геометрия сохраняются.".into(),SettingControl::Theme(theme),false,None);
@@ -220,6 +243,9 @@ impl App {
         }
         let appearance = &mut self.settings.appearance;
         match row.control {
+            SettingControl::IconMode => {
+                appearance.icon_mode = cycle(appearance.icon_mode, &IconMode::ALL, direction)
+            }
             SettingControl::Theme(theme) => appearance.theme = theme,
             SettingControl::ResetAppearance => *appearance = Appearance::default(),
             SettingControl::ResetPalette => {

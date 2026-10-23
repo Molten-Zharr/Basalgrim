@@ -299,6 +299,209 @@ fn enlarging_the_window_reveals_all_entries_when_they_fit() {
 }
 
 #[test]
+fn grid_names_have_gaps_and_elide_without_losing_extensions_or_graphemes() {
+    use unicode_width::UnicodeWidthStr;
+
+    let root = tempfile::tempdir().unwrap();
+    for name in [
+        "short.txt",
+        "balena-etcher_2.1.6_amd64.AppImage",
+        "detect_record(1).py",
+        "detect_record(2).py",
+        "Очень-длинное-название-документа.txt",
+        "資料ファイルの非常に長い名前.txt",
+        "e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}.md",
+        "👩‍💻👩‍💻👩‍💻👩‍💻👩‍💻👩‍💻👩‍💻👩‍💻👩‍💻.rs",
+        "README_WITH_AN_EXTREMELY_LONG_NAME",
+    ] {
+        fs::write(root.path().join(name), "").unwrap();
+    }
+    let link = root.path().join("linked-detect-record.py");
+    std::os::unix::fs::symlink("detect_record(1).py", &link).unwrap();
+    let mut app = App::new(root.path().to_path_buf(), Settings::default());
+    app.settings.preview = false;
+    settle(&mut app);
+    app.tab_mut().marked.insert(link);
+    let mut seen = std::collections::BTreeSet::new();
+
+    for dual in [false, true] {
+        app.settings.dual = dual;
+        for (width, height) in [(34, 14), (70, 26), (100, 32), (150, 44), (190, 50)] {
+            let buffer = render(&mut app, width, height);
+            for (area, target) in &app.hits {
+                let Target::Entry { pane, index } = *target else {
+                    continue;
+                };
+                if area.height <= 2 {
+                    continue;
+                }
+                let tab = app.panes[pane].tab();
+                let entry = &tab.entries[tab.visible[index]];
+                seen.insert(entry.name.clone());
+                let y = area.y + 2;
+                assert_eq!(buffer[(area.x, y)].symbol(), " ", "{}", entry.name);
+                assert_eq!(
+                    buffer[(area.right() - 1, y)].symbol(),
+                    " ",
+                    "{}",
+                    entry.name
+                );
+                let mut text = String::new();
+                let mut x = area.x + 1;
+                while x < area.right() - 1 {
+                    let symbol = buffer[(x, y)].symbol();
+                    text.push_str(symbol);
+                    x += symbol.width().max(1) as u16;
+                }
+                let text = text.trim();
+                let prefix = if tab.marked.contains(&entry.path) {
+                    "● "
+                } else {
+                    ""
+                };
+                let suffix = if entry.symlink { " ↗" } else { "" };
+                let full = format!("{prefix}{}{suffix}", entry.name);
+                if full.width() <= usize::from(area.width - 2) {
+                    assert_eq!(text, full);
+                } else {
+                    assert!(text.contains('…'), "{}: {text}", entry.name);
+                    assert!(text.starts_with(prefix), "{text}");
+                    assert!(text.ends_with(suffix), "{text}");
+                    if let Some((_, extension)) = entry.name.rsplit_once('.') {
+                        assert!(
+                            text.strip_suffix(suffix)
+                                .unwrap()
+                                .ends_with(&format!(".{extension}")),
+                            "{}: {text}",
+                            entry.name
+                        );
+                    }
+                    if entry.name.starts_with("e\u{301}") {
+                        assert!(text.starts_with("e\u{301}"), "{text}");
+                    }
+                    if entry.name.starts_with("👩‍💻") {
+                        assert!(text.starts_with("👩‍💻"), "{text}");
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(seen.len(), app.tab().entries.len());
+}
+
+#[test]
+fn icon_capabilities_and_user_preference_choose_graphics_or_symbols() {
+    use basalgrim::{icons::IconBackend, preferences::IconMode};
+    let (_root, mut app) = setup();
+    for grid in [true, false] {
+        app.settings.grid = grid;
+        for backend in [
+            IconBackend::Symbols,
+            IconBackend::Gui,
+            IconBackend::Kitty,
+            IconBackend::Sixel,
+            IconBackend::Iterm2,
+        ] {
+            app.icon_backend = backend;
+            for mode in IconMode::ALL {
+                app.settings.appearance.icon_mode = mode;
+                let selected = app.tab().selected;
+                let buffer = render(&mut app, 150, 40);
+                let has_images = backend.supports_images() && mode == IconMode::Images;
+                assert_eq!(!app.icon_slots.is_empty(), has_images);
+                let text: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+                if grid {
+                    assert_eq!(text.contains("≡≡"), !has_images);
+                }
+                assert_eq!(app.tab().selected, selected);
+                assert_eq!(app.settings.appearance.icon_mode, mode);
+                for slot in &app.icon_slots {
+                    assert!(slot.area.right() <= buffer.area.right());
+                    assert!(slot.area.bottom() <= buffer.area.bottom());
+                    let card = app
+                        .hits
+                        .iter()
+                        .find_map(|(area, target)| {
+                            matches!(target, Target::Entry { .. })
+                                .then_some(*area)
+                                .filter(|area| area.contains((slot.area.x, slot.area.y).into()))
+                        })
+                        .unwrap();
+                    assert!(slot.area.bottom() <= card.y + 2);
+                }
+            }
+        }
+    }
+    app.settings.grid = true;
+    app.icon_backend = IconBackend::Gui;
+    app.settings.appearance.icon_mode = IconMode::Images;
+    render(&mut app, 150, 40);
+    let full_count = app.icon_slots.len();
+    app.action(Action::Help);
+    render(&mut app, 150, 40);
+    assert!(app.icon_slots.len() < full_count);
+    app.cancel_dialog();
+    app.action(Action::Settings);
+    render(&mut app, 150, 40);
+    assert!(app.icon_slots.is_empty());
+}
+
+#[cfg(feature = "guitui")]
+#[test]
+fn graphical_icons_restore_exact_pixels_after_hover_and_mode_changes() {
+    use basalgrim::{
+        icons::{IconBackend, images::IconRasterizer},
+        preferences::{IconMode, Theme},
+        raster,
+    };
+    let (_root, mut app) = setup();
+    app.icon_backend = IconBackend::Gui;
+    let mut icons = IconRasterizer::default();
+    for theme in [Theme::MoltenZharr, Theme::Light] {
+        app.settings.appearance.theme = theme;
+        app.settings.appearance.icon_mode = IconMode::Images;
+        let mut terminal = Terminal::new(raster::backend(16, 150, 40)).unwrap();
+        terminal.draw(|frame| ui::render(&mut app, frame)).unwrap();
+        let clean = terminal.backend().get_pixmap_data().to_vec();
+        let baseline =
+            raster::compose_icons(terminal.backend(), &app.icon_slots, &mut icons).unwrap();
+        assert_ne!(baseline, clean);
+        assert_eq!(terminal.backend().get_pixmap_data(), clean);
+        let area = app
+            .hits
+            .iter()
+            .find_map(|(area, target)| {
+                matches!(target, Target::Entry { pane: 0, index: 1 }).then_some(*area)
+            })
+            .unwrap();
+        app.handle(Input::Pointer(Some((area.x, area.y).into())));
+        terminal.draw(|frame| ui::render(&mut app, frame)).unwrap();
+        let hovered =
+            raster::compose_icons(terminal.backend(), &app.icon_slots, &mut icons).unwrap();
+        assert_ne!(hovered, baseline);
+        app.handle(Input::Pointer(None));
+        terminal.draw(|frame| ui::render(&mut app, frame)).unwrap();
+        assert_eq!(
+            raster::compose_icons(terminal.backend(), &app.icon_slots, &mut icons).unwrap(),
+            baseline
+        );
+        app.settings.appearance.icon_mode = IconMode::Symbols;
+        terminal.draw(|frame| ui::render(&mut app, frame)).unwrap();
+        assert!(app.icon_slots.is_empty());
+        assert_ne!(
+            raster::compose_icons(terminal.backend(), &app.icon_slots, &mut icons).unwrap(),
+            baseline
+        );
+        app.settings.appearance.icon_mode = IconMode::Images;
+        terminal.draw(|frame| ui::render(&mut app, frame)).unwrap();
+        assert_eq!(
+            raster::compose_icons(terminal.backend(), &app.icon_slots, &mut icons).unwrap(),
+            baseline
+        );
+    }
+}
+
+#[test]
 fn hovering_files_is_lighter_than_selection_and_does_not_change_browser_state() {
     use basalgrim::preferences::Theme;
     for theme in [Theme::MoltenZharr, Theme::Light] {
