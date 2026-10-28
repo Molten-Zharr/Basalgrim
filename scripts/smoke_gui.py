@@ -116,11 +116,15 @@ def chord(letter, *mods):
     key(letter)
     for m in reversed(mods): key(m, False)
 
-def click(win, cx, cy, button=1):
+def move(win, cx, cy):
     # The test uses bundled Fira Code at 16px: exactly 8x16 physical cells.
     px, py, child = C.c_int(), C.c_int(), W()
     x.XTranslateCoordinates(d, win, root, int((cx+.5)*8), int((cy+.5)*16), C.byref(px), C.byref(py), C.byref(child))
     xt.XTestFakeMotionEvent(d, -1, px.value, py.value, 0)
+    x.XFlush(d)
+
+def click(win, cx, cy, button=1):
+    move(win, cx, cy)
     xt.XTestFakeButtonEvent(d, button, 1, 0); xt.XTestFakeButtonEvent(d, button, 0, 0)
     x.XFlush(d); time.sleep(.18)
 
@@ -238,21 +242,32 @@ try:
         (mouse/'alpha.txt').write_text('native mouse copy')
         process,window,log=launch(mouse,config)
         try:
+            # Every command row owns its hover area, including disabled Paste.
+            click(window,4,3); move(window,0,0); time.sleep(.2)
+            baseline=screenshot(window,'native-menu-hover-baseline.png')
+            for name,row in [('enabled',8),('disabled',10)]:
+                move(window,6,row); time.sleep(.2)
+                hovered=screenshot(window,f'native-menu-hover-{name}.png')
+                assert baseline.tobytes()!=hovered.tobytes(), f'{name} row has no hover'
+                for box in [(0,0,baseline.width,row*16),(0,(row+1)*16,baseline.width,baseline.height)]:
+                    assert baseline.crop(box).tobytes()==hovered.crop(box).tobytes(), f'{name} hover repainted outside its row'
+            move(window,4,4); time.sleep(.2) # Popup padding, not a command.
+            assert screenshot(window,'native-menu-hover-padding.png').tobytes()==baseline.tobytes(), 'Menu background flashed on hover'
+            click(window,6,10,3) # Dismiss the complete command palette.
             screenshot(window,'native-mouse-start.png')
-            # 170x53 cells, one toolbar row, first file row 11.
-            # Right click alpha, choose Copy (menu row 3).
+            # 170x53 cells, first file row 11. A file has five commands.
             click(window,34,13,3); screenshot(window,'native-context-menu.png')
-            click(window,36,18)
+            click(window,36,15) # Open, Copy, Cut, Rename, Trash
             click(window,34,11); click(window,34,11)
-            # Empty directory background -> Paste, clamped menu top 16.
-            click(window,34,22,3); click(window,36,23)
+            # Directory background -> New File, New Folder, Paste, ...
+            click(window,34,22,3); screenshot(window,'native-directory-menu.png'); click(window,36,25)
             wait_for(lambda:(mouse/'destination/alpha.txt').exists(),'mouse context copy/paste')
             # Right click the pasted file -> Cut, navigate Parent via toolbar.
-            click(window,34,11,3); click(window,36,17)
+            click(window,34,11,3); click(window,36,14)
             click(window,21,3)
             # Open moved (row12), then Paste from the background menu.
             click(window,34,12); click(window,34,12)
-            click(window,34,22,3); click(window,36,23)
+            click(window,34,22,3); click(window,36,25)
             wait_for(lambda:(mouse/'moved/alpha.txt').exists(),'mouse context cut/paste')
             assert not (mouse/'destination/alpha.txt').exists()
             screenshot(window,'native-mouse-fixed.png')
@@ -263,9 +278,24 @@ try:
             type_text('compact.txt')
             click(window,4,16) # Confirm: centered 10-row editor, bottom y16.
             wait_for(lambda:(mouse/'moved/compact.txt').exists(),'compact mouse New File and confirmation')
-            print('Native GUI: mouse context copy/cut/paste and compact New File passed', flush=True)
+            print('Native GUI: file/directory menus, row-only hover including disabled commands, mouse copy/cut/paste and compact New File passed', flush=True)
         except Exception:
             screenshot(window,'native-mouse-failure.png'); raise
+        finally: stop(process,log)
+        group=base/'group'; group.mkdir(); (group/'destination').mkdir()
+        for name in ('alpha.txt','beta.txt','gamma.txt'): (group/name).write_text(name)
+        process,window,log=launch(group,config)
+        try:
+            key('Control_L',True); click(window,34,12); click(window,34,13); key('Control_L',False)
+            click(window,34,12,3); screenshot(window,'native-group-menu.png')
+            click(window,36,13) # Group has only Copy, Cut, Trash.
+            click(window,34,11); click(window,34,11)
+            click(window,34,22,3); click(window,36,25)
+            wait_for(lambda:all((group/'destination'/n).exists() for n in ('alpha.txt','beta.txt')),'Ctrl-selected group copy')
+            assert not (group/'destination/gamma.txt').exists(), 'Copied an unmarked file'
+            print('Native GUI: compact group menu and copying only Ctrl-selected files passed',flush=True)
+        except Exception:
+            screenshot(window,'native-group-failure.png'); raise
         finally: stop(process,log)
         operations=base/'operations'; operations.mkdir()
         op_destination=base/'op-destination'; op_destination.mkdir()

@@ -76,7 +76,7 @@ def main():
             assert b"48;2;" in output[start:], "Focus loss did not clear hover"
             start = len(output)
             send(b"\x1b[<2;60;14M")  # SGR secondary click -> shared Actions menu
-            assert "Выбрать все".encode() in output[start:], "Right click did not open the command menu"
+            assert "ФАЙЛ".encode() in output[start:], "Right click did not open the file command menu"
             send(b"\x1b[<2;60;14M")  # Second right click dismisses without click-through
             search("alpha.txt")
             send(b"\x03")  # Copy

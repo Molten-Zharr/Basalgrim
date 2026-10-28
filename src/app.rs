@@ -1,6 +1,6 @@
 mod actions;
 mod commands;
-pub use commands::{CommandItem, CommandMenu};
+pub use commands::{CommandItem, CommandMenu, MenuContext};
 mod events;
 mod operations;
 mod settings;
@@ -24,6 +24,7 @@ pub enum Target {
     Command(usize),
     CommandScroll(isize),
     MenuBackground,
+    DismissMenu,
     EntryMark {
         pane: usize,
         index: usize,
@@ -239,7 +240,9 @@ impl App {
             .iter()
             .rev()
             .find(|(area, _)| area.contains(pointer))
-            .map(|(area, _)| *area)
+            .and_then(|(area, target)| {
+                (!matches!(target, Target::MenuBackground | Target::DismissMenu)).then_some(*area)
+            })
     }
     pub fn tab_mut(&mut self) -> &mut Tab {
         self.panes[self.active].tab_mut()

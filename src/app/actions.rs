@@ -3,7 +3,10 @@ use super::*;
 impl App {
     pub fn action(&mut self, action: Action) {
         if action == Action::Commands && self.dialog.is_none() {
-            self.open_commands(self.pointer.unwrap_or(Position::new(2, 4)));
+            self.open_commands(
+                self.pointer.unwrap_or(Position::new(2, 4)),
+                MenuContext::All,
+            );
             return;
         }
         if action == Action::CancelOperation {

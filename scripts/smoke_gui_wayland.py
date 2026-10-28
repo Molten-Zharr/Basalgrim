@@ -153,14 +153,14 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             (mouse / "destination").mkdir(parents=True); (mouse / "moved").mkdir()
             (mouse / "alpha.txt").write_text("native Wayland mouse")
             process = launch(mouse)
-            click(34, 13, 3); click(36, 18)  # alpha -> Copy
+            click(34, 13, 3); click(36, 15)  # alpha -> Copy
             click(34, 11); click(34, 11)  # destination
-            click(34, 22, 3); click(36, 23)  # background -> Paste
+            click(34, 22, 3); click(36, 25)  # background -> Paste
             wait_for(lambda: (mouse / "destination/alpha.txt").exists(), "Wayland mouse Copy/Paste")
-            click(34, 11, 3); click(36, 17)  # Cut
+            click(34, 11, 3); click(36, 14)  # Cut
             click(21, 3)  # Parent
             click(34, 12); click(34, 12)  # moved
-            click(34, 22, 3); click(36, 23)  # Paste
+            click(34, 22, 3); click(36, 25)  # Paste
             wait_for(lambda: (mouse / "moved/alpha.txt").exists(), "Wayland mouse Cut/Paste")
             assert not (mouse / "destination/alpha.txt").exists()
             run("grim", "-g", "0,0 1360x860", str(out / "native-wayland-mouse.png"))

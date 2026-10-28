@@ -40,10 +40,10 @@ impl App {
                     {
                         self.tab_mut().marked.clear();
                     }
-                    self.open_commands(point);
+                    self.open_commands(point, MenuContext::Entries);
                 } else if let Some(pane) = self.pane_areas.iter().position(|r| r.contains(point)) {
                     self.active = pane;
-                    self.open_commands(point);
+                    self.open_commands(point, MenuContext::Directory);
                 }
             }
             Input::Click {
@@ -59,6 +59,11 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::DismissMenu)
+                        if matches!(self.dialog, Some(Dialog::Commands(_))) =>
+                    {
+                        self.cancel_dialog()
+                    }
                     Some(Target::Command(index)) => self.choose_command(index),
                     Some(Target::CommandScroll(delta))
                         if matches!(self.dialog, Some(Dialog::Commands(_))) =>
