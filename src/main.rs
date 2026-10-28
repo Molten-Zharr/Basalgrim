@@ -51,6 +51,7 @@ fn run() -> Result<()> {
     };
     let mut uploaded: Option<Buffer> = None;
     let mut uploaded_icons = Vec::new();
+    let mut uploaded_selection = None;
     let mut icons = basalgrim::icons::images::IconRasterizer::default();
     let mut previous_click: Option<(egui::Pos2, Instant)> = None;
     eframe::run_ui_native("Basalgrim · Molten-Zharr", options, move |root, _| {
@@ -108,18 +109,21 @@ fn run() -> Result<()> {
                 let backend = terminal.backend_mut();
                 if uploaded.as_ref() != Some(&backend.soft_backend.buffer)
                     || uploaded_icons != app.icon_slots
+                    || uploaded_selection != app.selection_area()
                 {
-                    let rgb =
-                        raster::compose_icons(&backend.soft_backend, &app.icon_slots, &mut icons)
-                            .unwrap_or_else(|error| {
-                                app.icon_backend = basalgrim::icons::IconBackend::Symbols;
-                                app.message(
-                                    format!("Не удалось отрисовать иконки: {error:#}"),
-                                    true,
-                                );
-                                ctx.request_repaint();
-                                backend.soft_backend.get_pixmap_data().to_vec()
-                            });
+                    let rgb = raster::compose_frame(
+                        &backend.soft_backend,
+                        &app.icon_slots,
+                        &mut icons,
+                        app.selection_area(),
+                        app.settings.appearance.palette()["selection_accent"],
+                    )
+                    .unwrap_or_else(|error| {
+                        app.icon_backend = basalgrim::icons::IconBackend::Symbols;
+                        app.message(format!("Не удалось отрисовать иконки: {error:#}"), true);
+                        ctx.request_repaint();
+                        backend.soft_backend.get_pixmap_data().to_vec()
+                    });
                     let image = egui::ColorImage::from_rgb(
                         [
                             backend.soft_backend.get_pixmap_width(),
@@ -138,6 +142,7 @@ fn run() -> Result<()> {
                     }
                     uploaded = Some(backend.soft_backend.buffer.clone());
                     uploaded_icons = app.icon_slots.clone();
+                    uploaded_selection = app.selection_area();
                 }
                 let image_size = egui::vec2(
                     backend.soft_backend.get_pixmap_width() as f32,
@@ -221,12 +226,38 @@ fn run() -> Result<()> {
                                 } else {
                                     Some((pos, Instant::now()))
                                 };
-                                app.handle(Input::Click {
+                                app.handle(Input::PointerDown {
                                     x,
                                     y,
                                     double,
                                     toggle: modifiers.ctrl,
                                 });
+                            }
+                        }
+                        egui::Event::PointerMoved(pos)
+                            if ctx.input(|i| i.pointer.primary_down()) =>
+                        {
+                            if let Some((x, y)) = to_cell(pos) {
+                                app.handle(Input::Drag { x, y });
+                                if app.selection_area().is_some() {
+                                    previous_click = None;
+                                }
+                            }
+                        }
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed: false,
+                            ..
+                        } => {
+                            if let Some((x, y)) = to_cell(pos) {
+                                app.handle(Input::Drag { x, y });
+                                if app.selection_area().is_some() {
+                                    previous_click = None;
+                                }
+                                app.handle(Input::PointerUp { x, y });
+                            } else {
+                                app.handle(Input::CancelDrag);
                             }
                         }
                         egui::Event::MouseWheel { delta, .. } => {
@@ -243,6 +274,7 @@ fn run() -> Result<()> {
                         }
                         egui::Event::PointerGone | egui::Event::WindowFocused(false) => {
                             previous_click = None;
+                            app.handle(Input::CancelDrag);
                             app.handle(Input::Pointer(None));
                         }
                         _ => {}

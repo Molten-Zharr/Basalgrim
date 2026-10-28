@@ -21,6 +21,8 @@ pub struct Tab {
     pub visible: Vec<usize>,
     pub selected: usize,
     pub marked: BTreeSet<PathBuf>,
+    /// An explicit set can be empty; keyboard focus still has a position.
+    pub explicit_selection: bool,
     pub filter: String,
     pub sort: Sort,
     pub back: Vec<PathBuf>,
@@ -41,6 +43,7 @@ impl Tab {
             visible: vec![],
             selected: 0,
             marked: BTreeSet::new(),
+            explicit_selection: false,
             filter: String::new(),
             sort: Sort::Name,
             back: vec![],
@@ -57,12 +60,19 @@ impl Tab {
         self.visible.get(self.selected).map(|&i| &self.entries[i])
     }
     pub fn targets(&self) -> Vec<PathBuf> {
-        if self.marked.is_empty() {
+        if self.marked.is_empty() && !self.explicit_selection {
             self.entry()
                 .map(|e| vec![e.path.clone()])
                 .unwrap_or_default()
         } else {
             self.marked.iter().cloned().collect()
+        }
+    }
+    pub fn selection_count(&self) -> usize {
+        if self.explicit_selection || !self.marked.is_empty() {
+            self.marked.len()
+        } else {
+            usize::from(self.entry().is_some())
         }
     }
     pub fn rebuild(&mut self, hidden: bool) {

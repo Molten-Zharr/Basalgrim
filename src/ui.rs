@@ -2,6 +2,7 @@ mod commands;
 mod dialogs;
 mod files;
 mod operations;
+mod selection;
 mod settings;
 pub mod theme;
 
@@ -52,6 +53,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     app.icon_slots.clear();
     let palette = Palette::new(&app.settings);
     render_content(app, frame, palette);
+    app.validate_marquee();
     // Use the same topmost hit region as clicking. Modal rendering has already
     // replaced background hits, so a covered control can never receive hover.
     if let Some(area) = app.hovered_area() {
@@ -64,6 +66,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
             }
         }
     }
+    selection::render(app, frame, palette);
     for slot in &mut app.icon_slots {
         if let ratatui::style::Color::Rgb(r, g, b) =
             frame.buffer_mut()[(slot.area.x, slot.area.y)].bg
@@ -76,6 +79,7 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     app.hits.clear();
     app.preview_area = Rect::default();
     app.pane_areas = [Rect::default(); 2];
+    app.file_areas = [Rect::default(); 2];
     if matches!(app.dialog, Some(crate::app::Dialog::Operations)) {
         operations::render(app, frame, palette);
         return;

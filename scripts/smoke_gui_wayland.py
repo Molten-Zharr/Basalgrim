@@ -164,8 +164,18 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             wait_for(lambda: (mouse / "moved/alpha.txt").exists(), "Wayland mouse Cut/Paste")
             assert not (mouse / "destination/alpha.txt").exists()
             run("grim", "-g", "0,0 1360x860", str(out / "native-wayland-mouse.png"))
+            # Hold the primary button across motion events in the file list.
+            key("l", "ctrl"); key("u", "ctrl"); run("wtype", "-s", "100", str(mouse), "-s", "100"); key("Return")
+            # Folder rows 11/12, file row 13: a rectangle selects both folders.
+            click(75,12,10); click(26,11,11)
+            run("grim", "-g", "0,0 1360x860", str(out / "native-wayland-selection.png"))
+            click(26,11,12)
+            destination = base / "wayland-selection"; destination.mkdir()
+            key("c", "ctrl"); navigate(destination); key("v", "ctrl")
+            wait_for(lambda: (destination / "destination").is_dir() and (destination / "moved/alpha.txt").exists(), "Wayland rectangle selects exactly both folders")
+            assert not (destination / "alpha.txt").exists()
             key("q", "ctrl"); process.wait(timeout=5); assert process.returncode == 0
-            print("Native Wayland: context-menu copy/cut/paste and double-click navigation passed", flush=True)
+            print("Native Wayland: context-menu copy/cut/paste, double click and rubber-band folder selection passed", flush=True)
             print("Verified binary:", binary, hashlib.sha256(binary.read_bytes()).hexdigest())
         except Exception:
             if process and process.poll() is None:

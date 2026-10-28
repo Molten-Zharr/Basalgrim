@@ -28,12 +28,8 @@ impl App {
             Some(Dialog::Commands(menu)) => menu.context,
             _ => MenuContext::All,
         };
-        let selection = self.tab().entry().is_some();
-        let count = if self.tab().marked.is_empty() {
-            usize::from(selection)
-        } else {
-            self.tab().marked.len()
-        };
+        let count = self.tab().selection_count();
+        let selection = count > 0;
         let actions: &[Action] = match context {
             MenuContext::Entries => &[Open, Copy, Cut, Rename, Trash],
             MenuContext::Directory => &[
@@ -113,11 +109,7 @@ impl App {
                 "ТЕКУЩАЯ ПАПКА".into()
             }
             Some(Dialog::Commands(menu)) if menu.context == MenuContext::Entries => {
-                let count = self
-                    .tab()
-                    .marked
-                    .len()
-                    .max(usize::from(self.tab().entry().is_some()));
+                let count = self.tab().selection_count();
                 if count > 1 {
                     format!("ВЫБРАНО: {count}")
                 } else if self.tab().entry().is_some_and(|e| e.directory) {

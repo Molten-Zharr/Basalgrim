@@ -128,6 +128,15 @@ def click(win, cx, cy, button=1):
     xt.XTestFakeButtonEvent(d, button, 1, 0); xt.XTestFakeButtonEvent(d, button, 0, 0)
     x.XFlush(d); time.sleep(.18)
 
+def band_begin(win, start, finish):
+    move(win,*start); xt.XTestFakeButtonEvent(d,1,1,0); x.XFlush(d); time.sleep(.12)
+    for step in range(1,5):
+        move(win, start[0]+(finish[0]-start[0])*step/4, start[1]+(finish[1]-start[1])*step/4)
+        time.sleep(.08)
+
+def band_end():
+    xt.XTestFakeButtonEvent(d,1,0,0); x.XFlush(d); time.sleep(.18)
+
 def wait_for(predicate, description):
     until = time.monotonic() + 6
     while not predicate():
@@ -297,6 +306,45 @@ try:
         except Exception:
             screenshot(window,'native-group-failure.png'); raise
         finally: stop(process,log)
+        band_files=base/'band'; band_files.mkdir(); (band_files/'destination').mkdir()
+        for name in ('alpha.txt','beta.txt','gamma.txt'): (band_files/name).write_text(name)
+        process,window,log=launch(band_files,config)
+        try:
+            band_begin(window,(76,13),(26,12)); screenshot(window,'native-selection-list.png'); band_end()
+            chord('c','Control_L'); navigate(band_files/'destination'); chord('v','Control_L')
+            wait_for(lambda:all((band_files/'destination'/n).exists() for n in ('alpha.txt','beta.txt')),'list rectangle copy')
+            assert not (band_files/'destination/gamma.txt').exists()
+            navigate(band_files)
+            band_begin(window,(76,13),(26,12)); band_end()
+            key('Control_L',True); band_begin(window,(76,14),(26,14)); band_end(); key('Control_L',False)
+            screenshot(window,'native-selection-ctrl.png')
+            all_files=base/'band-all'; all_files.mkdir()
+            chord('c','Control_L'); navigate(all_files); chord('v','Control_L')
+            wait_for(lambda:all((all_files/n).exists() for n in ('alpha.txt','beta.txt','gamma.txt')),'Ctrl additive rectangle')
+            navigate(band_files); band_begin(window,(76,13),(26,12)); band_end()
+            band_begin(window,(76,14),(26,14)); key('Escape'); band_end()
+            cancelled=base/'band-cancelled'; cancelled.mkdir()
+            chord('c','Control_L'); navigate(cancelled); chord('v','Control_L')
+            wait_for(lambda:all((cancelled/n).exists() for n in ('alpha.txt','beta.txt')),'Escape restores original rectangle selection')
+            assert not (cancelled/'gamma.txt').exists()
+            navigate(band_files); chord('g','Control_L'); time.sleep(.25)
+            band_begin(window,(78,15),(44,10))
+            rectangle=screenshot(window,'native-selection-grid.png')
+            # The thin image-backend outline stays above SVG icons.
+            left,top,right,bottom=44*8,10*16,79*8-1,16*16-1
+            accent=rectangle.getpixel((left,top))
+            assert all(rectangle.getpixel((px,top))==accent and rectangle.getpixel((px,bottom))==accent for px in range(left,right+1)), 'Broken horizontal selection outline'
+            assert all(rectangle.getpixel((left,py))==accent and rectangle.getpixel((right,py))==accent for py in range(top,bottom+1)), 'Broken vertical selection outline'
+            band_end(); chord('c','Control_L')
+            grid_copy=base/'band-grid'; grid_copy.mkdir(); navigate(grid_copy); chord('v','Control_L')
+            wait_for(lambda:all((grid_copy/n).exists() for n in ('alpha.txt','beta.txt')),'grid rectangle copy')
+            assert not (grid_copy/'gamma.txt').exists()
+            print('Native GUI: grid/list rubber band, outline above SVG, Ctrl addition, Escape cancellation and exact copied sets passed',flush=True)
+        except Exception:
+            screenshot(window,'native-selection-failure.png'); raise
+        finally: stop(process,log)
+        # Reset the persisted grid mode for the remaining scenario.
+        preferences['grid']=False; settings.write_text(json.dumps(preferences))
         operations=base/'operations'; operations.mkdir()
         op_destination=base/'op-destination'; op_destination.mkdir()
         large=operations/'large.bin'

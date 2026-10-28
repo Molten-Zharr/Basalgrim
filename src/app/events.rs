@@ -4,6 +4,49 @@ use ratatui::layout::Position;
 
 impl App {
     pub fn handle(&mut self, input: Input) {
+        match input {
+            Input::PointerDown {
+                x,
+                y,
+                double,
+                toggle,
+            } => {
+                self.primary_down(x, y, double, toggle);
+                return;
+            }
+            Input::Drag { x, y } => {
+                self.drag_selection(x, y);
+                return;
+            }
+            Input::PointerUp { x, y } => {
+                self.drag_selection(x, y);
+                self.finish_marquee(false);
+                return;
+            }
+            Input::CancelDrag => {
+                self.finish_marquee(true);
+                return;
+            }
+            _ => {}
+        }
+        if matches!(
+            input,
+            Input::Key(_) | Input::SecondaryClick { .. } | Input::Scroll { .. }
+        ) {
+            if self.marquee.is_some()
+                && matches!(
+                    input,
+                    Input::Key(KeyPress {
+                        key: Key::Escape,
+                        ..
+                    })
+                )
+            {
+                self.finish_marquee(true);
+                return;
+            }
+            self.finish_marquee(false);
+        }
         if let Input::Click { x, y, .. }
         | Input::SecondaryClick { x, y }
         | Input::Scroll { x, y, .. } = &input
@@ -39,6 +82,7 @@ impl App {
                         .is_some_and(|e| !self.tab().marked.contains(&e.path))
                     {
                         self.tab_mut().marked.clear();
+                        self.tab_mut().explicit_selection = false;
                     }
                     self.open_commands(point, MenuContext::Entries);
                 } else if let Some(pane) = self.pane_areas.iter().position(|r| r.contains(point)) {
@@ -133,6 +177,10 @@ impl App {
                     }
                     Some(Target::Entry { pane, index }) => {
                         self.active = pane;
+                        if !toggle && self.tab().explicit_selection {
+                            self.tab_mut().marked.clear();
+                            self.tab_mut().explicit_selection = false;
+                        }
                         self.tab_mut().selected = index;
                         if toggle {
                             self.toggle_mark();
@@ -247,6 +295,10 @@ impl App {
     }
     fn move_selection(&mut self, delta: isize) {
         let tab = self.tab_mut();
+        if tab.explicit_selection {
+            tab.marked.clear();
+            tab.explicit_selection = false;
+        }
         tab.selected = tab
             .selected
             .saturating_add_signed(delta)
@@ -353,8 +405,8 @@ impl App {
             Key::Down => self.move_selection(columns),
             Key::Left if self.settings.grid => self.move_selection(-1),
             Key::Right if self.settings.grid => self.move_selection(1),
-            Key::Home => self.tab_mut().selected = 0,
-            Key::End => self.tab_mut().selected = self.tab().visible.len().saturating_sub(1),
+            Key::Home => self.move_selection(isize::MIN),
+            Key::End => self.move_selection(isize::MAX),
             Key::PageUp => self.move_selection(-(self.tab().page_size as isize)),
             Key::PageDown => self.move_selection(self.tab().page_size as isize),
             Key::Escape => {

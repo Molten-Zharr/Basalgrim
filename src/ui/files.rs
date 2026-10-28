@@ -139,8 +139,18 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette
         return;
     }
     if app.settings.grid {
+        app.set_file_area(pane, parts[3]);
         grid(app, frame, parts[3], pane, palette);
     } else {
+        app.set_file_area(
+            pane,
+            Rect::new(
+                parts[3].x,
+                parts[3].y + 1,
+                parts[3].width,
+                parts[3].height.saturating_sub(1),
+            ),
+        );
         list(app, frame, parts[3], pane, palette);
     }
     let tab = app.panes[pane].tab();
@@ -151,7 +161,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette
             tab.entries[i].size
         })
     });
-    let footer = if tab.marked.is_empty() {
+    let footer = if tab.marked.is_empty() && !tab.explicit_selection {
         format!(
             " {} / {}   ·   {}",
             if tab.visible.is_empty() {
@@ -252,9 +262,10 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
             5.min(area.height.saturating_sub((row * 5) as u16)),
         );
         let entry = &app.panes[pane].tab().entries[app.panes[pane].tab().visible[index]];
-        let selected = app.panes[pane].tab().selected == index;
+        let selected =
+            app.panes[pane].tab().selected == index && !app.panes[pane].tab().explicit_selection;
         let marked = app.panes[pane].tab().marked.contains(&entry.path);
-        let base = if selected {
+        let base = if selected || marked {
             palette.selection()
         } else {
             palette.text()
@@ -350,7 +361,9 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
     let mut rendered = vec![];
     for index in start..(start + rows).min(tab.visible.len()) {
         let entry = &tab.entries[tab.visible[index]];
-        let base = if tab.selected == index {
+        let base = if (tab.selected == index && !tab.explicit_selection)
+            || tab.marked.contains(&entry.path)
+        {
             palette.selection()
         } else {
             palette.text()

@@ -36,6 +36,21 @@ impl App {
         if self.dialog.is_some() {
             return;
         }
+        if self.tab().explicit_selection && matches!(action, Action::Open | Action::Rename) {
+            if self.tab().marked.len() != 1 {
+                return;
+            }
+            let path = self.tab().marked.first().unwrap();
+            let Some(index) = self
+                .tab()
+                .visible
+                .iter()
+                .position(|&i| self.tab().entries[i].path == *path)
+            else {
+                return;
+            };
+            self.tab_mut().selected = index;
+        }
         match action {
             Action::Back => {
                 if let Some(path) = self.tab_mut().back.pop() {
@@ -171,6 +186,7 @@ impl App {
             }
             Action::SelectAll => {
                 let tab = self.tab_mut();
+                tab.explicit_selection = true;
                 tab.marked = tab
                     .visible
                     .iter()

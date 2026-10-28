@@ -87,6 +87,21 @@ pub enum Input {
     Pointer(Option<ratatui::layout::Position>),
     Key(KeyPress),
     Text(String),
+    PointerDown {
+        x: u16,
+        y: u16,
+        double: bool,
+        toggle: bool,
+    },
+    Drag {
+        x: u16,
+        y: u16,
+    },
+    PointerUp {
+        x: u16,
+        y: u16,
+    },
+    CancelDrag,
     SecondaryClick {
         x: u16,
         y: u16,

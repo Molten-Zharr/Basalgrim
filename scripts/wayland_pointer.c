@@ -43,9 +43,12 @@ int main(void) {
         zwlr_virtual_pointer_v1_frame(pointer);
         if (wl_display_roundtrip(display) < 0) return 4;
         usleep(50000);  /* pointer enter must precede the first button event */
+        /* 10/11/12 hold, move and release for a genuine drag sequence. */
         uint32_t code = button == 3 ? 0x111 : 0x110; /* Linux BTN_RIGHT/LEFT */
-        zwlr_virtual_pointer_v1_button(pointer, 0, code, WL_POINTER_BUTTON_STATE_PRESSED);
-        zwlr_virtual_pointer_v1_button(pointer, 0, code, WL_POINTER_BUTTON_STATE_RELEASED);
+        if (button != 11 && button != 12)
+            zwlr_virtual_pointer_v1_button(pointer, 0, code, WL_POINTER_BUTTON_STATE_PRESSED);
+        if (button != 10 && button != 11)
+            zwlr_virtual_pointer_v1_button(pointer, 0, code, WL_POINTER_BUTTON_STATE_RELEASED);
         zwlr_virtual_pointer_v1_frame(pointer);
         if (wl_display_roundtrip(display) < 0) return 5;
         puts("clicked"); fflush(stdout);

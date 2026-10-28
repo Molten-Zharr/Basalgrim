@@ -124,12 +124,25 @@ fn run() -> Result<()> {
                         } else {
                             Some(((x, y), Instant::now()))
                         };
-                        app.handle(Input::Click {
+                        app.handle(Input::PointerDown {
                             x,
                             y,
                             double,
                             toggle: mouse.modifiers.contains(KeyModifiers::CONTROL),
                         });
+                    }
+                    MouseEventKind::Drag(MouseButton::Left) => {
+                        app.handle(Input::Drag { x, y });
+                        if app.selection_area().is_some() {
+                            previous_click = None;
+                        }
+                    }
+                    MouseEventKind::Up(MouseButton::Left) => {
+                        app.handle(Input::Drag { x, y });
+                        if app.selection_area().is_some() {
+                            previous_click = None;
+                        }
+                        app.handle(Input::PointerUp { x, y });
                     }
                     MouseEventKind::Down(MouseButton::Right) => {
                         previous_click = None;
@@ -140,7 +153,10 @@ fn run() -> Result<()> {
                     _ => {}
                 }
             }
-            Event::FocusLost => app.handle(Input::Pointer(None)),
+            Event::FocusLost => {
+                app.handle(Input::CancelDrag);
+                app.handle(Input::Pointer(None));
+            }
             Event::Resize(_, _) => {
                 if let Some(icons) = &mut icons
                     && let Ok(size) = crossterm::terminal::window_size()

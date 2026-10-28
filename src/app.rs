@@ -3,6 +3,7 @@ mod commands;
 pub use commands::{CommandItem, CommandMenu, MenuContext};
 mod events;
 mod operations;
+mod selection;
 mod settings;
 pub use settings::{
     SettingControl, SettingRow, SettingsEdit, SettingsFocus, SettingsSection, SettingsTab,
@@ -129,6 +130,8 @@ pub struct App {
     pub pointer: Option<Position>,
     pub preview_area: Rect,
     pub pane_areas: [Rect; 2],
+    pub file_areas: [Rect; 2],
+    marquee: Option<selection::Marquee>,
     pub operation_count: usize,
     pub operations: std::collections::VecDeque<crate::operations::OperationRecord>,
     pub operations_selected: usize,
@@ -203,6 +206,8 @@ impl App {
             pointer: None,
             preview_area: Rect::default(),
             pane_areas: [Rect::default(); 2],
+            file_areas: [Rect::default(); 2],
+            marquee: None,
             operation_count: 0,
             operations: Default::default(),
             operations_selected: 0,
@@ -235,6 +240,9 @@ impl App {
     }
     /// Resolve against this frame's active hit regions, including modal overlays.
     pub fn hovered_area(&self) -> Option<Rect> {
+        if self.selection_area().is_some() {
+            return None;
+        }
         let pointer = self.pointer?;
         self.hits
             .iter()
@@ -280,6 +288,7 @@ impl App {
         tab.entries.clear();
         tab.visible.clear();
         tab.marked.clear();
+        tab.explicit_selection = false;
         tab.filter.clear();
         tab.selected = 0;
         tab.offset = 0;
@@ -287,6 +296,7 @@ impl App {
         self.update_preview();
     }
     pub fn tick(&mut self) {
+        self.validate_marquee();
         if let Some((token, progress)) = self.worker.take_progress() {
             self.accept_operation_progress(token, progress);
         }

@@ -41,10 +41,12 @@ fn render(app: &mut App, out: &Path, name: &str, width: u16, height: u16) -> Res
         backend.get_pixmap_width(),
         backend.get_pixmap_height()
     )?;
-    file.write_all(&raster::compose_icons(
+    file.write_all(&raster::compose_frame(
         backend,
         &app.icon_slots,
         &mut Default::default(),
+        app.selection_area(),
+        app.settings.appearance.palette()["selection_accent"],
     )?)?;
     Ok(())
 }
@@ -105,6 +107,36 @@ fn main() -> Result<()> {
     });
     render(&mut app, &out, "context-menu", 150, 44)?;
     app.cancel_dialog();
+    render(&mut app, &out, "grid", 150, 44)?;
+    let first = app
+        .hits
+        .iter()
+        .find_map(|(area, target)| {
+            matches!(target, Target::Entry { pane: 0, index: 0 }).then_some(*area)
+        })
+        .unwrap();
+    let second = app
+        .hits
+        .iter()
+        .find_map(|(area, target)| {
+            matches!(target, Target::Entry { pane: 0, index: 1 }).then_some(*area)
+        })
+        .unwrap();
+    app.handle(Input::PointerDown {
+        x: second.right() - 1,
+        y: second.bottom() - 1,
+        double: false,
+        toggle: false,
+    });
+    app.handle(Input::Drag {
+        x: first.x,
+        y: first.y,
+    });
+    render(&mut app, &out, "selection-grid", 150, 44)?;
+    app.handle(Input::CancelDrag);
+    app.tab_mut().selected = index;
+    app.update_preview();
+    settle(&mut app)?;
     render(&mut app, &out, "grid", 150, 44)?;
     let hover = app
         .hits

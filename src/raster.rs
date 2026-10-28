@@ -59,6 +59,39 @@ pub fn backend(size: u16, columns: u16, rows: u16) -> SoftBackend<CellFont> {
 }
 
 /// Composite onto a copy: the cached terminal raster remains clean between frames.
+pub fn compose_frame(
+    backend: &SoftBackend<CellFont>,
+    slots: &[crate::icons::IconSlot],
+    icons: &mut crate::icons::images::IconRasterizer,
+    selection: Option<ratatui::layout::Rect>,
+    accent: [u8; 3],
+) -> anyhow::Result<Vec<u8>> {
+    let mut rgb = compose_icons(backend, slots, icons)?;
+    if let Some(area) = selection {
+        let area = area.intersection(backend.buffer.area);
+        if !area.is_empty() {
+            let width = backend.get_pixmap_width();
+            let left = usize::from(area.x) * backend.char_width;
+            let right = usize::from(area.right()) * backend.char_width - 1;
+            let top = usize::from(area.y) * backend.char_height;
+            let bottom = usize::from(area.bottom()) * backend.char_height - 1;
+            let mut pixel = |x: usize, y: usize| {
+                let i = (y * width + x) * 3;
+                rgb[i..i + 3].copy_from_slice(&accent);
+            };
+            for x in left..=right {
+                pixel(x, top);
+                pixel(x, bottom);
+            }
+            for y in top..=bottom {
+                pixel(left, y);
+                pixel(right, y);
+            }
+        }
+    }
+    Ok(rgb)
+}
+
 pub fn compose_icons(
     backend: &SoftBackend<CellFont>,
     slots: &[crate::icons::IconSlot],
