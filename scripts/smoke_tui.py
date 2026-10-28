@@ -24,10 +24,13 @@ def main():
         destination = folder / "destination"
         destination.mkdir()
         (folder / "alpha.txt").write_text("Basalgrim smoke test\n")
-        config, data = sandbox / "config", sandbox / "data"
+        config, data, home = sandbox / "config", sandbox / "data", sandbox / "home"
         config.mkdir()
         data.mkdir()
-        env = dict(os.environ, TERM="xterm-256color", XDG_CONFIG_HOME=str(config), XDG_DATA_HOME=str(data))
+        home.mkdir()
+        # GLib chooses home-trash by comparing the source's filesystem to HOME,
+        # not XDG_DATA_HOME. CI can mount the runner home separately from /tmp.
+        env = dict(os.environ, TERM="xterm-256color", HOME=str(home), GIO_USE_VFS="local", XDG_CONFIG_HOME=str(config), XDG_DATA_HOME=str(data))
         env.pop("NO_COLOR", None)  # Exercise actual color updates in the isolated test terminal.
         for name in ("TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION"):
             env.pop(name, None)
@@ -152,7 +155,11 @@ def main():
             assert child.returncode == 0
             print("TUI PTY smoke passed: hover/focus loss, files, isolated trash, settings, restart, resize, terminal restore")
         except BaseException:
-            print(output[-3000:].decode(errors="replace"), file=sys.stderr)
+            import re
+            # Drop repetitive terminal controls so the actual operation error
+            # remains visible when a later timeout is reported by CI.
+            readable = re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]", b"", output)
+            print(readable[-12000:].decode(errors="replace"), file=sys.stderr)
             raise
         finally:
             if child.poll() is None:
