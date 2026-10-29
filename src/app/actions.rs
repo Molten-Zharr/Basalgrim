@@ -95,6 +95,7 @@ impl App {
             Action::Grid => {
                 self.settings.grid = !self.settings.grid;
                 self.tab_mut().offset = 0;
+                self.tab_mut().follow_selection = true;
                 self.preferences_changed();
             }
             Action::Dual => {
@@ -111,6 +112,7 @@ impl App {
             Action::Hidden => {
                 self.settings.hidden = !self.settings.hidden;
                 for tab in self.panes.iter_mut().flat_map(|p| &mut p.tabs) {
+                    tab.follow_selection = true;
                     tab.rebuild(self.settings.hidden);
                 }
                 self.preferences_changed();
@@ -119,6 +121,7 @@ impl App {
                 let hidden = self.settings.hidden;
                 let tab = self.tab_mut();
                 tab.sort = tab.sort.next();
+                tab.follow_selection = true;
                 tab.rebuild(hidden);
             }
             Action::Copy | Action::Cut => {
@@ -257,6 +260,7 @@ impl App {
         }) = self.dialog.take()
         {
             self.tab_mut().filter = original;
+            self.tab_mut().follow_selection = true;
             let hidden = self.settings.hidden;
             self.tab_mut().rebuild(hidden);
             self.update_preview();

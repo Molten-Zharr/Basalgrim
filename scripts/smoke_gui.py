@@ -345,6 +345,44 @@ try:
         finally: stop(process,log)
         # Reset the persisted grid mode for the remaining scenario.
         preferences['grid']=False; settings.write_text(json.dumps(preferences))
+        wheel_files=base/'wheel'; wheel_files.mkdir()
+        for index in range(100): (wheel_files/f'file-{index:03}.txt').write_text(f'File {index}\n')
+        for grid in (False,True):
+            mode='grid' if grid else 'list'
+            preferences['grid']=grid; settings.write_text(json.dumps(preferences))
+            process,window,log=launch(wheel_files,config)
+            try:
+                move(window,50,20); time.sleep(.2)
+                before=screenshot(window,f'native-wheel-{grid}-before.png')
+                notches=1 if grid else 3
+                for _ in range(notches): click(window,50,20,5)
+                after=screenshot(window,f'native-wheel-{grid}-after.png')
+                top=(200,10*16,1000,14*16)
+                assert before.crop(top).tobytes()!=after.crop(top).tobytes(), 'Wheel did not scroll file contents'
+                protected=base/f'wheel-protected-{mode}'; protected.mkdir()
+                chord('c','Control_L'); navigate(protected); chord('v','Control_L')
+                wait_for(lambda:(protected/'file-000.txt').exists(),'wheel preserves original keyboard selection')
+                assert sorted(p.name for p in protected.iterdir())==['file-000.txt']
+                navigate(wheel_files)
+                for _ in range(notches): click(window,50,20,5)
+                click(window,34,12 if grid else 11)
+                # XTest emits legacy wheel press/release pairs; winit maps
+                # both to wheel events. Wayland and PTY test one event per notch.
+                expected=f'file-{16 if grid else 18:03}.txt'
+                clicked=base/f'wheel-clicked-{mode}'; clicked.mkdir()
+                chord('c','Control_L'); navigate(clicked); chord('v','Control_L')
+                wait_for(lambda:(clicked/expected).exists(),'click resolves the newly scrolled first entry')
+                if not grid:
+                    navigate(wheel_files)
+                    for _ in range(3): click(window,50,20,5)
+                    key('Down'); chord('c','Control_L')
+                    keyboard=base/'wheel-keyboard'; keyboard.mkdir(); navigate(keyboard); chord('v','Control_L')
+                    wait_for(lambda:(keyboard/'file-001.txt').exists(),'keyboard navigation continues from the preserved focus')
+                print(f'Native GUI wheel: {"grid" if grid else "list"}, content scroll, unchanged selection, correct visible entry and keyboard focus passed',flush=True)
+            except Exception:
+                screenshot(window,'native-wheel-failure.png'); raise
+            finally: stop(process,log)
+        preferences['grid']=False; settings.write_text(json.dumps(preferences))
         operations=base/'operations'; operations.mkdir()
         op_destination=base/'op-destination'; op_destination.mkdir()
         large=operations/'large.bin'

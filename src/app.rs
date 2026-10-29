@@ -292,6 +292,7 @@ impl App {
         tab.filter.clear();
         tab.selected = 0;
         tab.offset = 0;
+        tab.follow_selection = true;
         self.refresh();
         self.update_preview();
     }

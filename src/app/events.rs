@@ -255,15 +255,17 @@ impl App {
                         .preview_offset
                         .saturating_add_signed(delta as isize * 3)
                         .min(max);
-                } else {
-                    if let Some((_, Target::Entry { pane, .. })) =
-                        self.hits.iter().find(|(r, t)| {
-                            r.contains(Position::new(x, y)) && matches!(t, Target::Entry { .. })
-                        })
-                    {
-                        self.active = *pane;
-                    }
-                    self.move_selection(delta as isize * self.tab().columns as isize);
+                } else if delta != 0
+                    && let Some(pane) = self
+                        .pane_areas
+                        .iter()
+                        .position(|r| r.contains(Position::new(x, y)))
+                    && !self.file_areas[pane].is_empty()
+                {
+                    let step = if self.settings.grid { 1 } else { 3 };
+                    self.panes[pane]
+                        .tab_mut()
+                        .scroll_rows((delta as isize).saturating_mul(step));
                 }
             }
             _ => {}
@@ -289,12 +291,14 @@ impl App {
         }) = &self.dialog
         {
             self.panes[self.active].tab_mut().filter = text.clone();
+            self.tab_mut().follow_selection = true;
             let hidden = self.settings.hidden;
             self.tab_mut().rebuild(hidden);
         }
     }
     fn move_selection(&mut self, delta: isize) {
         let tab = self.tab_mut();
+        tab.follow_selection = true;
         if tab.explicit_selection {
             tab.marked.clear();
             tab.explicit_selection = false;

@@ -31,6 +31,8 @@ pub struct Tab {
     pub error: Option<String>,
     pub request: u64,
     pub offset: usize,
+    /// Keyboard navigation reveals focus; wheel scrolling controls only the viewport.
+    pub follow_selection: bool,
     pub columns: usize,
     pub page_size: usize,
 }
@@ -52,6 +54,7 @@ impl Tab {
             error: None,
             request: 0,
             offset: 0,
+            follow_selection: true,
             columns: 1,
             page_size: 10,
         }
@@ -74,6 +77,18 @@ impl Tab {
         } else {
             usize::from(self.entry().is_some())
         }
+    }
+    pub fn scroll_rows(&mut self, rows: isize) {
+        let columns = self.columns.max(1);
+        let page_rows = (self.page_size / columns).max(1);
+        let max = self
+            .visible
+            .len()
+            .div_ceil(columns)
+            .saturating_sub(page_rows);
+        let top = (self.offset / columns).saturating_add_signed(rows).min(max);
+        self.offset = top * columns;
+        self.follow_selection = false;
     }
     pub fn rebuild(&mut self, hidden: bool) {
         let selected = self.entry().map(|e| e.path.clone());

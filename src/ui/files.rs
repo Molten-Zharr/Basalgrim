@@ -233,11 +233,13 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
     tab.page_size = count;
     let selected_row = tab.selected / columns;
     let mut top_row = tab.offset / columns;
-    if selected_row < top_row {
-        top_row = selected_row;
-    }
-    if selected_row >= top_row + rows {
-        top_row = selected_row + 1 - rows;
+    if tab.follow_selection {
+        if selected_row < top_row {
+            top_row = selected_row;
+        }
+        if selected_row >= top_row + rows {
+            top_row = selected_row + 1 - rows;
+        }
     }
     top_row = top_row.min(tab.visible.len().div_ceil(columns).saturating_sub(rows));
     tab.offset = top_row * columns;
@@ -350,11 +352,13 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
     if rows == 0 {
         return;
     }
-    if tab.selected < tab.offset {
-        tab.offset = tab.selected;
-    }
-    if tab.selected >= tab.offset + rows {
-        tab.offset = tab.selected + 1 - rows;
+    if tab.follow_selection {
+        if tab.selected < tab.offset {
+            tab.offset = tab.selected;
+        }
+        if tab.selected >= tab.offset + rows {
+            tab.offset = tab.selected + 1 - rows;
+        }
     }
     tab.offset = tab.offset.min(tab.visible.len().saturating_sub(rows));
     let start = tab.offset;

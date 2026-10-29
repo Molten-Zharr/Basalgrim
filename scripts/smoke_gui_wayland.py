@@ -176,6 +176,22 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             assert not (destination / "alpha.txt").exists()
             key("q", "ctrl"); process.wait(timeout=5); assert process.returncode == 0
             print("Native Wayland: context-menu copy/cut/paste, double click and rubber-band folder selection passed", flush=True)
+            files=base/"wheel"; files.mkdir()
+            for index in range(100): (files/f"file-{index:03}.txt").write_text(str(index))
+            process=launch(files)
+            for _ in range(3): click(50,20,21)
+            protected=base/"wheel-protected"; protected.mkdir()
+            key("c","ctrl"); navigate(protected); key("v","ctrl")
+            wait_for(lambda:(protected/"file-000.txt").exists(),"Wayland wheel preserves keyboard selection")
+            assert sorted(p.name for p in protected.iterdir())==["file-000.txt"]
+            navigate(files)
+            for _ in range(3): click(50,20,21)
+            click(34,11)
+            clicked=base/"wheel-clicked"; clicked.mkdir()
+            key("c","ctrl"); navigate(clicked); key("v","ctrl")
+            wait_for(lambda:(clicked/"file-009.txt").exists(),"Wayland wheel moves the actual viewport")
+            key("q","ctrl"); process.wait(timeout=5); assert process.returncode==0
+            print("Native Wayland: wheel scrolls content, preserves selection and updates visible hit regions passed",flush=True)
             print("Verified binary:", binary, hashlib.sha256(binary.read_bytes()).hexdigest())
         except Exception:
             if process and process.poll() is None:

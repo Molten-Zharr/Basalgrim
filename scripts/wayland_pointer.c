@@ -43,6 +43,16 @@ int main(void) {
         zwlr_virtual_pointer_v1_frame(pointer);
         if (wl_display_roundtrip(display) < 0) return 4;
         usleep(50000);  /* pointer enter must precede the first button event */
+        if (button == 20 || button == 21) {
+            int direction = button == 20 ? -1 : 1;
+            zwlr_virtual_pointer_v1_axis_source(pointer, WL_POINTER_AXIS_SOURCE_WHEEL);
+            zwlr_virtual_pointer_v1_axis_discrete(pointer, 0, WL_POINTER_AXIS_VERTICAL_SCROLL,
+                                                wl_fixed_from_int(direction * 15), direction);
+            zwlr_virtual_pointer_v1_frame(pointer);
+            if (wl_display_roundtrip(display) < 0) return 6;
+            puts("clicked"); fflush(stdout);
+            continue;
+        }
         /* 10/11/12 hold, move and release for a genuine drag sequence. */
         uint32_t code = button == 3 ? 0x111 : 0x110; /* Linux BTN_RIGHT/LEFT */
         if (button != 11 && button != 12)
