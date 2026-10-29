@@ -278,6 +278,30 @@ fn main() -> Result<()> {
     app.operations_selected = 1;
     render(&mut app, &out, "operations", 120, 36)?;
     render(&mut app, &out, "operations-compact", 50, 18)?;
+    let mut partial = basalgrim::operations::OperationRecord::new(1000, "Перемещение".into(), 1);
+    partial.destination = Some("/media/External".into());
+    partial.finish(basalgrim::fs::Report {
+        total: 1,
+        cancelled: true,
+        retained_copies: vec![basalgrim::fs::RetainedCopy {
+            source: "/home/user/Documents/Research".into(),
+            destination: "/media/External/Research".into(),
+            recovery: None,
+        }],
+        progress: basalgrim::operations::Progress {
+            bytes_done: 48 * 1024 * 1024,
+            bytes_total: Some(48 * 1024 * 1024),
+            entries_done: 24,
+            entries_total: Some(24),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    partial.elapsed = Some(Duration::from_secs(12));
+    app.operations.push_front(partial);
+    app.operations_selected = 0;
+    app.operations_detail_offset = 0;
+    render(&mut app, &out, "operations-partial", 120, 36)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

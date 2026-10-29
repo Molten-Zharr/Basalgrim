@@ -199,6 +199,19 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             key("q","ctrl"); process.wait(timeout=5); assert process.returncode==0
             print("Native Wayland: wheel scrolls content, preserves selection and updates visible hit regions passed",flush=True)
             print("Native Wayland: external create preserves viewport pixels and selected path passed",flush=True)
+            cross_source=base/"cross-source"; cross_source.mkdir()
+            (cross_source/"folder").mkdir(); (cross_source/"folder/data").write_text("folder payload")
+            (cross_source/"payload.txt").write_text("file payload")
+            with tempfile.TemporaryDirectory(prefix="basalgrim-wayland-move-",dir="/dev/shm") as remote:
+                cross_destination=Path(remote)
+                assert cross_source.stat().st_dev!=cross_destination.stat().st_dev
+                process=launch(cross_source)
+                key("a","ctrl"); key("x","ctrl"); navigate(cross_destination); key("v","ctrl")
+                wait_for(lambda:not list(cross_source.iterdir()) and (cross_destination/"payload.txt").exists(),"Wayland cross-device cut/paste")
+                assert (cross_destination/"folder/data").read_text()=="folder payload"
+                assert (cross_destination/"payload.txt").read_text()=="file payload"
+                key("q","ctrl"); process.wait(timeout=5); assert process.returncode==0
+                print("Native Wayland: cross-device file/directory move passed",flush=True)
             print("Verified binary:", binary, hashlib.sha256(binary.read_bytes()).hexdigest())
         except Exception:
             if process and process.poll() is None:

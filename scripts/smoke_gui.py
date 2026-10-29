@@ -431,6 +431,24 @@ try:
         except Exception:
             screenshot(window,'native-operations-failure.png'); raise
         finally: stop(process,log)
+        cross_source=base/'cross-source'; cross_source.mkdir()
+        (cross_source/'folder').mkdir(); (cross_source/'folder/data').write_text('folder payload')
+        (cross_source/'payload.txt').write_text('file payload')
+        with tempfile.TemporaryDirectory(prefix='basalgrim-gui-move-',dir='/dev/shm') as remote:
+            cross_destination=Path(remote)
+            assert cross_source.stat().st_dev!=cross_destination.stat().st_dev
+            process,window,log=launch(cross_source,config)
+            try:
+                chord('a','Control_L'); chord('x','Control_L'); navigate(cross_destination); chord('v','Control_L')
+                wait_for(lambda:not list(cross_source.iterdir()) and (cross_destination/'payload.txt').exists(),'native cross-device move')
+                assert (cross_destination/'folder/data').read_text()=='folder payload'
+                assert (cross_destination/'payload.txt').read_text()=='file payload'
+                key('F6'); screenshot(window,'native-cross-device-move.png')
+                chord('q','Control_L'); process.wait(timeout=5); assert process.returncode==0
+                print('Native GUI: cross-device cut/paste of files and directories passed',flush=True)
+            except Exception:
+                screenshot(window,'native-cross-device-failure.png'); raise
+            finally: stop(process,log)
     print('Verified binary:', binary, hashlib.sha256(binary.read_bytes()).hexdigest(), flush=True)
 finally:
     x.XCloseDisplay(d)

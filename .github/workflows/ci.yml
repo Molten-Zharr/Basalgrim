@@ -18,6 +18,7 @@ jobs:
       - run: python3 scripts/smoke_selection.py
       - run: python3 scripts/smoke_scroll.py
       - run: python3 scripts/smoke_watch.py
+      - run: python3 scripts/smoke_move.py
       - run: cargo run --locked --example preview
       - uses: actions/upload-artifact@v4
         with:

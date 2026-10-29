@@ -58,10 +58,12 @@ pub fn status(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
         area.width.saturating_sub(width + 1),
         area.height,
     );
-    let text = if record.progress.phase == Phase::Preparing {
-        "Подготовка…".into()
-    } else {
-        summary(record)
+    let text = match record.progress.phase {
+        Phase::Preparing => "Подготовка…".into(),
+        Phase::Verifying | Phase::RemovingSource => {
+            format!("{} · {}", record.status(), summary(record))
+        }
+        _ => summary(record),
     };
     progress_bar(frame, bar, record.progress.fraction(), text, palette);
     hit(app, bar, Target::Action(Action::Operations));
@@ -215,6 +217,26 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
                 format!(" {}", fs::clean(error)),
                 palette.text().fg(palette.color("error")),
             ));
+        }
+        for copy in &record.retained_copies {
+            lines.push(Line::styled(
+                " Копия создана; перенос не завершён:",
+                palette.accent(),
+            ));
+            lines.push(Line::raw(format!(
+                "  Копия: {}",
+                fs::clean(&copy.destination.to_string_lossy())
+            )));
+            lines.push(Line::raw(format!(
+                "  Источник: {}",
+                fs::clean(&copy.source.to_string_lossy())
+            )));
+            if let Some(path) = &copy.recovery {
+                lines.push(Line::raw(format!(
+                    "  Остаток исходника: {}",
+                    fs::clean(&path.to_string_lossy())
+                )));
+            }
         }
         if !record.completed_paths.is_empty() {
             lines.push(Line::styled(" Завершённые элементы:", palette.accent()));

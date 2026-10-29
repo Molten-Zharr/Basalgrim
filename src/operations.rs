@@ -25,6 +25,8 @@ pub enum Phase {
     #[default]
     Preparing,
     Running,
+    Verifying,
+    RemovingSource,
     CleaningUp,
     Finished,
 }
@@ -71,6 +73,7 @@ pub struct OperationRecord {
     pub cancelled: bool,
     pub error: Option<String>,
     pub completed_paths: Vec<PathBuf>,
+    pub retained_copies: Vec<crate::fs::RetainedCopy>,
 }
 impl OperationRecord {
     pub fn new(id: u64, title: String, items_total: usize) -> Self {
@@ -88,6 +91,7 @@ impl OperationRecord {
             cancelled: false,
             error: None,
             completed_paths: Vec::new(),
+            retained_copies: Vec::new(),
         }
     }
     pub fn finish(&mut self, report: Report) {
@@ -99,6 +103,7 @@ impl OperationRecord {
         self.cancelled = report.cancelled;
         self.error = report.error;
         self.completed_paths = report.completed;
+        self.retained_copies = report.retained_copies;
     }
     pub fn status(&self) -> &'static str {
         if self.elapsed.is_some() {
@@ -115,6 +120,10 @@ impl OperationRecord {
             "Отмена…"
         } else if self.progress.phase == Phase::Preparing {
             "Подготовка…"
+        } else if self.progress.phase == Phase::Verifying {
+            "Проверка копии…"
+        } else if self.progress.phase == Phase::RemovingSource {
+            "Удаление исходника…"
         } else {
             "Выполняется"
         }

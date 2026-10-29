@@ -91,8 +91,20 @@ impl App {
             && clip.cut
         {
             clip.paths.retain(|path| !report.completed.contains(path));
+            for path in &mut clip.paths {
+                if let Some(recovery) = report
+                    .retained_copies
+                    .iter()
+                    .find(|copy| copy.source == *path)
+                    .and_then(|copy| copy.recovery.as_ref())
+                {
+                    // The original name may now belong to another program's
+                    // new file. A retry must use the retained source instead.
+                    *path = recovery.clone();
+                }
+            }
         }
-        let summary = format!(
+        let mut summary = format!(
             "{} · готово {}/{}",
             if report.cancelled {
                 "Отменено"
@@ -104,6 +116,12 @@ impl App {
             report.completed.len(),
             report.total
         );
+        if !report.retained_copies.is_empty() {
+            summary.push_str(&format!(
+                " · копий без завершения переноса: {} (подробности в операциях)",
+                report.retained_copies.len()
+            ));
+        }
         self.message(
             if let Some(error) = &report.error {
                 format!("{summary} · {error}")
@@ -191,6 +209,44 @@ mod tests {
             .push_front(OperationRecord::new(42, "Перемещение".into(), 2));
         app.busy = true;
         (app, cancellation)
+    }
+
+    #[test]
+    fn incomplete_move_clipboard_uses_recovery_data_instead_of_a_new_source_path_occupant() {
+        let root = tempfile::tempdir().unwrap();
+        let (mut app, _) = running(root.path());
+        let source = root.path().join("source");
+        let recovery = root.path().join("recovery/source");
+        std::fs::create_dir(recovery.parent().unwrap()).unwrap();
+        std::fs::write(&source, "new occupant").unwrap();
+        std::fs::write(&recovery, "remaining original").unwrap();
+        app.clipboard = Some(Clipboard {
+            paths: vec![source.clone()],
+            cut: true,
+        });
+        app.finish_operation(
+            42,
+            Report {
+                total: 1,
+                retained_copies: vec![crate::fs::RetainedCopy {
+                    source: source.clone(),
+                    destination: root.path().join("destination/source"),
+                    recovery: Some(recovery.clone()),
+                }],
+                error: Some("Source restore was blocked".into()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            app.clipboard.as_ref().unwrap().paths.as_slice(),
+            std::slice::from_ref(&recovery)
+        );
+        assert_eq!(std::fs::read_to_string(source).unwrap(), "new occupant");
+        assert_eq!(
+            std::fs::read_to_string(recovery).unwrap(),
+            "remaining original"
+        );
+        assert!(app.operations[0].completed_paths.is_empty());
     }
 
     #[test]

@@ -8,6 +8,17 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+#[cfg(target_os = "linux")]
+mod cross_device;
+
+#[derive(Debug, Clone)]
+pub struct RetainedCopy {
+    pub source: PathBuf,
+    pub destination: PathBuf,
+    /// Remaining source data when restoring its original path was blocked.
+    pub recovery: Option<PathBuf>,
+}
+
 #[derive(Debug, Clone)]
 pub enum Operation {
     Create {
@@ -64,6 +75,7 @@ pub struct Report {
     pub error: Option<String>,
     pub cancelled: bool,
     pub progress: Progress,
+    pub retained_copies: Vec<RetainedCopy>,
 }
 
 #[derive(Debug)]
@@ -140,7 +152,7 @@ pub fn rename_new(source: &Path, destination: &Path) -> Result<()> {
         )
         .with_context(|| {
             format!(
-                "Перемещение {} → {} (без перезаписи; только в пределах файловой системы)",
+                "Перемещение {} → {} (без перезаписи)",
                 source.display(),
                 destination.display()
             )
@@ -213,51 +225,107 @@ fn copy_tree(source: &Path, destination: &Path, control: &mut Control<'_>) -> Re
         control.checkpoint()?;
         fs::set_permissions(destination, meta.permissions())?;
     } else if meta.is_file() {
-        let mut input = File::open(source)?;
-        let mut output = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(destination)?;
-        let mut buffer = vec![0; 256 * 1024];
-        loop {
-            control.checkpoint()?;
-            let count = match input.read(&mut buffer) {
-                Ok(count) => count,
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(error) => return Err(error.into()),
-            };
-            if count == 0 {
-                break;
-            }
-            let mut written = 0;
-            while written < count {
-                control.checkpoint()?;
-                let size = match output.write(&buffer[written..count]) {
-                    Ok(size) => size,
-                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                    Err(error) => return Err(error.into()),
-                };
-                ensure!(
-                    size > 0,
-                    "Запись файла остановилась: {}",
-                    destination.display()
-                );
-                written += size;
-                control.progress.bytes_done =
-                    control.progress.bytes_done.saturating_add(size as u64);
-                if let Some(total) = &mut control.progress.bytes_total {
-                    *total = (*total).max(control.progress.bytes_done);
-                }
-                control.emit();
-            }
-        }
-        control.checkpoint()?;
-        output.flush()?;
-        fs::set_permissions(destination, meta.permissions())?;
+        copy_file(source, destination, &meta, control, None)?;
     } else {
         bail!("Специальные файлы не копируются: {}", source.display());
     }
     control.entry_done(source);
+    Ok(())
+}
+
+fn open_regular(path: &Path) -> Result<File> {
+    #[cfg(target_os = "linux")]
+    let input = File::from(rustix::fs::openat(
+        rustix::fs::CWD,
+        path,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::NONBLOCK
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )?);
+    #[cfg(not(target_os = "linux"))]
+    let input = File::open(path)?;
+    ensure!(
+        input.metadata()?.is_file(),
+        "Тип файла изменился: {}",
+        path.display()
+    );
+    Ok(input)
+}
+
+fn copy_file(
+    source: &Path,
+    destination: &Path,
+    meta: &fs::Metadata,
+    control: &mut Control<'_>,
+    limit: Option<u64>,
+) -> Result<()> {
+    let mut input = open_regular(source)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let opened = input.metadata()?;
+        ensure!(
+            opened.dev() == meta.dev() && opened.ino() == meta.ino(),
+            "Источник заменён: {}",
+            source.display()
+        );
+    }
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)?;
+    let mut buffer = vec![0; 256 * 1024];
+    let mut remaining = limit;
+    loop {
+        control.checkpoint()?;
+        let capacity = remaining.map_or(buffer.len(), |n| n.min(buffer.len() as u64) as usize);
+        if capacity == 0 {
+            break;
+        }
+        let count = match input.read(&mut buffer[..capacity]) {
+            Ok(count) => count,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error.into()),
+        };
+        if count == 0 {
+            break;
+        }
+        if let Some(remaining) = &mut remaining {
+            *remaining -= count as u64;
+        }
+        let mut written = 0;
+        while written < count {
+            control.checkpoint()?;
+            let size = match output.write(&buffer[written..count]) {
+                Ok(size) => size,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error.into()),
+            };
+            ensure!(
+                size > 0,
+                "Запись файла остановилась: {}",
+                destination.display()
+            );
+            written += size;
+            control.progress.bytes_done = control.progress.bytes_done.saturating_add(size as u64);
+            if let Some(total) = &mut control.progress.bytes_total {
+                *total = (*total).max(control.progress.bytes_done);
+            }
+            control.emit();
+        }
+    }
+    if let Some(remaining) = remaining {
+        ensure!(
+            remaining == 0 && input.read(&mut [0])? == 0,
+            "Размер источника изменился: {}",
+            source.display()
+        );
+    }
+    control.checkpoint()?;
+    output.flush()?;
+    fs::set_permissions(destination, meta.permissions())?;
     Ok(())
 }
 
@@ -280,9 +348,19 @@ fn transfer(source: &Path, destination: &Path, cut: bool, control: &mut Control<
     let parent = validate_transfer(source, destination)?;
     if cut {
         control.checkpoint()?;
-        rename_new(source, destination)?;
-        control.entry_done(source);
-        return Ok(());
+        match rename_new(source, destination) {
+            Ok(()) => {
+                control.entry_done(source);
+                return Ok(());
+            }
+            #[cfg(target_os = "linux")]
+            Err(error)
+                if error.downcast_ref::<rustix::io::Errno>() == Some(&rustix::io::Errno::XDEV) =>
+            {
+                return cross_device::transfer(source, destination, &parent, control);
+            }
+            Err(error) => return Err(error),
+        }
     }
     let staging = tempfile::Builder::new()
         .prefix(".basalgrim-copy-")
@@ -364,7 +442,7 @@ pub fn operate_with_control(
         if let Operation::Transfer {
             sources,
             destination,
-            cut: false,
+            cut,
         } = &operation
         {
             let (mut entries, mut bytes, mut known) = (0u64, 0u64, true);
@@ -373,6 +451,13 @@ pub fn operate_with_control(
                 let measured = (|| {
                     let name = source.file_name().context("Нельзя копировать корень")?;
                     validate_transfer(source, &destination.join(name))?;
+                    #[cfg(unix)]
+                    if *cut {
+                        use std::os::unix::fs::MetadataExt;
+                        if fs::symlink_metadata(source)?.dev() == fs::metadata(destination)?.dev() {
+                            return Ok((1, 0));
+                        }
+                    }
                     measure(source, &mut control)
                 })();
                 match measured {
@@ -387,7 +472,7 @@ pub fn operate_with_control(
             }
             if known {
                 control.progress.entries_total = Some(entries);
-                control.progress.bytes_total = Some(bytes);
+                control.progress.bytes_total = (!*cut || bytes > 0).then_some(bytes);
             }
         } else {
             control.progress.entries_total = Some(total as u64);
@@ -439,7 +524,8 @@ pub fn operate_with_control(
                     control.current(&source)?;
                     let name = source.file_name().context("Нельзя копировать корень")?;
                     transfer(&source, &destination.join(name), cut, &mut control)?;
-                    // Publication succeeded: count it before observing any later cancellation.
+                    // The whole item succeeded, including source removal for a move.
+                    // Count it before observing any later cancellation.
                     complete(source, &mut control);
                 }
             }
@@ -455,6 +541,10 @@ pub fn operate_with_control(
         Ok(())
     })();
     if let Err(error) = result {
+        #[cfg(target_os = "linux")]
+        if let Some(partial) = error.downcast_ref::<cross_device::PartialMove>() {
+            report.retained_copies.push(partial.0.clone());
+        }
         report.cancelled = error.is::<Cancelled>();
         if !report.cancelled || error.downcast_ref::<CleanupFailure>().is_some() {
             report.error = Some(format!("{error:#}"));
