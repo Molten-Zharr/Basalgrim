@@ -75,6 +75,7 @@ fn shared_operation_screen_shows_byte_progress_and_scrolls_completed_paths() {
     settle(&mut app);
     let mut record = OperationRecord::new(1, "Копирование".into(), 80);
     record.progress = Progress {
+        items_skipped: 0,
         phase: Phase::Running,
         items_done: 37,
         items_total: 80,

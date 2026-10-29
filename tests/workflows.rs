@@ -267,7 +267,7 @@ fn minimum_window_keeps_files_visible_and_help_can_scroll_to_the_end() {
         .iter()
         .map(|c| c.symbol())
         .collect::<String>();
-    assert!(text.contains("файловой системы"));
+    assert!(text.contains("проверка копии"));
     key(&mut app, Key::Home);
     assert_eq!(app.help_offset, 0);
 }

@@ -63,6 +63,8 @@ def main():
             navigate(source); send(b"\x01\x18"); navigate(destination); send(b"\x16")
             wait_for(lambda: not (source / "a").exists() and (destination / "a").exists(), "first item before collision")
             assert (source / "z").read_text() == "last" and (destination / "z").read_text() == "precious"
+            wait_for(lambda: "Совпадение имён" in screen_text(output, 170, 40), "collision decision")
+            send(b"\x1b[A\r")  # Default Keep Both -> Skip, retaining the cut source.
             retry = destination / "retry"; retry.mkdir(); navigate(retry); send(b"\x16")
             wait_for(lambda: not (source / "z").exists() and (retry / "z").exists(), "clipboard retains only the unfinished cut item")
             send(b"\x18"); navigate(source); send(b"\x16")

@@ -269,10 +269,20 @@ fn main() -> Result<()> {
     });
     settle(&mut app)?;
     app.start_operation(basalgrim::fs::Operation::Transfer {
-        sources: vec![demo.path().join("browser.rs")],
+        sources: vec![demo.path().join("browser.rs"), demo.path().join("notes.md")],
         destination,
         cut: false,
     });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !matches!(app.dialog, Some(basalgrim::app::Dialog::Conflict(_))) {
+        ensure!(Instant::now() < deadline, "Conflict prompt timed out");
+        app.tick();
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    render(&mut app, &out, "conflict", 120, 36)?;
+    render(&mut app, &out, "conflict-compact", 34, 14)?;
+    app.toggle_conflict_remaining();
+    app.choose_conflict(basalgrim::conflicts::Choice::Skip);
     settle(&mut app)?;
     app.action(Action::Operations);
     app.operations_selected = 1;

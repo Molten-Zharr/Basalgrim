@@ -190,6 +190,10 @@ try:
             chord('c','Control_L'); navigate(destination); chord('v','Control_L')
             wait_for(lambda:(destination/'alpha.txt').exists(),'Ctrl+C/V with empty OS clipboard')
             assert (source/'alpha.txt').read_text()==(destination/'alpha.txt').read_text()
+            # Publication precedes the worker result and directory refresh.
+            # Wait for the selected list row in our fixed Light palette before
+            # issuing Cut; an empty/loading pane has no file to cut yet.
+            wait_for(lambda:screenshot(window,'native-keyboard-ready.png').getpixel((800,177))==(212,225,239),'file list ready after copy')
             chord('x','Control_L'); navigate(files); chord('v','Control_L')
             wait_for(lambda:(files/'alpha.txt').exists(),'Ctrl+X/V move')
             assert not (destination/'alpha.txt').exists()
@@ -449,6 +453,38 @@ try:
             except Exception:
                 screenshot(window,'native-cross-device-failure.png'); raise
             finally: stop(process,log)
+        conflict_source=base/'conflict-source'; conflict_source.mkdir()
+        conflict_dest=base/'conflict-destination'; conflict_dest.mkdir()
+        for name in ('a.txt','b.txt'):
+            (conflict_source/name).write_text('incoming '+name); (conflict_dest/name).write_text('existing '+name)
+        process,window,log=launch(conflict_source,config)
+        try:
+            chord('a','Control_L'); chord('c','Control_L'); navigate(conflict_dest); chord('v','Control_L'); time.sleep(.6)
+            screenshot(window,'native-conflict.png')
+            click(window,55,26); click(window,55,30) # All remaining, Keep Both.
+            wait_for(lambda:all((conflict_dest/n).exists() for n in ('a (1).txt','b (1).txt')),'GUI keep both for remaining conflicts')
+            for name in ('a.txt','b.txt'): assert (conflict_dest/name).read_text()=='existing '+name
+            chord('v','Control_L'); time.sleep(.6); click(window,55,26); click(window,55,28)
+            wait_for(lambda:all((conflict_dest/n).read_text()=='incoming '+n for n in ('a.txt','b.txt')),'GUI replace all')
+            for name in ('a.txt','b.txt'): (conflict_dest/name).write_text('kept '+name)
+            chord('v','Control_L'); time.sleep(.6); key('space'); key('Up'); key('Return'); time.sleep(.4)
+            for name in ('a.txt','b.txt'): assert (conflict_dest/name).read_text()=='kept '+name
+            assert not (conflict_dest/'a (2).txt').exists()
+            chord('v','Control_L'); time.sleep(.6); key('Escape'); time.sleep(.3)
+            chord('v','Control_L'); time.sleep(.6); click(window,117,18); time.sleep(.3)
+            navigate(conflict_source); chord('v','Control_L'); time.sleep(.6)
+            x.XResizeWindow(d,window,400,360); x.XFlush(d); time.sleep(.4)
+            before=screenshot(window,'native-conflict-compact.png')
+            click(window,5,13)
+            after=screenshot(window,'native-conflict-disabled.png')
+            assert before.crop((0,48,400,64)).tobytes()==after.crop((0,48,400,64)).tobytes(),'Disabled Replace closed the conflict'
+            key('Escape'); time.sleep(.3)
+            assert sorted(p.name for p in conflict_source.iterdir())==['a.txt','b.txt']
+            chord('q','Control_L'); process.wait(timeout=5); assert process.returncode==0
+            print('Native GUI conflicts: Keep Both/Replace/Skip for remaining, Escape/close, compact disabled row passed',flush=True)
+        except Exception:
+            screenshot(window,'native-conflict-failure.png'); raise
+        finally: stop(process,log)
     print('Verified binary:', binary, hashlib.sha256(binary.read_bytes()).hexdigest(), flush=True)
 finally:
     x.XCloseDisplay(d)

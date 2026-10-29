@@ -16,6 +16,12 @@ mod watch;
 pub type DirectoryResult = Result<(PathBuf, Vec<Entry>), String>;
 
 pub enum Event {
+    Conflict {
+        token: u64,
+        request: u64,
+        conflict: crate::conflicts::Conflict,
+        reply: mpsc::SyncSender<crate::conflicts::Decision>,
+    },
     Directory {
         token: u64,
         result: DirectoryResult,
@@ -120,8 +126,11 @@ impl Worker {
                             .checked_sub(Duration::from_secs(1))
                             .unwrap_or_else(Instant::now);
                         let mut phase = None;
-                        let report =
-                            fs::operate_with_control(operation, &cancellation, &mut |progress| {
+                        let mut request = 0;
+                        let report = fs::operate_with_conflicts(
+                            operation,
+                            &cancellation,
+                            &mut |progress| {
                                 if phase != Some(progress.phase)
                                     || last.elapsed() >= Duration::from_millis(50)
                                 {
@@ -131,7 +140,35 @@ impl Worker {
                                     phase = Some(progress.phase);
                                     last = Instant::now();
                                 }
-                            });
+                            },
+                            &mut |conflict| {
+                                request += 1;
+                                let (reply, rx) = mpsc::sync_channel(1);
+                                if send
+                                    .send(Event::Conflict {
+                                        token,
+                                        request,
+                                        conflict: conflict.clone(),
+                                        reply,
+                                    })
+                                    .is_err()
+                                {
+                                    return crate::conflicts::Decision::CANCEL;
+                                }
+                                loop {
+                                    if cancellation.is_cancelled() {
+                                        return crate::conflicts::Decision::CANCEL;
+                                    }
+                                    match rx.recv_timeout(Duration::from_millis(40)) {
+                                        Ok(decision) => return decision,
+                                        Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                            return crate::conflicts::Decision::CANCEL;
+                                        }
+                                        Err(mpsc::RecvTimeoutError::Timeout) => {}
+                                    }
+                                }
+                            },
+                        );
                         Event::Operation { token, report }
                     }
                     Task::Open(path) => {

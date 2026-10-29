@@ -605,6 +605,13 @@ fn partial_cross_device_batches_keep_only_unfinished_cut_paths_in_the_app_clipbo
     app.navigate(destination.path().into(), true);
     settle(&mut app);
     app.action(Action::Paste);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !matches!(app.dialog, Some(basalgrim::app::Dialog::Conflict(_))) {
+        app.tick();
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    app.choose_conflict(basalgrim::conflicts::Choice::Skip);
     settle(&mut app);
     assert_eq!(
         app.clipboard.as_ref().unwrap().paths.as_slice(),
@@ -612,7 +619,10 @@ fn partial_cross_device_batches_keep_only_unfinished_cut_paths_in_the_app_clipbo
     );
     assert!(!first.exists() && last.exists());
     assert_eq!(app.operations[0].completed_paths, [first]);
-    assert!(app.operations[0].error.is_some());
+    assert_eq!(
+        app.operations[0].skipped_paths.as_slice(),
+        std::slice::from_ref(&last)
+    );
     assert_eq!(
         disk::read_to_string(destination.path().join("z")).unwrap(),
         "precious"

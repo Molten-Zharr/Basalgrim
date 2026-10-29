@@ -46,6 +46,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Dialog::Settings
         | Dialog::CaptureBinding { .. }
         | Dialog::Operations
+        | Dialog::Conflict(_)
         | Dialog::Commands(_) => unreachable!(),
     };
     let block = panel(palette, format!(" {title} "), true);
@@ -56,6 +57,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Dialog::Settings
         | Dialog::CaptureBinding { .. }
         | Dialog::Operations
+        | Dialog::Conflict(_)
         | Dialog::Commands(_) => unreachable!(),
         Dialog::Edit {
             text: value, error, ..
@@ -120,7 +122,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
             ));
             lines.push(Line::raw(""));
             lines.push(Line::styled(
-                " Перемещение: в пределах одной файловой системы.",
+                " Перенос между дисками: проверка копии перед удалением.",
                 palette.muted(),
             ));
         }

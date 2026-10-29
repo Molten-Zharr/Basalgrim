@@ -212,6 +212,20 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                 assert (cross_destination/"payload.txt").read_text()=="file payload"
                 key("q","ctrl"); process.wait(timeout=5); assert process.returncode==0
                 print("Native Wayland: cross-device file/directory move passed",flush=True)
+            conflict_source=base/"conflict-source"; conflict_source.mkdir()
+            conflict_dest=base/"conflict-destination"; conflict_dest.mkdir()
+            for name in ("a.txt","b.txt"):
+                (conflict_source/name).write_text("incoming "+name);(conflict_dest/name).write_text("existing "+name)
+            process=launch(conflict_source)
+            key("a","ctrl");key("c","ctrl");navigate(conflict_dest);key("v","ctrl");time.sleep(.6)
+            click(55,26);click(55,30)
+            wait_for(lambda:all((conflict_dest/n).exists() for n in ("a (1).txt","b (1).txt")),"Wayland keep both for remaining conflicts")
+            for name in ("a.txt","b.txt"):assert (conflict_dest/name).read_text()=="existing "+name
+            key("v","ctrl");time.sleep(.6);click(55,26);click(55,28)
+            wait_for(lambda:all((conflict_dest/n).read_text()=="incoming "+n for n in ("a.txt","b.txt")),"Wayland replace for remaining conflicts")
+            key("v","ctrl");time.sleep(.6);key("Escape");time.sleep(.3)
+            key("q","ctrl");process.wait(timeout=5);assert process.returncode==0
+            print("Native Wayland conflicts: mouse Keep Both/Replace for remaining and Escape passed",flush=True)
             print("Verified binary:", binary, hashlib.sha256(binary.read_bytes()).hexdigest())
         except Exception:
             if process and process.poll() is None:

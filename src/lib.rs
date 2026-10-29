@@ -1,4 +1,5 @@
 pub mod app;
+pub mod conflicts;
 pub mod fs;
 pub mod icons;
 pub mod input;

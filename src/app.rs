@@ -1,5 +1,7 @@
 mod actions;
 mod commands;
+mod conflicts;
+pub use conflicts::ConflictDialog;
 mod directories;
 pub use commands::{CommandItem, CommandMenu, MenuContext};
 mod events;
@@ -26,6 +28,8 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    ConflictChoice(crate::conflicts::Choice),
+    ConflictRemaining,
     Command(usize),
     CommandScroll(isize),
     MenuBackground,
@@ -81,6 +85,7 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    Conflict(ConflictDialog),
     Commands(CommandMenu),
     Operations,
     Edit {
@@ -151,6 +156,8 @@ pub struct App {
     preview_path: Option<PathBuf>,
     directory_results: BTreeMap<u64, crate::worker::DirectoryResult>,
     pending_directory_changes: BTreeSet<PathBuf>,
+    conflict_previous: Option<Dialog>,
+    conflict_sequence: u64,
 }
 
 impl App {
@@ -229,6 +236,8 @@ impl App {
             preview_path: None,
             directory_results: BTreeMap::new(),
             pending_directory_changes: BTreeSet::new(),
+            conflict_previous: None,
+            conflict_sequence: 0,
         };
         app.reload(0, 0);
         app.reload(1, 0);
@@ -316,6 +325,12 @@ impl App {
         }
         while let Ok(event) = self.worker.events.try_recv() {
             match event {
+                Event::Conflict {
+                    token,
+                    request,
+                    conflict,
+                    reply,
+                } => self.accept_conflict(token, request, conflict, reply),
                 Event::Directory { token, result } => {
                     self.directory_results.insert(token, result);
                 }

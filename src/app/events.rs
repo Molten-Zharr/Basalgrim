@@ -103,6 +103,8 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::ConflictChoice(choice)) => self.choose_conflict(choice),
+                    Some(Target::ConflictRemaining) => self.toggle_conflict_remaining(),
                     Some(Target::DismissMenu)
                         if matches!(self.dialog, Some(Dialog::Commands(_))) =>
                     {
@@ -317,6 +319,10 @@ impl App {
     }
     fn key(&mut self, press: KeyPress) {
         let press = press.normalized();
+        if matches!(self.dialog, Some(Dialog::Conflict(_))) {
+            self.conflict_key(press);
+            return;
+        }
         if let Some(Dialog::CaptureBinding { index, .. }) = self.dialog {
             if press.key == Key::Escape {
                 self.dialog = Some(Dialog::Settings);

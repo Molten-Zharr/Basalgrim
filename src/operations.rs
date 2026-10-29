@@ -27,6 +27,7 @@ pub enum Phase {
     Running,
     Verifying,
     RemovingSource,
+    AwaitingDecision,
     CleaningUp,
     Finished,
 }
@@ -35,6 +36,7 @@ pub enum Phase {
 pub struct Progress {
     pub phase: Phase,
     pub items_done: usize,
+    pub items_skipped: usize,
     pub items_total: usize,
     pub entries_done: u64,
     pub entries_total: Option<u64>,
@@ -49,7 +51,7 @@ impl Progress {
         } else if let Some(total) = self.entries_total.filter(|&total| total > 0) {
             self.entries_done as f64 / total as f64
         } else {
-            self.items_done as f64 / self.items_total.max(1) as f64
+            (self.items_done + self.items_skipped) as f64 / self.items_total.max(1) as f64
         };
         fraction.clamp(
             0.0,
@@ -74,6 +76,8 @@ pub struct OperationRecord {
     pub error: Option<String>,
     pub completed_paths: Vec<PathBuf>,
     pub retained_copies: Vec<crate::fs::RetainedCopy>,
+    pub skipped_paths: Vec<PathBuf>,
+    pub destination_recoveries: Vec<crate::conflicts::DestinationRecovery>,
 }
 impl OperationRecord {
     pub fn new(id: u64, title: String, items_total: usize) -> Self {
@@ -92,6 +96,8 @@ impl OperationRecord {
             error: None,
             completed_paths: Vec::new(),
             retained_copies: Vec::new(),
+            skipped_paths: Vec::new(),
+            destination_recoveries: Vec::new(),
         }
     }
     pub fn finish(&mut self, report: Report) {
@@ -104,6 +110,9 @@ impl OperationRecord {
         self.error = report.error;
         self.completed_paths = report.completed;
         self.retained_copies = report.retained_copies;
+        self.progress.items_skipped = report.skipped.len();
+        self.skipped_paths = report.skipped;
+        self.destination_recoveries = report.destination_recoveries;
     }
     pub fn status(&self) -> &'static str {
         if self.elapsed.is_some() {
@@ -124,6 +133,8 @@ impl OperationRecord {
             "Проверка копии…"
         } else if self.progress.phase == Phase::RemovingSource {
             "Удаление исходника…"
+        } else if self.progress.phase == Phase::AwaitingDecision {
+            "Ожидает выбора"
         } else {
             "Выполняется"
         }

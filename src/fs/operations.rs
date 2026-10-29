@@ -8,6 +8,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+mod conflicts;
 #[cfg(target_os = "linux")]
 mod cross_device;
 
@@ -76,6 +77,8 @@ pub struct Report {
     pub cancelled: bool,
     pub progress: Progress,
     pub retained_copies: Vec<RetainedCopy>,
+    pub skipped: Vec<PathBuf>,
+    pub destination_recoveries: Vec<crate::conflicts::DestinationRecovery>,
 }
 
 #[derive(Debug)]
@@ -98,6 +101,8 @@ struct Control<'a> {
     cancellation: &'a Cancellation,
     progress: Progress,
     notify: &'a mut dyn FnMut(&Progress),
+    replacement: Option<conflicts::Replacement>,
+    recoveries: Vec<crate::conflicts::DestinationRecovery>,
 }
 impl Control<'_> {
     fn checkpoint(&self) -> Result<()> {
@@ -122,6 +127,13 @@ impl Control<'_> {
             *total = (*total).max(self.progress.entries_done);
         }
         self.emit();
+    }
+    fn publish(&mut self, source: &Path, destination: &Path) -> Result<()> {
+        self.checkpoint()?;
+        match &mut self.replacement {
+            Some(replacement) => replacement.publish(source, destination),
+            None => rename_new(source, destination),
+        }
     }
 }
 
@@ -187,6 +199,16 @@ fn measure(path: &Path, control: &mut Control<'_>) -> Result<(u64, u64)> {
 }
 
 fn validate_transfer(source: &Path, destination: &Path) -> Result<PathBuf> {
+    let parent = validate_paths(source, destination)?;
+    match fs::symlink_metadata(destination) {
+        Ok(_) => return Err(conflicts::TargetExists(destination.into()).into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(parent)
+}
+
+fn validate_paths(source: &Path, destination: &Path) -> Result<PathBuf> {
     let parent = destination
         .parent()
         .context("Нет родительской папки")?
@@ -198,12 +220,6 @@ fn validate_transfer(source: &Path, destination: &Path) -> Result<PathBuf> {
             "Нельзя поместить папку в неё саму или её подпапку"
         );
     }
-    ensure!(
-        fs::symlink_metadata(destination)
-            .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound),
-        "Цель уже существует или недоступна: {}",
-        destination.display()
-    );
     Ok(parent)
 }
 
@@ -339,23 +355,30 @@ pub fn transfer_one(source: &Path, destination: &Path, cut: bool) -> Result<()> 
             ..Default::default()
         },
         notify: &mut notify,
+        replacement: None,
+        recoveries: Vec::new(),
     };
     transfer(source, destination, cut, &mut control)
 }
 
 fn transfer(source: &Path, destination: &Path, cut: bool, control: &mut Control<'_>) -> Result<()> {
     control.checkpoint()?;
-    let parent = validate_transfer(source, destination)?;
+    let parent = if control.replacement.is_some() {
+        validate_paths(source, destination)?
+    } else {
+        validate_transfer(source, destination)?
+    };
     if cut {
         control.checkpoint()?;
-        match rename_new(source, destination) {
+        match control.publish(source, destination) {
             Ok(()) => {
                 control.entry_done(source);
                 return Ok(());
             }
             #[cfg(target_os = "linux")]
             Err(error)
-                if error.downcast_ref::<rustix::io::Errno>() == Some(&rustix::io::Errno::XDEV) =>
+                if error.downcast_ref::<rustix::io::Errno>() == Some(&rustix::io::Errno::XDEV)
+                    && !conflicts::has_recovery(control) =>
             {
                 return cross_device::transfer(source, destination, &parent, control);
             }
@@ -368,7 +391,7 @@ fn transfer(source: &Path, destination: &Path, cut: bool, control: &mut Control<
     let staged = staging.path().join("item");
     let result = copy_tree(source, &staged, control).and_then(|()| {
         control.checkpoint()?;
-        rename_new(&staged, destination)
+        control.publish(&staged, destination)
     });
     let staging_path = staging.path().to_path_buf();
     if result.is_err() {
@@ -423,6 +446,24 @@ pub fn operate_with_control(
     cancellation: &Cancellation,
     notify: &mut dyn FnMut(&Progress),
 ) -> Report {
+    operate_inner(operation, cancellation, notify, None)
+}
+
+pub fn operate_with_conflicts(
+    operation: Operation,
+    cancellation: &Cancellation,
+    notify: &mut dyn FnMut(&Progress),
+    resolve: &mut dyn FnMut(&crate::conflicts::Conflict) -> crate::conflicts::Decision,
+) -> Report {
+    operate_inner(operation, cancellation, notify, Some(resolve))
+}
+
+fn operate_inner(
+    operation: Operation,
+    cancellation: &Cancellation,
+    notify: &mut dyn FnMut(&Progress),
+    mut resolve: Option<&mut dyn FnMut(&crate::conflicts::Conflict) -> crate::conflicts::Decision>,
+) -> Report {
     let total = operation.total();
     let mut control = Control {
         cancellation,
@@ -431,7 +472,10 @@ pub fn operate_with_control(
             ..Default::default()
         },
         notify,
+        replacement: None,
+        recoveries: Vec::new(),
     };
+    let mut policy = None;
     let mut report = Report {
         total,
         ..Default::default()
@@ -450,7 +494,11 @@ pub fn operate_with_control(
                 control.checkpoint()?;
                 let measured = (|| {
                     let name = source.file_name().context("Нельзя копировать корень")?;
-                    validate_transfer(source, &destination.join(name))?;
+                    if resolve.is_some() {
+                        validate_paths(source, &destination.join(name))?;
+                    } else {
+                        validate_transfer(source, &destination.join(name))?;
+                    }
                     #[cfg(unix)]
                     if *cut {
                         use std::os::unix::fs::MetadataExt;
@@ -511,22 +559,58 @@ pub fn operate_with_control(
                     .parent()
                     .context("Нельзя переименовать корень")?
                     .join(name);
-                rename_new(&source, &destination)?;
-                control.entry_done(&source);
-                complete(source, &mut control);
+                let outcome = conflicts::run(
+                    conflicts::Request {
+                        source: &source,
+                        destination: &destination,
+                        cut: true,
+                        rename: true,
+                        remaining: 0,
+                    },
+                    &mut policy,
+                    &mut resolve,
+                    &mut control,
+                );
+                if matches!(outcome, Ok(false)) {
+                    report.skipped.push(source);
+                    control.progress.items_skipped = report.skipped.len();
+                } else if outcome.as_ref().is_ok_and(|done| *done) {
+                    control.entry_done(&source);
+                    complete(source, &mut control);
+                }
+                conflicts::conclude(outcome, &mut control)?;
             }
             Operation::Transfer {
                 sources,
                 destination,
                 cut,
             } => {
-                for source in sources {
+                let total = sources.len();
+                for (index, source) in sources.into_iter().enumerate() {
                     control.current(&source)?;
                     let name = source.file_name().context("Нельзя копировать корень")?;
-                    transfer(&source, &destination.join(name), cut, &mut control)?;
+                    let outcome = conflicts::run(
+                        conflicts::Request {
+                            source: &source,
+                            destination: &destination.join(name),
+                            cut,
+                            rename: false,
+                            remaining: total - index - 1,
+                        },
+                        &mut policy,
+                        &mut resolve,
+                        &mut control,
+                    );
                     // The whole item succeeded, including source removal for a move.
                     // Count it before observing any later cancellation.
-                    complete(source, &mut control);
+                    if matches!(outcome, Ok(false)) {
+                        report.skipped.push(source);
+                        control.progress.items_skipped = report.skipped.len();
+                        control.emit();
+                    } else if outcome.as_ref().is_ok_and(|done| *done) {
+                        complete(source, &mut control);
+                    }
+                    conflicts::conclude(outcome, &mut control)?;
                 }
             }
             Operation::Trash { sources } => {
@@ -563,6 +647,7 @@ pub fn operate_with_control(
     control.progress.phase = Phase::Finished;
     control.emit();
     report.progress = control.progress;
+    report.destination_recoveries = control.recoveries;
     report
 }
 

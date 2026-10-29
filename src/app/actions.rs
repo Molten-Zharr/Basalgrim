@@ -243,6 +243,10 @@ impl App {
         self.update_preview();
     }
     pub fn cancel_dialog(&mut self) {
+        if matches!(self.dialog, Some(Dialog::Conflict(_))) {
+            self.choose_conflict(crate::conflicts::Choice::Cancel);
+            return;
+        }
         if matches!(
             self.dialog,
             Some(Dialog::CaptureBinding { .. })
@@ -267,10 +271,20 @@ impl App {
         }
     }
     pub fn confirm_dialog(&mut self) {
+        if let Some(Dialog::Conflict(current)) = &self.dialog {
+            if current.selected == 4 {
+                self.toggle_conflict_remaining();
+                return;
+            }
+            let choice = crate::conflicts::Choice::ALL[current.selected.min(3)];
+            self.choose_conflict(choice);
+            return;
+        }
         let Some(dialog) = self.dialog.take() else {
             return;
         };
         match dialog {
+            Dialog::Conflict(_) => unreachable!(),
             Dialog::Settings | Dialog::CaptureBinding { .. } => {
                 self.dialog = Some(Dialog::Settings)
             }

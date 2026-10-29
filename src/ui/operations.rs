@@ -20,10 +20,14 @@ fn summary(record: &OperationRecord) -> String {
         None if progress.bytes_done > 0 => format!(" · {}", fs::size(progress.bytes_done)),
         _ => String::new(),
     };
-    format!(
+    let mut text = format!(
         "Готово {}/{}{bytes}",
         progress.items_done, progress.items_total
-    )
+    );
+    if progress.items_skipped > 0 {
+        text.push_str(&format!(" · пропущено {}", progress.items_skipped));
+    }
+    text
 }
 
 fn button(
@@ -60,7 +64,7 @@ pub fn status(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
     );
     let text = match record.progress.phase {
         Phase::Preparing => "Подготовка…".into(),
-        Phase::Verifying | Phase::RemovingSource => {
+        Phase::Verifying | Phase::RemovingSource | Phase::AwaitingDecision => {
             format!("{} · {}", record.status(), summary(record))
         }
         _ => summary(record),
@@ -234,6 +238,29 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
             if let Some(path) = &copy.recovery {
                 lines.push(Line::raw(format!(
                     "  Остаток исходника: {}",
+                    fs::clean(&path.to_string_lossy())
+                )));
+            }
+        }
+        for recovery in &record.destination_recoveries {
+            lines.push(Line::styled(
+                " Остаток прежней цели сохранён:",
+                palette.accent(),
+            ));
+            lines.push(Line::raw(format!(
+                "  Цель: {}",
+                fs::clean(&recovery.destination.to_string_lossy())
+            )));
+            lines.push(Line::raw(format!(
+                "  Остаток: {}",
+                fs::clean(&recovery.backup.to_string_lossy())
+            )));
+        }
+        if !record.skipped_paths.is_empty() {
+            lines.push(Line::styled(" Пропущенные элементы:", palette.accent()));
+            for path in &record.skipped_paths {
+                lines.push(Line::raw(format!(
+                    "  {}",
                     fs::clean(&path.to_string_lossy())
                 )));
             }

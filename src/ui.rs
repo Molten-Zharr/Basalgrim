@@ -1,4 +1,5 @@
 mod commands;
+mod conflicts;
 mod dialogs;
 mod files;
 mod operations;
@@ -80,6 +81,10 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     app.preview_area = Rect::default();
     app.pane_areas = [Rect::default(); 2];
     app.file_areas = [Rect::default(); 2];
+    if matches!(app.dialog, Some(crate::app::Dialog::Conflict(_))) {
+        conflicts::render(app, frame, palette);
+        return;
+    }
     if matches!(app.dialog, Some(crate::app::Dialog::Operations)) {
         operations::render(app, frame, palette);
         return;

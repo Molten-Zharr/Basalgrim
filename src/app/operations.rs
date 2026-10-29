@@ -9,6 +9,11 @@ pub(super) struct RunningOperation {
     cancellation: Cancellation,
     cut: bool,
 }
+impl Drop for RunningOperation {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+    }
+}
 
 impl App {
     pub fn current_operation(&self) -> Option<&OperationRecord> {
@@ -36,6 +41,7 @@ impl App {
             cut,
         });
         self.busy = true;
+        self.conflict_sequence = 0;
         self.message("Файловая операция выполняется…", false);
         if !self.worker.operate(id, operation, cancellation) {
             self.finish_operation(
@@ -84,6 +90,7 @@ impl App {
             return;
         }
         let running = self.running_operation.take().unwrap();
+        self.finish_conflict(token);
         self.busy = false;
         self.operation_count += 1;
         if running.cut
@@ -121,6 +128,12 @@ impl App {
                 " · копий без завершения переноса: {} (подробности в операциях)",
                 report.retained_copies.len()
             ));
+        }
+        if !report.skipped.is_empty() {
+            summary.push_str(&format!(" · пропущено: {}", report.skipped.len()));
+        }
+        if !report.destination_recoveries.is_empty() {
+            summary.push_str(" · остаток прежней цели сохранён (подробности в операциях)");
         }
         self.message(
             if let Some(error) = &report.error {

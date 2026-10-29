@@ -314,7 +314,7 @@ pub(super) fn transfer(
             published_dir = Some(dir);
         }
         control.checkpoint()?;
-        rename_new(&staged, destination)
+        control.publish(&staged, destination)
     })();
     if let Err(error) = result {
         control.progress.phase = Phase::CleaningUp;
