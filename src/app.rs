@@ -1,5 +1,6 @@
 mod actions;
 mod commands;
+mod directories;
 pub use commands::{CommandItem, CommandMenu, MenuContext};
 mod events;
 mod operations;
@@ -18,7 +19,10 @@ use crate::{
     worker::{Event, Worker},
 };
 use ratatui::layout::{Position, Rect};
-use std::path::{Path, PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::{Path, PathBuf},
+};
 
 #[derive(Clone)]
 pub enum Target {
@@ -145,6 +149,8 @@ pub struct App {
     serial: u64,
     preview_token: u64,
     preview_path: Option<PathBuf>,
+    directory_results: BTreeMap<u64, crate::worker::DirectoryResult>,
+    pending_directory_changes: BTreeSet<PathBuf>,
 }
 
 impl App {
@@ -221,6 +227,8 @@ impl App {
             serial: 0,
             preview_token: 0,
             preview_path: None,
+            directory_results: BTreeMap::new(),
+            pending_directory_changes: BTreeSet::new(),
         };
         app.reload(0, 0);
         app.reload(1, 0);
@@ -270,10 +278,14 @@ impl App {
     pub fn reload(&mut self, pane: usize, index: usize) {
         let token = self.token();
         let tab = &mut self.panes[pane].tabs[index];
+        tab.scan_cancel.cancel();
+        tab.scan_cancel = Default::default();
         tab.request = token;
         tab.loading = true;
+        tab.refreshing = false;
         tab.error = None;
-        self.worker.scan(token, tab.cwd.clone());
+        self.worker
+            .scan(token, tab.cwd.clone(), tab.scan_cancel.clone());
     }
     pub fn refresh(&mut self) {
         self.reload(self.active, self.panes[self.active].active);
@@ -298,46 +310,26 @@ impl App {
     }
     pub fn tick(&mut self) {
         self.validate_marquee();
+        self.observe_directories();
         if let Some((token, progress)) = self.worker.take_progress() {
             self.accept_operation_progress(token, progress);
         }
         while let Ok(event) = self.worker.events.try_recv() {
             match event {
                 Event::Directory { token, result } => {
-                    for tab in self.panes.iter_mut().flat_map(|p| &mut p.tabs) {
-                        if tab.request != token {
-                            continue;
-                        }
-                        tab.loading = false;
-                        match result {
-                            Ok((cwd, entries)) => {
-                                let previous = tab.entry().map(|e| e.path.clone());
-                                tab.cwd = cwd;
-                                tab.entries = entries;
-                                // Old visible indices refer to the previous scan.
-                                tab.visible.clear();
-                                tab.rebuild(self.settings.hidden);
-                                if let Some(index) = previous.and_then(|p| {
-                                    tab.visible.iter().position(|&i| tab.entries[i].path == p)
-                                }) {
-                                    tab.selected = index;
-                                }
-                            }
-                            Err(e) => {
-                                tab.error = Some(fs::clean(&e));
-                                tab.entries.clear();
-                                tab.visible.clear();
-                                tab.marked.clear();
-                            }
-                        }
-                        break;
-                    }
+                    self.directory_results.insert(token, result);
                 }
                 Event::Preview { token, result } if token == self.preview_token => {
                     self.preview_loading = false;
                     match result {
-                        Ok(p) => self.preview = Some(p),
-                        Err(e) => self.preview_error = Some(fs::clean(&e)),
+                        Ok(p) => {
+                            self.preview = Some(p);
+                            self.preview_error = None;
+                        }
+                        Err(e) => {
+                            self.preview = None;
+                            self.preview_error = Some(fs::clean(&e));
+                        }
                     }
                 }
                 Event::Preview { .. } => {}
@@ -349,6 +341,8 @@ impl App {
                 }
             }
         }
+        self.apply_directory_results();
+        self.refresh_changed_directories();
         self.update_preview();
     }
     pub fn update_preview(&mut self) {

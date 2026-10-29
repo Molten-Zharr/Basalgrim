@@ -1,4 +1,5 @@
 use crate::fs::{Entry, Sort};
+use crate::operations::Cancellation;
 use std::{collections::BTreeSet, path::PathBuf};
 
 #[derive(Default)]
@@ -28,6 +29,7 @@ pub struct Tab {
     pub back: Vec<PathBuf>,
     pub forward: Vec<PathBuf>,
     pub loading: bool,
+    pub refreshing: bool,
     pub error: Option<String>,
     pub request: u64,
     pub offset: usize,
@@ -35,6 +37,7 @@ pub struct Tab {
     pub follow_selection: bool,
     pub columns: usize,
     pub page_size: usize,
+    pub(crate) scan_cancel: Cancellation,
 }
 
 impl Tab {
@@ -51,12 +54,14 @@ impl Tab {
             back: vec![],
             forward: vec![],
             loading: true,
+            refreshing: false,
             error: None,
             request: 0,
             offset: 0,
             follow_selection: true,
             columns: 1,
             page_size: 10,
+            scan_cancel: Cancellation::default(),
         }
     }
     pub fn entry(&self) -> Option<&Entry> {
@@ -112,5 +117,11 @@ impl Tab {
             .collect();
         self.marked.retain(|p| visible.contains(p));
         self.offset = self.offset.min(self.visible.len().saturating_sub(1));
+    }
+}
+
+impl Drop for Tab {
+    fn drop(&mut self) {
+        self.scan_cancel.cancel();
     }
 }

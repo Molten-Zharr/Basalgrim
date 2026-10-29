@@ -418,7 +418,7 @@ fn preview(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
     app.preview_area = inner;
-    if app.preview_loading {
+    if app.preview_loading && app.preview.is_none() {
         frame.render_widget(Paragraph::new(" Чтение…").style(palette.muted()), inner);
         return;
     }

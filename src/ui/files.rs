@@ -118,7 +118,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette
         .style(palette.text().fg(palette.color("separator"))),
         parts[2],
     );
-    if tab.loading {
+    if tab.loading && !tab.refreshing {
         frame.render_widget(
             Paragraph::new("\n Чтение каталога…").style(palette.muted()),
             parts[3],

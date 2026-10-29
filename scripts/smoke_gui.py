@@ -378,6 +378,30 @@ try:
                     key('Down'); chord('c','Control_L')
                     keyboard=base/'wheel-keyboard'; keyboard.mkdir(); navigate(keyboard); chord('v','Control_L')
                     wait_for(lambda:(keyboard/'file-001.txt').exists(),'keyboard navigation continues from the preserved focus')
+                watched=base/f'watched-{mode}'; watched.mkdir()
+                for index in range(100): (watched/f'file-{index:03}.txt').write_text(str(index))
+                navigate(watched)
+                for _ in range(notches): click(window,50,20,5)
+                before=screenshot(window,f'native-watch-{mode}-before.png')
+                # Insert a complete row before the viewport; its visible files
+                # and original off-screen keyboard focus must stay in place.
+                for index in range(8 if grid else 1): (watched/f'file--new-{index:03}').write_text('x')
+                time.sleep(1)
+                after=screenshot(window,f'native-watch-{mode}-after.png')
+                top=(200,10*16,1000,14*16) if grid else (200,11*16,1300,12*16)
+                assert before.crop(top).tobytes()==after.crop(top).tobytes(), 'Watch refresh moved the viewport'
+                protected=base/f'watch-protected-{mode}'; protected.mkdir()
+                chord('c','Control_L'); navigate(protected); chord('v','Control_L')
+                wait_for(lambda:(protected/'file-000.txt').exists(),'watch refresh preserves keyboard selection')
+                assert sorted(p.name for p in protected.iterdir())==['file-000.txt']
+                # A newly created first entry must gain its current hit region
+                # without navigation, refresh keys or any pointer input.
+                live=base/f'live-{mode}'; live.mkdir(); (live/'beta.txt').write_text('original')
+                navigate(live); (live/'alpha.txt').write_text('created externally'); time.sleep(1)
+                click(window,34,12 if grid else 11); chord('c','Control_L')
+                added=base/f'watch-added-{mode}'; added.mkdir(); navigate(added); chord('v','Control_L')
+                wait_for(lambda:(added/'alpha.txt').exists(),'new external entry has a correct hit region')
+                print(f'Native GUI watch: {mode}, preserved pixels and selection, external entry click passed',flush=True)
                 print(f'Native GUI wheel: {"grid" if grid else "list"}, content scroll, unchanged selection, correct visible entry and keyboard focus passed',flush=True)
             except Exception:
                 screenshot(window,'native-wheel-failure.png'); raise

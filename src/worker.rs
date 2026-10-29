@@ -1,6 +1,7 @@
 use crate::fs::{self, Entry, Operation, Preview, Report};
 use crate::operations::{Cancellation, Progress};
 use std::{
+    collections::BTreeSet,
     path::PathBuf,
     sync::{
         Arc, Mutex,
@@ -10,10 +11,14 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod watch;
+
+pub type DirectoryResult = Result<(PathBuf, Vec<Entry>), String>;
+
 pub enum Event {
     Directory {
         token: u64,
-        result: Result<(PathBuf, Vec<Entry>), String>,
+        result: DirectoryResult,
     },
     Preview {
         token: u64,
@@ -34,11 +39,12 @@ enum Task {
     Open(PathBuf),
 }
 pub struct Worker {
-    scans: Sender<(u64, PathBuf)>,
+    scans: Sender<(u64, PathBuf, Cancellation)>,
     previews: Sender<(u64, PathBuf)>,
     tasks: Sender<Task>,
     pub events: Receiver<Event>,
     progress: Arc<Mutex<Option<(u64, Progress)>>>,
+    watcher: watch::Watcher,
 }
 impl Default for Worker {
     fn default() -> Self {
@@ -48,18 +54,31 @@ impl Default for Worker {
 impl Worker {
     pub fn new() -> Self {
         let (send, events) = mpsc::channel();
-        let (scans, rx) = mpsc::channel::<(u64, PathBuf)>();
+        let (scans, rx) = mpsc::channel::<(u64, PathBuf, Cancellation)>();
         let result = send.clone();
         thread::spawn(move || {
-            for (token, path) in rx {
+            for (token, path, cancellation) in rx {
+                if cancellation.is_cancelled() {
+                    continue;
+                }
+                let read = (|| -> anyhow::Result<_> {
+                    let resolved = path.canonicalize()?;
+                    Ok(
+                        fs::read_directory_until(&resolved, || cancellation.is_cancelled())?
+                            .map(|entries| (resolved, entries)),
+                    )
+                })();
+                if cancellation.is_cancelled() {
+                    continue;
+                }
+                let read = match read {
+                    Ok(Some(snapshot)) => Ok(snapshot),
+                    Ok(None) => continue,
+                    Err(error) => Err(format!("{error:#}")),
+                };
                 let event = Event::Directory {
                     token,
-                    result: (|| {
-                        let resolved = path.canonicalize()?;
-                        let entries = fs::read_directory(&resolved)?;
-                        Ok((resolved, entries))
-                    })()
-                    .map_err(|e: anyhow::Error| format!("{e:#}")),
+                    result: read,
                 };
                 if result.send(event).is_err() {
                     break;
@@ -130,10 +149,17 @@ impl Worker {
             tasks,
             events,
             progress,
+            watcher: watch::Watcher::new(),
         }
     }
-    pub fn scan(&self, token: u64, path: PathBuf) {
-        let _ = self.scans.send((token, path));
+    pub fn scan(&self, token: u64, path: PathBuf, cancellation: Cancellation) {
+        let _ = self.scans.send((token, path, cancellation));
+    }
+    pub(crate) fn watch(&mut self, paths: BTreeSet<PathBuf>) {
+        self.watcher.set_paths(paths);
+    }
+    pub(crate) fn directory_changes(&self) -> watch::Changes {
+        self.watcher.take_changes()
     }
     pub fn preview(&self, token: u64, path: PathBuf) {
         let _ = self.previews.send((token, path));

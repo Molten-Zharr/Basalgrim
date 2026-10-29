@@ -74,27 +74,46 @@ pub fn clean(text: &str) -> String {
 }
 
 pub fn read_directory(path: &Path) -> Result<Vec<Entry>> {
-    fs::read_dir(path)
-        .with_context(|| format!("Не удалось прочитать {}", path.display()))?
-        .map(|entry| {
-            let entry = entry?;
-            let path = entry.path();
-            let metadata = fs::symlink_metadata(&path)?;
-            let symlink = metadata.is_symlink();
-            let directory = metadata.is_dir() || (symlink && path.is_dir());
-            let raw = entry.file_name();
-            let name = clean(&raw.to_string_lossy());
-            Ok(Entry {
-                path,
-                hidden: raw.as_encoded_bytes().starts_with(b"."),
-                name,
-                directory,
-                symlink,
-                size: metadata.len(),
-                modified: metadata.modified().ok(),
-            })
-        })
-        .collect()
+    Ok(read_directory_until(path, || false)?.unwrap())
+}
+
+pub(crate) fn read_directory_until(
+    path: &Path,
+    cancelled: impl Fn() -> bool,
+) -> Result<Option<Vec<Entry>>> {
+    let mut entries = Vec::new();
+    if cancelled() {
+        return Ok(None);
+    }
+    for entry in
+        fs::read_dir(path).with_context(|| format!("Не удалось прочитать {}", path.display()))?
+    {
+        if cancelled() {
+            return Ok(None);
+        }
+        let entry = entry?;
+        let path = entry.path();
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            // An entry may disappear while another program changes the directory.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        let symlink = metadata.is_symlink();
+        let directory = metadata.is_dir() || (symlink && path.is_dir());
+        let raw = entry.file_name();
+        let name = clean(&raw.to_string_lossy());
+        entries.push(Entry {
+            path,
+            hidden: raw.as_encoded_bytes().starts_with(b"."),
+            name,
+            directory,
+            symlink,
+            size: metadata.len(),
+            modified: metadata.modified().ok(),
+        });
+    }
+    Ok((!cancelled()).then_some(entries))
 }
 
 pub fn size(bytes: u64) -> String {
@@ -245,4 +264,31 @@ pub fn open_external(path: &Path) -> Result<()> {
         "Внешнее приложение завершилось с {status}"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod directory_tests {
+    use super::*;
+
+    #[test]
+    fn obsolete_scans_stop_between_entries_and_before_opening_the_directory() {
+        let root = tempfile::tempdir().unwrap();
+        for i in 0..20 {
+            fs::write(root.path().join(i.to_string()), "x").unwrap();
+        }
+        let calls = std::cell::Cell::new(0);
+        let result = read_directory_until(root.path(), || {
+            calls.set(calls.get() + 1);
+            calls.get() == 4
+        })
+        .unwrap();
+        assert!(result.is_none());
+        assert_eq!(calls.get(), 4);
+        assert!(
+            read_directory_until(&root.path().join("missing"), || true)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(read_directory(root.path()).unwrap().len(), 20);
+    }
 }

@@ -180,6 +180,11 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             for index in range(100): (files/f"file-{index:03}.txt").write_text(str(index))
             process=launch(files)
             for _ in range(3): click(50,20,21)
+            run("grim", "-g", "208,176 800x16", str(out/"native-wayland-watch-before.png"))
+            (files/"file--new.txt").write_text("external")
+            time.sleep(1)
+            run("grim", "-g", "208,176 800x16", str(out/"native-wayland-watch-after.png"))
+            assert (out/"native-wayland-watch-before.png").read_bytes()==(out/"native-wayland-watch-after.png").read_bytes(), "Wayland auto refresh moved the viewport"
             protected=base/"wheel-protected"; protected.mkdir()
             key("c","ctrl"); navigate(protected); key("v","ctrl")
             wait_for(lambda:(protected/"file-000.txt").exists(),"Wayland wheel preserves keyboard selection")
@@ -189,9 +194,11 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             click(34,11)
             clicked=base/"wheel-clicked"; clicked.mkdir()
             key("c","ctrl"); navigate(clicked); key("v","ctrl")
-            wait_for(lambda:(clicked/"file-009.txt").exists(),"Wayland wheel moves the actual viewport")
+            # One externally inserted entry now sorts before file-000.
+            wait_for(lambda:(clicked/"file-008.txt").exists(),"Wayland auto refresh updates entries and wheel hit regions")
             key("q","ctrl"); process.wait(timeout=5); assert process.returncode==0
             print("Native Wayland: wheel scrolls content, preserves selection and updates visible hit regions passed",flush=True)
+            print("Native Wayland: external create preserves viewport pixels and selected path passed",flush=True)
             print("Verified binary:", binary, hashlib.sha256(binary.read_bytes()).hexdigest())
         except Exception:
             if process and process.poll() is None:
