@@ -11,6 +11,6 @@ A Linux file manager from Molten-Zharr. Browse folders and manage files on the d
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Molten-Zharr/Basalgrim?style=flat-square&amp;labelColor=000000&amp;color=790000&amp;label=license" height="20" alt="MIT license"></a>
 </p>
 
-![Basalgrim](assets/screenshots/grid.png)
+![Basalgrim](assets/screenshots/image-preview.png)
 
 [Documentation (in Russian)](docs/USAGE.md)

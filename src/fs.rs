@@ -9,7 +9,7 @@ use anyhow::{Context, Result, ensure};
 use chrono::{DateTime, Local};
 use std::{
     cmp::Reverse,
-    fs::{self, File},
+    fs,
     io::Read,
     path::{Path, PathBuf},
     time::SystemTime,
@@ -168,9 +168,14 @@ pub struct Preview {
     pub title: String,
     pub details: Vec<String>,
     pub lines: Vec<String>,
+    pub image: Option<std::sync::Arc<crate::preview::ImagePreview>>,
 }
 
 pub fn preview(path: &Path) -> Result<Preview> {
+    preview_with_images(path, true)
+}
+
+pub fn preview_with_images(path: &Path, _graphics: bool) -> Result<Preview> {
     let meta = fs::symlink_metadata(path)?;
     let mut result = Preview {
         title: clean(&path.file_name().unwrap_or_default().to_string_lossy()),
@@ -179,6 +184,7 @@ pub fn preview(path: &Path) -> Result<Preview> {
             format!("Изменён  {}", date(meta.modified().ok())),
         ],
         lines: vec![],
+        image: None,
     };
     #[cfg(unix)]
     {
@@ -209,8 +215,46 @@ pub fn preview(path: &Path) -> Result<Preview> {
             result.lines.push("… остальные элементы".into());
         }
     } else if meta.is_file() {
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(
+                (rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32,
+            );
+        }
+        let mut file = options.open(path)?;
+        ensure!(file.metadata()?.is_file(), "Файл изменился во время чтения");
+        #[cfg(any(feature = "guitui", feature = "tui"))]
+        {
+            use std::io::{Seek, SeekFrom};
+            let mut prefix = Vec::new();
+            (&mut file).take(512).read_to_end(&mut prefix)?;
+            if let Some(decoded) = crate::preview::read(path, &mut file, &prefix, _graphics) {
+                match decoded {
+                    Ok(decoded) => {
+                        result.details.push(decoded.details);
+                        result.image = decoded.image;
+                        result.lines.push(if _graphics {
+                            "Подготовка изображения…".into()
+                        } else {
+                            "Терминал не поддерживает графику".into()
+                        });
+                    }
+                    Err(error) => {
+                        result.lines = vec![
+                            "Предпросмотр изображения недоступен".into(),
+                            clean(&format!("{error:#}")),
+                        ];
+                    }
+                }
+                return Ok(result);
+            }
+            file.seek(SeekFrom::Start(0))?;
+        }
         let mut bytes = Vec::new();
-        File::open(path)?.take(65_537).read_to_end(&mut bytes)?;
+        file.take(65_537).read_to_end(&mut bytes)?;
         let truncated = bytes.len() > 65_536;
         bytes.truncate(65_536);
         if bytes.contains(&0) || std::str::from_utf8(&bytes).is_err() {

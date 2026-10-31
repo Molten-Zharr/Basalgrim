@@ -123,7 +123,14 @@ impl App {
             // retaining its scroll position and the old preview while reading.
             self.preview_token = self.token();
             self.preview_loading = true;
-            self.worker.preview(self.preview_token, path);
+            self.preview_cancel.cancel();
+            self.preview_cancel = Default::default();
+            self.worker.preview_image(
+                self.preview_token,
+                path,
+                self.icon_backend.supports_images(),
+                self.preview_cancel.clone(),
+            );
         }
     }
 }

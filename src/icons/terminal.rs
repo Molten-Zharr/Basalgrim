@@ -25,16 +25,17 @@ pub struct TerminalGraphics {
     pub tmux: bool,
 }
 impl TerminalGraphics {
-    fn encode(self, image: image::RgbaImage, area: Size, id: u64) -> anyhow::Result<Protocol> {
+    pub(crate) fn encode(self, image: image::RgbaImage, area: Size) -> anyhow::Result<Protocol> {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        // Icons and previews share an ID space, including concurrently encoded frames.
+        static SERIAL: AtomicU32 = AtomicU32::new(1);
+        let id = SERIAL
+            .fetch_add(1, Ordering::Relaxed)
+            .wrapping_add(std::process::id() << 16)
+            .max(1);
         let image = DynamicImage::ImageRgba8(image);
         Ok(match self.backend {
-            IconBackend::Kitty => Protocol::Kitty(Kitty::new(
-                image,
-                area,
-                ((std::process::id() & 0xffff) << 16) | (id as u32 & 0xffff).max(1),
-                self.tmux,
-                false,
-            )?),
+            IconBackend::Kitty => Protocol::Kitty(Kitty::new(image, area, id, self.tmux, false)?),
             IconBackend::Sixel => Protocol::Sixel(Sixel::new(image, area, self.tmux)?),
             IconBackend::Iterm2 => Protocol::ITerm2(Iterm2::new(image, area, self.tmux)?),
             _ => anyhow::bail!("No terminal graphics protocol"),
@@ -183,7 +184,7 @@ impl TerminalIcons {
             for request in input {
                 let result = (|| {
                     let image = rasterizer.image(request.key)?.clone();
-                    request.graphics.encode(image, request.area, request.id)
+                    request.graphics.encode(image, request.area)
                 })()
                 .map_err(|error: anyhow::Error| error.to_string());
                 if send
@@ -212,6 +213,9 @@ impl TerminalIcons {
 
     pub fn backend(&self) -> IconBackend {
         self.graphics.backend
+    }
+    pub fn graphics(&self) -> TerminalGraphics {
+        self.graphics
     }
 
     fn poll(&mut self) {

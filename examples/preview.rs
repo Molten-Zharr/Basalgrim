@@ -45,6 +45,8 @@ fn render(app: &mut App, out: &Path, name: &str, width: u16, height: u16) -> Res
         backend,
         &app.icon_slots,
         &mut Default::default(),
+        app.preview_slot.as_ref(),
+        &mut Default::default(),
         app.selection_area(),
         app.settings.appearance.palette()["selection_accent"],
     )?)?;
@@ -401,6 +403,31 @@ fn main() -> Result<()> {
     }
     render(&mut history, &out, "journal", 120, 36)?;
     render(&mut history, &out, "journal-compact", 34, 14)?;
+    fs::write(
+        demo.path().join("landscape.svg"),
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
+      <defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#101b26"/><stop offset="1" stop-color="#bc5b43"/></linearGradient></defs>
+      <path fill="url(#sky)" d="M0 0h800v1000H0z"/>
+      <circle cx="560" cy="300" r="115" fill="#ffb05c"/>
+      <path fill="#854c48" d="m0 650 240-330 160 210 130-140 270 290v320H0z"/>
+      <path fill="#ca8c69" d="m130 470 110-150 100 130-95-55-45 60-15-30z"/>
+      <path fill="#35444c" d="m0 760 230-200 180 170 160-250 230 250v270H0z"/>
+      <path fill="#172e35" d="m0 860 240-140 250 170 310-150v260H0z"/>
+      <path fill="#0c2028" d="m80 900 100-330 100 330h-75v100h-50V900zm320 60 90-250 90 250h-65v40h-50v-40z"/>
+    </svg>"##,
+    )?;
+    let mut image_app = App::new(demo.path().into(), Settings::default());
+    image_app.icon_backend = basalgrim::icons::IconBackend::Gui;
+    settle(&mut image_app)?;
+    image_app.tab_mut().selected = image_app
+        .tab()
+        .visible
+        .iter()
+        .position(|&i| image_app.tab().entries[i].name == "landscape.svg")
+        .unwrap();
+    image_app.update_preview();
+    settle(&mut image_app)?;
+    render(&mut image_app, &out, "image-preview", 150, 44)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

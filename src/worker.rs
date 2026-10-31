@@ -55,7 +55,7 @@ enum Task {
 }
 pub struct Worker {
     scans: Sender<(u64, PathBuf, Cancellation)>,
-    previews: Sender<(u64, PathBuf)>,
+    previews: Sender<(u64, PathBuf, bool, Cancellation)>,
     tasks: Option<Sender<Task>>,
     task_thread: Option<thread::JoinHandle<()>>,
     opens: Sender<PathBuf>,
@@ -103,7 +103,7 @@ impl Worker {
                 }
             }
         });
-        let (previews, rx) = mpsc::channel::<(u64, PathBuf)>();
+        let (previews, rx) = mpsc::channel::<(u64, PathBuf, bool, Cancellation)>();
         let result = send.clone();
         thread::spawn(move || {
             while let Ok(mut request) = rx.recv() {
@@ -111,11 +111,19 @@ impl Worker {
                 for newer in rx.try_iter() {
                     request = newer;
                 }
-                let (token, path) = request;
+                let (token, path, graphics, cancellation) = request;
+                if cancellation.is_cancelled() {
+                    continue;
+                }
+                let preview =
+                    fs::preview_with_images(&path, graphics).map_err(|e| format!("{e:#}"));
+                if cancellation.is_cancelled() {
+                    continue;
+                }
                 if result
                     .send(Event::Preview {
                         token,
-                        result: fs::preview(&path).map_err(|e| format!("{e:#}")),
+                        result: preview,
                     })
                     .is_err()
                 {
@@ -310,7 +318,16 @@ impl Worker {
         self.watcher.take_changes()
     }
     pub fn preview(&self, token: u64, path: PathBuf) {
-        let _ = self.previews.send((token, path));
+        self.preview_image(token, path, true, Cancellation::default());
+    }
+    pub fn preview_image(
+        &self,
+        token: u64,
+        path: PathBuf,
+        graphics: bool,
+        cancellation: Cancellation,
+    ) {
+        let _ = self.previews.send((token, path, graphics, cancellation));
     }
     pub fn operate(&self, token: u64, operation: Operation, cancellation: Cancellation) -> bool {
         self.tasks

@@ -23,6 +23,7 @@ jobs:
       - run: python3 scripts/smoke_panes.py
       - run: python3 scripts/smoke_session.py
       - run: python3 scripts/smoke_journal.py
+      - run: python3 scripts/smoke_preview.py
       - run: cargo run --locked --example preview
       - uses: actions/upload-artifact@v4
         with:

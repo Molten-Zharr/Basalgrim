@@ -55,6 +55,9 @@ fn run() -> Result<()> {
     let _session = Session;
     execute!(stdout(), EnterAlternateScreen)?;
     let mut icons = TerminalIcons::detect();
+    let mut preview = icons
+        .as_ref()
+        .map(|icons| basalgrim::preview::terminal::TerminalPreview::new(icons.graphics()));
     app.icon_backend = icons
         .as_ref()
         .map_or(IconBackend::Symbols, TerminalIcons::backend);
@@ -78,6 +81,11 @@ fn run() -> Result<()> {
             ui::render(&mut app, frame);
             if let Some(icons) = &mut icons
                 && !icons.render(frame, &app.icon_slots)
+            {
+                app.icon_backend = IconBackend::Symbols;
+            }
+            if let Some(preview) = &mut preview
+                && !preview.render(frame, app.preview_slot.as_ref())
             {
                 app.icon_backend = IconBackend::Symbols;
             }
@@ -161,6 +169,9 @@ fn run() -> Result<()> {
                     && size.rows > 0
                 {
                     icons.resize_cells(size.width / size.columns, size.height / size.rows);
+                    if let Some(preview) = &mut preview {
+                        preview.resize_cells(size.width / size.columns, size.height / size.rows);
+                    }
                 }
             }
             _ => {}

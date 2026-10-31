@@ -52,6 +52,7 @@ pub fn hit(app: &mut App, rect: Rect, target: Target) {
 }
 pub fn render(app: &mut App, frame: &mut Frame) {
     app.icon_slots.clear();
+    app.preview_slot = None;
     let palette = Palette::new(&app.settings);
     render_content(app, frame, palette);
     app.validate_marquee();
@@ -464,6 +465,17 @@ fn preview(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
         palette.text().fg(palette.color("separator")),
     ));
     frame.render_widget(Paragraph::new(header), parts[0]);
+    if let Some(image) = &preview.image
+        && app.icon_backend.supports_images()
+        && !parts[1].is_empty()
+    {
+        app.preview_slot = Some(crate::preview::PreviewSlot {
+            image: image.clone(),
+            area: parts[1],
+            background: app.settings.appearance.palette()["background"],
+        });
+        return;
+    }
     app.preview_page = usize::from(parts[1].height).max(1);
     app.preview_offset = app
         .preview_offset

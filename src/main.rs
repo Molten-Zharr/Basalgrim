@@ -48,8 +48,10 @@ fn run() -> Result<()> {
     };
     let mut uploaded: Option<Buffer> = None;
     let mut uploaded_icons = Vec::new();
+    let mut uploaded_preview = None;
     let mut uploaded_selection = None;
     let mut icons = basalgrim::icons::images::IconRasterizer::default();
+    let mut previews = basalgrim::preview::images::PreviewRasterizer::default();
     let mut previous_click: Option<(egui::Pos2, Instant)> = None;
     eframe::run_ui_native("Basalgrim · Molten-Zharr", options, move |root, _| {
         let ctx = root.ctx().clone();
@@ -106,18 +108,24 @@ fn run() -> Result<()> {
                 let backend = terminal.backend_mut();
                 if uploaded.as_ref() != Some(&backend.soft_backend.buffer)
                     || uploaded_icons != app.icon_slots
+                    || uploaded_preview != app.preview_slot
                     || uploaded_selection != app.selection_area()
                 {
                     let rgb = raster::compose_frame(
                         &backend.soft_backend,
                         &app.icon_slots,
                         &mut icons,
+                        app.preview_slot.as_ref(),
+                        &mut previews,
                         app.selection_area(),
                         app.settings.appearance.palette()["selection_accent"],
                     )
                     .unwrap_or_else(|error| {
                         app.icon_backend = basalgrim::icons::IconBackend::Symbols;
-                        app.message(format!("Не удалось отрисовать иконки: {error:#}"), true);
+                        app.message(
+                            format!("Не удалось отрисовать изображения: {error:#}"),
+                            true,
+                        );
                         ctx.request_repaint();
                         backend.soft_backend.get_pixmap_data().to_vec()
                     });
@@ -139,6 +147,7 @@ fn run() -> Result<()> {
                     }
                     uploaded = Some(backend.soft_backend.buffer.clone());
                     uploaded_icons = app.icon_slots.clone();
+                    uploaded_preview = app.preview_slot.clone();
                     uploaded_selection = app.selection_area();
                 }
                 let image_size = egui::vec2(

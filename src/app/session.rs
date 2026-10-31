@@ -83,6 +83,7 @@ impl App {
 }
 impl Drop for App {
     fn drop(&mut self) {
+        self.preview_cancel.cancel();
         if self.settings.restore_session
             && let Some(session) = &mut self.session
         {

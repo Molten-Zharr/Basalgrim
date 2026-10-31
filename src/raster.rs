@@ -63,10 +63,26 @@ pub fn compose_frame(
     backend: &SoftBackend<CellFont>,
     slots: &[crate::icons::IconSlot],
     icons: &mut crate::icons::images::IconRasterizer,
+    preview: Option<&crate::preview::PreviewSlot>,
+    previews: &mut crate::preview::images::PreviewRasterizer,
     selection: Option<ratatui::layout::Rect>,
     accent: [u8; 3],
 ) -> anyhow::Result<Vec<u8>> {
     let mut rgb = compose_icons(backend, slots, icons)?;
+    if let Some(slot) = preview {
+        let image = previews.image(slot, backend.char_width as u16, backend.char_height as u16)?;
+        let left = usize::from(slot.area.x) * backend.char_width;
+        let top = usize::from(slot.area.y) * backend.char_height;
+        let width = backend.get_pixmap_width();
+        let height = backend.get_pixmap_height();
+        for y in 0..(image.height() as usize).min(height.saturating_sub(top)) {
+            for x in 0..(image.width() as usize).min(width.saturating_sub(left)) {
+                let offset = ((top + y) * width + left + x) * 3;
+                rgb[offset..offset + 3]
+                    .copy_from_slice(&image.get_pixel(x as u32, y as u32).0[..3]);
+            }
+        }
+    }
     if let Some(area) = selection {
         let area = area.intersection(backend.buffer.area);
         if !area.is_empty() {

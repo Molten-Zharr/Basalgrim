@@ -117,6 +117,7 @@ pub struct Place {
 pub struct App {
     pub icon_backend: crate::icons::IconBackend,
     pub icon_slots: Vec<crate::icons::IconSlot>,
+    pub preview_slot: Option<crate::preview::PreviewSlot>,
     pub panes: [Pane; 2],
     pub active: usize,
     pub settings: Settings,
@@ -163,6 +164,8 @@ pub struct App {
     serial: u64,
     preview_token: u64,
     preview_path: Option<PathBuf>,
+    preview_graphics: bool,
+    preview_cancel: crate::operations::Cancellation,
     directory_results: BTreeMap<u64, crate::worker::DirectoryResult>,
     pending_directory_changes: BTreeSet<PathBuf>,
     conflict_previous: Option<Dialog>,
@@ -196,6 +199,7 @@ impl App {
         let mut app = Self {
             icon_backend: crate::icons::IconBackend::Symbols,
             icon_slots: Vec::new(),
+            preview_slot: None,
             panes: [
                 Pane {
                     tabs: vec![Tab::new(directory.clone())],
@@ -251,6 +255,8 @@ impl App {
             serial: 0,
             preview_token: 0,
             preview_path: None,
+            preview_graphics: false,
+            preview_cancel: Default::default(),
             directory_results: BTreeMap::new(),
             pending_directory_changes: BTreeSet::new(),
             conflict_previous: None,
@@ -387,17 +393,26 @@ impl App {
         } else {
             None
         };
-        if self.preview_path == path {
+        let graphics = self.icon_backend.supports_images();
+        if self.preview_path == path && self.preview_graphics == graphics {
             return;
         }
         self.preview_path = path.clone();
+        self.preview_graphics = graphics;
+        self.preview_cancel.cancel();
+        self.preview_cancel = Default::default();
         self.preview = None;
         self.preview_error = None;
         self.preview_offset = 0;
         self.preview_token = self.token();
         self.preview_loading = path.is_some();
         if let Some(path) = path {
-            self.worker.preview(self.preview_token, path);
+            self.worker.preview_image(
+                self.preview_token,
+                path,
+                graphics,
+                self.preview_cancel.clone(),
+            );
         }
     }
     pub fn open_selected(&mut self) {

@@ -15,6 +15,8 @@ import subprocess
 import sys
 import tempfile
 import time
+from PIL import Image
+import preview_fixture
 
 
 def main():
@@ -266,6 +268,33 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             assert (out/"native-wayland-journal-after.png").read_bytes()==(out/"native-wayland-journal-refreshed.png").read_bytes(),"Wayland journal refresh changed history"
             key("q","ctrl");process.wait(timeout=5);assert process.returncode==0
             print("Native Wayland journal: persistent history and mouse refresh passed",flush=True)
+            preview_dir=base/"image-preview";preview_fixture.create(preview_dir)
+            preferences=json.loads(settings.read_text());preferences.update(dual=False,grid=False,preview=True,icon_mode="symbols")
+            settings.write_text(json.dumps(preferences))
+            process=launch(preview_dir)
+            def preview_shot(name):
+                path=out/f"native-wayland-preview-{name}.png"
+                run("grim","-g","0,0 1360x860",str(path))
+                with Image.open(path) as image:
+                    return image.copy()
+            wait_for(lambda:preview_fixture.bounds(preview_shot("initial"),preview_fixture.RED),"Wayland image preview")
+            preview_fixture.assert_aspect(preview_shot("initial"),preview_fixture.RED)
+            preview_fixture.create(preview_dir,preview_fixture.BLUE)
+            wait_for(lambda:preview_fixture.bounds(preview_shot("rewrite"),preview_fixture.BLUE),"Wayland same-path image rewrite")
+            preview_fixture.assert_aspect(preview_shot("rewrite"),preview_fixture.BLUE)
+            click(151,29);key("F10","shift");time.sleep(.3)
+            assert not preview_fixture.bounds(preview_shot("modal"),preview_fixture.BLUE),"Wayland image covered a menu"
+            click(2,52)
+            wait_for(lambda:preview_fixture.bounds(preview_shot("dismiss"),preview_fixture.BLUE),"Wayland mouse modal dismissal")
+            key("F3");time.sleep(.2)
+            assert not preview_fixture.bounds(preview_shot("off"),preview_fixture.BLUE),"Wayland image remained after F3"
+            key("F3");run("swaymsg",f"[pid={process.pid}] resize set 800 px 600 px");time.sleep(.3)
+            run("swaymsg",f"[pid={process.pid}] resize set 1360 px 860 px")
+            wait_for(lambda:preview_fixture.bounds(preview_shot("resized"),preview_fixture.BLUE),"Wayland image after resize")
+            key("Down");time.sleep(.3)
+            assert not preview_fixture.bounds(preview_shot("text"),preview_fixture.BLUE),"Wayland cached image over text"
+            key("q","ctrl");process.wait(timeout=5);assert process.returncode==0
+            print("Native Wayland preview: aspect, watched rewrite, menu, F3, resize and text passed",flush=True)
             print("Verified binary:", binary, hashlib.sha256(binary.read_bytes()).hexdigest())
         except Exception:
             if process and process.poll() is None:

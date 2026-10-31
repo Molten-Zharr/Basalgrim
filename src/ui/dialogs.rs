@@ -38,6 +38,13 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     );
     app.icon_slots
         .retain(|slot| slot.area.intersection(rect).is_empty());
+    if app
+        .preview_slot
+        .as_ref()
+        .is_some_and(|slot| !slot.area.intersection(rect).is_empty())
+    {
+        app.preview_slot = None;
+    }
     frame.render_widget(Clear, rect);
     let title = match dialog {
         Dialog::Edit { kind, .. } => kind.title(),

@@ -13,6 +13,7 @@ import shutil
 import select
 import hashlib
 from PIL import Image
+import preview_fixture
 
 # Run on an isolated X server: never replace the user's clipboard or focus.
 xvfb = os.environ.get("XVFB") or shutil.which("Xvfb")
@@ -565,6 +566,31 @@ try:
         except Exception:
             if process.poll() is None:screenshot(window,'native-journal-failure.png')
             raise
+        finally:stop(process,log)
+        preview_dir=base/'image-preview';preview_fixture.create(preview_dir)
+        preferences=json.loads(settings.read_text());preferences.update(dual=False,grid=False,preview=True,icon_mode='symbols')
+        settings.write_text(json.dumps(preferences))
+        process,window,log=launch(preview_dir,config)
+        try:
+            wait_for(lambda:preview_fixture.bounds(screenshot(window,'native-preview.png'),preview_fixture.RED),'GUI image preview')
+            preview_fixture.assert_aspect(screenshot(window,'native-preview.png'),preview_fixture.RED)
+            preview_fixture.create(preview_dir,preview_fixture.BLUE)
+            wait_for(lambda:preview_fixture.bounds(screenshot(window,'native-preview-rewrite.png'),preview_fixture.BLUE),'GUI same-path image rewrite')
+            preview_fixture.assert_aspect(screenshot(window,'native-preview-rewrite.png'),preview_fixture.BLUE)
+            move(window,151,29);chord('F10','Shift_L');time.sleep(.3)
+            assert not preview_fixture.bounds(screenshot(window,'native-preview-modal.png'),preview_fixture.BLUE),'GUI image covered a menu'
+            click(window,2,52)
+            wait_for(lambda:preview_fixture.bounds(screenshot(window,'native-preview-dismiss.png'),preview_fixture.BLUE),'GUI mouse modal dismissal')
+            key('F3');time.sleep(.2)
+            assert not preview_fixture.bounds(screenshot(window,'native-preview-off.png'),preview_fixture.BLUE),'GUI image remained after F3'
+            key('F3');time.sleep(.3)
+            x.XResizeWindow(d,window,800,600);x.XFlush(d);time.sleep(.3)
+            x.XResizeWindow(d,window,1360,860);x.XFlush(d)
+            wait_for(lambda:preview_fixture.bounds(screenshot(window,'native-preview-resized.png'),preview_fixture.BLUE),'GUI image after resize')
+            key('Down');time.sleep(.3)
+            assert not preview_fixture.bounds(screenshot(window,'native-preview-text.png'),preview_fixture.BLUE),'GUI cached image remained over text'
+            chord('q','Control_L');process.wait(timeout=5);assert process.returncode==0
+            print('Native GUI preview: symbol icons, aspect, watched rewrite, menu dismissal, F3, resize and text passed',flush=True)
         finally:stop(process,log)
     print('Verified binary:', binary, hashlib.sha256(binary.read_bytes()).hexdigest(), flush=True)
 finally:
