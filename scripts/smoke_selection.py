@@ -22,7 +22,7 @@ def main():
             for name in ("alpha.txt","beta.txt","gamma.txt"): (source/name).write_text(name)
             config=base/"config/molten-zharr/basalgrim/settings.json"; config.parent.mkdir(parents=True)
             config.write_text(json.dumps({"grid":grid,"preview":False}))
-            env=dict(os.environ,TERM="xterm-256color",XDG_CONFIG_HOME=str(base/"config"))
+            env=dict(os.environ,TERM="xterm-256color",XDG_STATE_HOME=str(base/"state"),XDG_CONFIG_HOME=str(base/"config"))
             for key in ("TERM_PROGRAM","LC_TERMINAL","TMUX","WEZTERM_EXECUTABLE","KONSOLE_VERSION"): env.pop(key,None)
             master,slave=pty.openpty()
             fcntl.ioctl(slave,termios.TIOCSWINSZ,struct.pack("HHHH",53,170,0,0))

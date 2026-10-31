@@ -52,7 +52,7 @@ def main():
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"grid": grid, "preview": False}))
-            env = dict(os.environ, TERM="xterm-256color", XDG_CONFIG_HOME=str(base / "config"))
+            env = dict(os.environ, TERM="xterm-256color", XDG_STATE_HOME=str(base / "state"), XDG_CONFIG_HOME=str(base / "config"))
             for key in ("TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION"):
                 env.pop(key, None)
             master, slave = pty.openpty()

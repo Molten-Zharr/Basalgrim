@@ -48,7 +48,7 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
 ''')
         env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), WLR_BACKENDS="headless",
                    WLR_RENDERER="pixman", WLR_LIBINPUT_NO_DEVICES="1",
-                   LIBGL_ALWAYS_SOFTWARE="1", XDG_CONFIG_HOME=str(base / "config"),
+                   LIBGL_ALWAYS_SOFTWARE="1", XDG_STATE_HOME=str(base / "state"), XDG_CONFIG_HOME=str(base / "config"),
                    XDG_DATA_HOME=str(base / "data"))
         for name in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "SWAYSOCK"):
             env.pop(name, None)
@@ -104,7 +104,7 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             return None
 
         def launch(path):
-            child = subprocess.Popen([str(binary), str(path)], env=env, stdout=app_log, stderr=app_log)
+            child = subprocess.Popen([str(binary), *([] if path is None else [str(path)])], env=env, stdout=app_log, stderr=app_log)
             def mapped():
                 assert child.poll() is None, "Native Wayland app exited; see native-wayland.log"
                 return find(json.loads(run("swaymsg", "-t", "get_tree").stdout), child.pid)
@@ -246,6 +246,18 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             wait_for(lambda:(pane_source/"a (1) (1).txt").exists(),"Wayland duplicate shortcut")
             key("q","ctrl");process.wait(timeout=5);assert process.returncode==0
             print("Native Wayland panes: group copy/move, conflicts, mouse duplicate and shortcuts passed",flush=True)
+            session_dirs=[base/f"session-{i}" for i in range(4)]
+            for directory in session_dirs:directory.mkdir();(directory/"marker.txt").write_text(directory.name)
+            process=launch(session_dirs[0]);key("t","ctrl");navigate(session_dirs[1]);key("Tab");navigate(session_dirs[2]);key("t","ctrl");navigate(session_dirs[3]);key("q","ctrl");process.wait(timeout=5)
+            state=base/"state/molten-zharr/basalgrim/session.json"
+            saved=json.loads(state.read_text());assert saved["active"]==1
+            assert [p["tabs"] for p in saved["panes"]]==[[str(session_dirs[0]),str(session_dirs[1])],[str(session_dirs[2]),str(session_dirs[3])]]
+            process=launch(None);key("c","ctrl");navigate(session_dirs[0]);key("v","ctrl");time.sleep(.5);key("Return")
+            wait_for(lambda:(session_dirs[0]/"marker (1).txt").exists(),"Wayland restored active pane")
+            assert (session_dirs[0]/"marker (1).txt").read_text()=="session-3"
+            key("t","ctrl");run("swaymsg",f"[pid={process.pid}] kill");process.wait(timeout=5);assert process.returncode==0
+            saved=json.loads(state.read_text());assert len(saved["panes"][1]["tabs"])==3 and saved["panes"][1]["active"]==2
+            print("Native Wayland session: both panes/tabs, restart, active-pane file commands and window close passed",flush=True)
             print("Verified binary:", binary, hashlib.sha256(binary.read_bytes()).hexdigest())
         except Exception:
             if process and process.poll() is None:

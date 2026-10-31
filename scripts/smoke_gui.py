@@ -156,10 +156,10 @@ def search(name):
     key('slash'); type_text(name); key('Return'); time.sleep(.2)
 
 def launch(path, config):
-    env = dict(os.environ, XDG_CONFIG_HOME=str(config), XDG_DATA_HOME=str(config.parent/'data'), LIBGL_ALWAYS_SOFTWARE='1', WINIT_X11_SCALE_FACTOR='1')
+    env = dict(os.environ, XDG_CONFIG_HOME=str(config), XDG_DATA_HOME=str(config.parent/'data'), XDG_STATE_HOME=str(config.parent/'state'), LIBGL_ALWAYS_SOFTWARE='1', WINIT_X11_SCALE_FACTOR='1')
     for n in ('WAYLAND_DISPLAY','WAYLAND_SOCKET'): env.pop(n, None)
     log = open('target/preview/native-gui.log', 'w')
-    process = subprocess.Popen([str(binary), str(path)], env=env, stdout=log, stderr=log)
+    process = subprocess.Popen([str(binary), *([] if path is None else [str(path)])], env=env, stdout=log, stderr=log)
     window = None; until=time.monotonic()+10
     while window is None:
         assert process.poll() is None, 'GUI exited before opening'
@@ -173,6 +173,19 @@ def stop(process,log):
     if process.poll() is None:
         process.terminate(); process.wait(timeout=5)
     log.close()
+
+def close_window(window):
+    class Data(C.Union):
+        _fields_=[('bytes',C.c_char*20),('shorts',C.c_short*10),('longs',C.c_long*5)]
+    class Client(C.Structure):
+        _fields_=[('type',C.c_int),('serial',C.c_ulong),('send_event',C.c_int),('display',D),('window',W),('message_type',A),('format',C.c_int),('data',Data)]
+    class Event(C.Union):
+        _fields_=[('client',Client),('pad',C.c_long*24)]
+    event=Event();event.client.type=33;event.client.send_event=1;event.client.display=d;event.client.window=window
+    event.client.message_type=x.XInternAtom(d,b'WM_PROTOCOLS',0);event.client.format=32
+    event.client.data.longs[0]=x.XInternAtom(d,b'WM_DELETE_WINDOW',0)
+    x.XSendEvent.argtypes=[D,W,C.c_int,C.c_long,C.POINTER(Event)]
+    assert x.XSendEvent(d,window,0,0,C.byref(event));x.XFlush(d)
 
 try:
     with tempfile.TemporaryDirectory(prefix='basalgrim-gui-') as tmp:
@@ -513,6 +526,31 @@ try:
         except Exception:
             screenshot(window,'native-pane-failure.png'); raise
         finally: stop(process,log)
+        session_dirs=[base/f'session-{i}' for i in range(4)]
+        for directory in session_dirs: directory.mkdir();(directory/'marker.txt').write_text(directory.name)
+        state=base/'state/molten-zharr/basalgrim/session.json'
+        preferences=json.loads(settings.read_text());preferences.update(dual=True,restore_session=True,grid=False,preview=False)
+        settings.write_text(json.dumps(preferences))
+        process,window,log=launch(session_dirs[0],config)
+        try:
+            chord('t','Control_L');navigate(session_dirs[1]);key('Tab');navigate(session_dirs[2]);chord('t','Control_L');navigate(session_dirs[3])
+            chord('q','Control_L');process.wait(timeout=5);assert process.returncode==0
+        finally:stop(process,log)
+        saved=json.loads(state.read_text());assert saved['active']==1
+        assert [p['tabs'] for p in saved['panes']]==[[str(session_dirs[0]),str(session_dirs[1])],[str(session_dirs[2]),str(session_dirs[3])]]
+        process,window,log=launch(None,config)
+        try:
+            screenshot(window,'native-session-restored.png')
+            chord('c','Control_L');navigate(session_dirs[0]);chord('v','Control_L');time.sleep(.6);key('Return')
+            wait_for(lambda:(session_dirs[0]/'marker (1).txt').exists(),'GUI restored active pane')
+            assert (session_dirs[0]/'marker (1).txt').read_text()=='session-3'
+            time.sleep(.3);chord('t','Control_L');close_window(window);process.wait(timeout=5);assert process.returncode==0
+            saved=json.loads(state.read_text());assert len(saved['panes'][1]['tabs'])==3 and saved['panes'][1]['active']==2
+            print('Native GUI session: both panes/tabs, restart, active-pane file commands and WM close flush passed',flush=True)
+        except Exception:
+            if process.poll() is None:screenshot(window,'native-session-failure.png')
+            raise
+        finally:stop(process,log)
     print('Verified binary:', binary, hashlib.sha256(binary.read_bytes()).hexdigest(), flush=True)
 finally:
     x.XCloseDisplay(d)

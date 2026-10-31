@@ -50,10 +50,7 @@ fn run() -> Result<()> {
         return Ok(());
     };
     let (settings, settings_path, warning) = Settings::startup();
-    let mut app = App::new(options.directory, settings);
-    if let Some(warning) = warning {
-        app.message(warning, true);
-    }
+    let mut app = App::startup(options, settings, warning);
     enable_raw_mode()?;
     let _session = Session;
     execute!(stdout(), EnterAlternateScreen)?;

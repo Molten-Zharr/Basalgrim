@@ -7,6 +7,7 @@ pub use commands::{CommandItem, CommandMenu, MenuContext};
 mod events;
 mod operations;
 mod selection;
+mod session;
 mod settings;
 pub use settings::{
     SettingControl, SettingRow, SettingsEdit, SettingsFocus, SettingsSection, SettingsTab,
@@ -121,6 +122,8 @@ pub struct App {
     pub settings_view: SettingsView,
     pub settings_save_error: Option<String>,
     pub settings_save_available: bool,
+    pub session_save_error: Option<String>,
+    pub session_load_error: Option<String>,
     pub dialog: Option<Dialog>,
     pub clipboard: Option<Clipboard>,
     pub places: Vec<Place>,
@@ -158,6 +161,7 @@ pub struct App {
     pending_directory_changes: BTreeSet<PathBuf>,
     conflict_previous: Option<Dialog>,
     conflict_sequence: u64,
+    session: Option<crate::session::Runtime>,
 }
 
 impl App {
@@ -201,6 +205,8 @@ impl App {
             settings_view: SettingsView::default(),
             settings_save_error: None,
             settings_save_available: false,
+            session_save_error: None,
+            session_load_error: None,
             dialog: None,
             clipboard: None,
             places,
@@ -238,6 +244,7 @@ impl App {
             pending_directory_changes: BTreeSet::new(),
             conflict_previous: None,
             conflict_sequence: 0,
+            session: None,
         };
         app.reload(0, 0);
         app.reload(1, 0);
@@ -318,6 +325,7 @@ impl App {
         self.update_preview();
     }
     pub fn tick(&mut self) {
+        self.persist_session();
         self.validate_marquee();
         self.observe_directories();
         if let Some((token, progress)) = self.worker.take_progress() {

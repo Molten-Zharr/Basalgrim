@@ -12,13 +12,15 @@ pub enum SettingsSection {
     #[default]
     Themes,
     Shortcuts,
+    Session,
 }
 impl SettingsSection {
-    pub const ALL: [Self; 2] = [Self::Themes, Self::Shortcuts];
+    pub const ALL: [Self; 3] = [Self::Themes, Self::Shortcuts, Self::Session];
     pub fn name(self) -> &'static str {
         match self {
             Self::Themes => "Темы",
             Self::Shortcuts => "Клавиши",
+            Self::Session => "Сессия",
         }
     }
 }
@@ -77,6 +79,8 @@ impl SettingsEdit {
 }
 #[derive(Clone)]
 pub enum SettingControl {
+    RestoreSession,
+    RetrySessionSave,
     IconMode,
     Theme(Theme),
     ResetAppearance,
@@ -134,6 +138,36 @@ impl App {
                         binding.action.name()
                     ),
                     SettingControl::Binding(index),
+                    false,
+                    None,
+                );
+            }
+        } else if self.settings_view.section == SettingsSection::Session {
+            let mut description = "Восстанавливать вкладки, каталоги и активную панель при запуске без указанного пути. Выбор файлов и буфер обмена не сохраняются.".to_string();
+            if let Some(error) = &self.session_load_error {
+                description.push_str(&format!(" {error}"));
+            }
+            push(
+                "Восстанавливать сессию".into(),
+                if self.settings.restore_session {
+                    "Включено"
+                } else {
+                    "Выключено"
+                }
+                .into(),
+                description,
+                SettingControl::RestoreSession,
+                true,
+                None,
+            );
+            if self.settings.restore_session
+                && let Some(error) = &self.session_save_error
+            {
+                push(
+                    "Повторить сохранение".into(),
+                    "Ошибка".into(),
+                    error.clone(),
+                    SettingControl::RetrySessionSave,
                     false,
                     None,
                 );
@@ -215,6 +249,9 @@ impl App {
         rows
     }
     pub fn preferences_changed(&mut self) {
+        if let Some(session) = &mut self.session {
+            session.set_enabled(self.settings.restore_session);
+        }
         self.settings_dirty = true;
         self.settings_save_error = None;
         self.message("Настройки изменены", false);
@@ -243,6 +280,13 @@ impl App {
         }
         let appearance = &mut self.settings.appearance;
         match row.control {
+            SettingControl::RestoreSession => {
+                self.settings.restore_session = !self.settings.restore_session
+            }
+            SettingControl::RetrySessionSave => {
+                self.retry_session_save();
+                return;
+            }
             SettingControl::IconMode => {
                 appearance.icon_mode = cycle(appearance.icon_mode, &IconMode::ALL, direction)
             }
@@ -447,9 +491,12 @@ impl App {
     pub(super) fn settings_move(&mut self, direction: isize) {
         match self.settings_view.focus {
             SettingsFocus::Menu => {
-                let index = usize::from(self.settings_view.section == SettingsSection::Shortcuts)
+                let index = SettingsSection::ALL
+                    .iter()
+                    .position(|s| *s == self.settings_view.section)
+                    .unwrap_or(0)
                     .saturating_add_signed(direction)
-                    .min(1);
+                    .min(SettingsSection::ALL.len() - 1);
                 self.settings_section(SettingsSection::ALL[index]);
             }
             SettingsFocus::Tabs => self.settings_tab(cycle(

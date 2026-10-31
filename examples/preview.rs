@@ -348,6 +348,11 @@ fn main() -> Result<()> {
     }
     render(&mut app, &out, "pane-commands", 150, 44)?;
     render(&mut app, &out, "pane-commands-compact", 34, 14)?;
+    app.cancel_dialog();
+    app.action(Action::Settings);
+    app.settings_section(SettingsSection::Session);
+    render(&mut app, &out, "settings-session", 120, 36)?;
+    render(&mut app, &out, "settings-session-compact", 34, 14)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

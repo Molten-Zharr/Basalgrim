@@ -16,6 +16,7 @@ pub struct Settings {
     pub preview: bool,
     pub dual: bool,
     pub hidden: bool,
+    pub restore_session: bool,
     #[serde(flatten)]
     pub appearance: Appearance,
     pub bindings: Vec<Binding>,
@@ -27,6 +28,7 @@ impl Default for Settings {
             preview: true,
             dual: false,
             hidden: false,
+            restore_session: true,
             appearance: Appearance::default(),
             bindings: input::default_bindings(),
         }

@@ -29,11 +29,8 @@ fn run() -> Result<()> {
         return Ok(());
     };
     let (settings, settings_path, warning) = Settings::startup();
-    let mut app = App::new(options.directory, settings);
+    let mut app = App::startup(options, settings, warning);
     app.icon_backend = basalgrim::icons::IconBackend::Gui;
-    if let Some(warning) = warning {
-        app.message(warning, true);
-    }
     app.settings_save_available = settings_path.is_some();
     let mut font_settings = (
         app.settings.appearance.font,

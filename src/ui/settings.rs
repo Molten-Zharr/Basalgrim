@@ -123,7 +123,12 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         content.height -= height;
     } else {
         frame.render_widget(
-            Paragraph::new("ГОРЯЧИЕ КЛАВИШИ").style(palette.accent()),
+            Paragraph::new(if app.settings_view.section == SettingsSection::Session {
+                "СЕССИЯ"
+            } else {
+                "ГОРЯЧИЕ КЛАВИШИ"
+            })
+            .style(palette.accent()),
             Rect::new(content.x, content.y, content.width, 1),
         );
         content.y += 2;
