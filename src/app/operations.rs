@@ -172,6 +172,10 @@ impl App {
                 self.cancel_dialog();
                 return;
             }
+            Some(Action::Refresh) => {
+                self.refresh_journal();
+                return;
+            }
             Some(Action::Quit) => {
                 self.action(Action::Quit);
                 return;

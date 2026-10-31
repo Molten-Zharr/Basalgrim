@@ -22,6 +22,9 @@ impl App {
             self.operations_selected = 0;
             self.operations_offset = 0;
             self.operations_detail_offset = 0;
+            if self.dialog.is_some() {
+                self.refresh_journal();
+            }
             return;
         }
         if matches!(action, Action::Quit) {

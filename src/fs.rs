@@ -1,7 +1,8 @@
 mod operations;
+pub(crate) use operations::operation_checkpoint;
 pub use operations::{
     Operation, Report, RetainedCopy, operate, operate_with_conflicts, operate_with_control,
-    rename_new, transfer_one, trash_one, validate_name,
+    operate_with_journal, rename_new, transfer_one, trash_one, validate_name,
 };
 
 use anyhow::{Context, Result, ensure};

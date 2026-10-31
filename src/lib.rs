@@ -3,6 +3,7 @@ pub mod conflicts;
 pub mod fs;
 pub mod icons;
 pub mod input;
+pub mod journal;
 pub mod model;
 pub mod operations;
 pub mod options;

@@ -353,6 +353,54 @@ fn main() -> Result<()> {
     app.settings_section(SettingsSection::Session);
     render(&mut app, &out, "settings-session", 120, 36)?;
     render(&mut app, &out, "settings-session-compact", 34, 14)?;
+    let storage = tempfile::tempdir()?;
+    let journal_path = storage.path().join("operations.sqlite3");
+    let mut history = App::new(
+        demo.path().join("Operations"),
+        Settings {
+            preview: false,
+            grid: false,
+            ..Settings::default()
+        },
+    );
+    history.attach_journal(journal_path.clone());
+    let end = Instant::now() + Duration::from_secs(5);
+    while history.journal_loading {
+        ensure!(Instant::now() < end, "Journal startup timed out");
+        history.tick();
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    history.start_operation(basalgrim::fs::Operation::Create {
+        parent: demo.path().join("Operations"),
+        name: "history-note.txt".into(),
+        directory: false,
+    });
+    settle(&mut history)?;
+    history.start_operation(basalgrim::fs::Operation::Duplicate {
+        sources: vec![demo.path().join("Operations/history-note.txt")],
+        destination: demo.path().join("Operations"),
+    });
+    settle(&mut history)?;
+    drop(history);
+    let mut history = App::new(
+        demo.path().join("Operations"),
+        Settings {
+            preview: false,
+            grid: false,
+            ..Settings::default()
+        },
+    );
+    history.settings.appearance.theme = Theme::Light;
+    history.attach_journal(journal_path);
+    history.action(Action::Operations);
+    let end = Instant::now() + Duration::from_secs(5);
+    while history.journal_loading {
+        ensure!(Instant::now() < end, "Journal reload timed out");
+        history.tick();
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    render(&mut history, &out, "journal", 120, 36)?;
+    render(&mut history, &out, "journal-compact", 34, 14)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

@@ -544,11 +544,26 @@ try:
             chord('c','Control_L');navigate(session_dirs[0]);chord('v','Control_L');time.sleep(.6);key('Return')
             wait_for(lambda:(session_dirs[0]/'marker (1).txt').exists(),'GUI restored active pane')
             assert (session_dirs[0]/'marker (1).txt').read_text()=='session-3'
-            time.sleep(.3);chord('t','Control_L');close_window(window);process.wait(timeout=5);assert process.returncode==0
+            time.sleep(.3);key('F6');time.sleep(.7)
+            journal_before=screenshot(window,'native-journal-before-restart.png').crop((0,16,1360,160))
+            key('Escape');chord('t','Control_L');close_window(window);process.wait(timeout=5);assert process.returncode==0
             saved=json.loads(state.read_text());assert len(saved['panes'][1]['tabs'])==3 and saved['panes'][1]['active']==2
             print('Native GUI session: both panes/tabs, restart, active-pane file commands and WM close flush passed',flush=True)
         except Exception:
             if process.poll() is None:screenshot(window,'native-session-failure.png')
+            raise
+        finally:stop(process,log)
+        process,window,log=launch(None,config)
+        try:
+            key('F6');time.sleep(.7)
+            journal_after=screenshot(window,'native-journal-after-restart.png').crop((0,16,1360,160))
+            assert journal_before.tobytes()==journal_after.tobytes(),'GUI journal list changed across restart'
+            click(window,4,1);move(window,36,17);time.sleep(.6)
+            assert screenshot(window,'native-journal-refreshed.png').crop((0,16,1360,160)).tobytes()==journal_after.tobytes(),'GUI mouse refresh changed journal entries'
+            chord('q','Control_L');process.wait(timeout=5);assert process.returncode==0
+            print('Native GUI journal: persisted history pixels and mouse refresh passed',flush=True)
+        except Exception:
+            if process.poll() is None:screenshot(window,'native-journal-failure.png')
             raise
         finally:stop(process,log)
     print('Verified binary:', binary, hashlib.sha256(binary.read_bytes()).hexdigest(), flush=True)

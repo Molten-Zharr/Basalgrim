@@ -69,7 +69,7 @@ fn open_dir(path: &Path) -> Result<File> {
 }
 
 impl Snapshot {
-    fn capture(path: &Path, mount: u64, control: &mut Control<'_>) -> Result<Self> {
+    fn capture(path: &Path, mount: u64, control: &mut Control<'_, '_>) -> Result<Self> {
         control.current(path)?;
         ensure!(
             mount_id(path)? == mount,
@@ -128,7 +128,12 @@ impl Snapshot {
         Ok(())
     }
 
-    fn copy(&mut self, source: &Path, destination: &Path, control: &mut Control<'_>) -> Result<()> {
+    fn copy(
+        &mut self,
+        source: &Path,
+        destination: &Path,
+        control: &mut Control<'_, '_>,
+    ) -> Result<()> {
         control.current(source)?;
         self.check_source(source, false)?;
         if let Some(link) = &self.link {
@@ -165,7 +170,7 @@ impl Snapshot {
         source: &Path,
         destination: &Path,
         renamed: bool,
-        control: &mut Control<'_>,
+        control: &mut Control<'_, '_>,
     ) -> Result<()> {
         control.current(source)?;
         self.check_source(source, renamed)?;
@@ -236,7 +241,7 @@ impl Snapshot {
         name: &std::ffi::OsStr,
         source: &Path,
         destination: &Path,
-        control: &mut Control<'_>,
+        control: &mut Control<'_, '_>,
     ) -> Result<()> {
         let stat = rustix::fs::statat(parent, name, AtFlags::SYMLINK_NOFOLLOW)?;
         ensure!(
@@ -291,12 +296,14 @@ pub(super) fn transfer(
     source: &Path,
     destination: &Path,
     parent: &Path,
-    control: &mut Control<'_>,
+    control: &mut Control<'_, '_>,
 ) -> Result<()> {
     let mut snapshot = Snapshot::capture(source, mount_id(source)?, control)?;
     let staging = tempfile::Builder::new()
         .prefix(".basalgrim-copy-")
         .tempdir_in(parent)?;
+    let staging_id = control.before_step("staging", Some(source), Some(staging.path()))?;
+    let staging_path = staging.path().to_path_buf();
     let staged = staging.path().join("item");
     let mut published_dir = None;
     let result = (|| {
@@ -322,6 +329,7 @@ pub(super) fn transfer(
         let staging_path = staging.path().to_path_buf();
         let cleanup =
             writable_directories(&staged).and_then(|()| staging.close().map_err(Into::into));
+        control.after_step(staging_id, "staging", Some(&staging_path), &cleanup);
         return match cleanup {
             Ok(()) => Err(error),
             Err(cleanup) => Err(error.context(CleanupFailure(format!(
@@ -331,7 +339,8 @@ pub(super) fn transfer(
         };
     }
     // Publication succeeded; the complete destination is never rolled back.
-    let _ = staging.close();
+    let cleanup = staging.close().map_err(Into::into);
+    control.after_step(staging_id, "staging", Some(&staging_path), &cleanup);
     let mut retained = RetainedCopy {
         source: source.into(),
         destination: destination.into(),
@@ -358,7 +367,7 @@ pub(super) fn transfer(
             .keep();
         let name = source.file_name().context("Нельзя перемещать корень")?;
         let claimed = claim_dir.join(name);
-        if let Err(error) = rename_new(source, &claimed) {
+        if let Err(error) = control.rename("claim_source", source, &claimed, false) {
             let _ = fs::remove_dir(&claim_dir);
             return Err(error);
         }
@@ -366,14 +375,19 @@ pub(super) fn transfer(
             snapshot.verify(&claimed, destination, true, control)?;
             control.checkpoint()?; // Last cancellable boundary before deleting source entries.
             let dir = open_dir(&claim_dir)?;
-            snapshot.remove(&dir, name, &claimed, destination, control)?;
+            let step = control.before_step("remove_source", Some(&claimed), None)?;
+            let result = control
+                .checkpoint()
+                .and_then(|()| snapshot.remove(&dir, name, &claimed, destination, control));
+            control.after_step(step, "remove_source", None, &result);
+            result?;
             // The source is fully removed now; a late directory fsync failure
             // must not turn the completed move into an unfinished clipboard item.
             let _ = dir.sync_all();
             Ok(())
         })();
         if let Err(error) = cleanup {
-            if let Err(restore) = rename_new(&claimed, source) {
+            if let Err(restore) = control.rename("restore_source", &claimed, source, true) {
                 retained.recovery = Some(claimed);
                 return Err(error.context(CleanupFailure(format!(
                     "Не удалось восстановить исходный путь без перезаписи: {restore:#}"

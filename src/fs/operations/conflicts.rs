@@ -42,14 +42,27 @@ pub(super) struct Replacement {
     published: bool,
 }
 impl Replacement {
-    pub fn publish(&mut self, incoming: &Path, destination: &Path) -> Result<()> {
+    pub fn publish(
+        &mut self,
+        incoming: &Path,
+        destination: &Path,
+        mut journal: Option<&mut crate::journal::Recorder<'_>>,
+        cancellation: &Cancellation,
+    ) -> Result<()> {
         ensure!(
             destination == self.destination,
             "Назначение замены изменилось"
         );
         match fs::symlink_metadata(destination) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                rename_new(incoming, destination)?;
+                crate::journal::tracked_rename(
+                    journal,
+                    "publish",
+                    incoming,
+                    destination,
+                    false,
+                    Some(cancellation),
+                )?;
                 self.published = true;
                 return Ok(());
             }
@@ -63,22 +76,43 @@ impl Replacement {
             .tempdir_in(parent)?
             .keep();
         let backup = dir.join(destination.file_name().context("Нельзя заменить корень")?);
-        if let Err(error) = rename_new(destination, &backup) {
+        if let Err(error) = crate::journal::tracked_rename(
+            journal.as_deref_mut(),
+            "replace_claim",
+            destination,
+            &backup,
+            false,
+            Some(cancellation),
+        ) {
             let _ = fs::remove_dir(dir);
             return Err(error);
         }
         self.backup = Some(backup.clone());
-        self.install(incoming, destination, &dir)
+        self.install(incoming, destination, &dir, journal, cancellation)
     }
 
-    fn install(&mut self, incoming: &Path, destination: &Path, dir: &Path) -> Result<()> {
+    fn install(
+        &mut self,
+        incoming: &Path,
+        destination: &Path,
+        dir: &Path,
+        mut journal: Option<&mut crate::journal::Recorder<'_>>,
+        cancellation: &Cancellation,
+    ) -> Result<()> {
         let backup = self.backup.as_ref().unwrap().clone();
         let result = (|| {
             ensure!(
                 same(&self.expected, &fs::symlink_metadata(&backup)?, true),
                 Changed
             );
-            rename_new(incoming, destination)
+            crate::journal::tracked_rename(
+                journal.as_deref_mut(),
+                "publish",
+                incoming,
+                destination,
+                false,
+                Some(cancellation),
+            )
         })();
         match result {
             Ok(()) => {
@@ -86,7 +120,14 @@ impl Replacement {
                 Ok(())
             }
             Err(error) => {
-                if let Err(restore) = rename_new(&backup, destination) {
+                if let Err(restore) = crate::journal::tracked_rename(
+                    journal,
+                    "restore_replaced",
+                    &backup,
+                    destination,
+                    true,
+                    None,
+                ) {
                     return Err(error.context(CleanupFailure(format!("Прежняя цель сохранена в {}; восстановление без перезаписи не удалось: {restore:#}", backup.display()))));
                 }
                 self.backup = None;
@@ -98,7 +139,7 @@ impl Replacement {
     }
 }
 
-pub(super) fn has_recovery(control: &Control<'_>) -> bool {
+pub(super) fn has_recovery(control: &Control<'_, '_>) -> bool {
     control
         .replacement
         .as_ref()
@@ -142,7 +183,7 @@ fn discard(parent: &File, name: &std::ffi::OsStr, mount: u64) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn finish(control: &mut Control<'_>) -> Result<()> {
+pub(super) fn finish(control: &mut Control<'_, '_>) -> Result<()> {
     let Some(replacement) = control.replacement.take() else {
         return Ok(());
     };
@@ -173,7 +214,10 @@ pub(super) fn finish(control: &mut Control<'_>) -> Result<()> {
                 rustix::fs::AtFlags::empty(),
                 rustix::fs::StatxFlags::MNT_ID,
             )?;
-            discard(&parent, backup.file_name().unwrap(), stat.stx_mnt_id)?;
+            let step = control.before_step("discard_replaced", Some(&backup), None)?;
+            let result = discard(&parent, backup.file_name().unwrap(), stat.stx_mnt_id);
+            control.after_step(step, "discard_replaced", None, &result);
+            result?;
             Ok(())
         })()
     } else {
@@ -201,7 +245,7 @@ fn bail_recovery(path: &Path) -> Result<()> {
     bail!("Не удалось вернуть прежнюю цель из {}", path.display())
 }
 
-pub(super) fn conclude(outcome: Result<bool>, control: &mut Control<'_>) -> Result<()> {
+pub(super) fn conclude(outcome: Result<bool>, control: &mut Control<'_, '_>) -> Result<()> {
     let cleanup = finish(control);
     match (outcome, cleanup) {
         (Err(error), Err(cleanup)) => Err(error.context(CleanupFailure(format!("{cleanup:#}")))),
@@ -270,7 +314,7 @@ pub(super) fn run(
     request: Request<'_>,
     policy: &mut Option<Choice>,
     resolve: &mut Option<&mut dyn FnMut(&Conflict) -> Decision>,
-    control: &mut Control<'_>,
+    control: &mut Control<'_, '_>,
 ) -> Result<bool> {
     let Request {
         source,
@@ -404,7 +448,12 @@ mod tests {
         };
         assert!(
             replacement
-                .publish(&root.path().join("missing"), &target)
+                .publish(
+                    &root.path().join("missing"),
+                    &target,
+                    None,
+                    &Cancellation::default()
+                )
                 .is_err()
         );
         assert_eq!(fs::read_to_string(&target).unwrap(), "original");
@@ -430,7 +479,9 @@ mod tests {
             backup: Some(backup.clone()),
             published: false,
         };
-        let error = replacement.install(&incoming, &target, &dir).unwrap_err();
+        let error = replacement
+            .install(&incoming, &target, &dir, None, &Cancellation::default())
+            .unwrap_err();
         assert!(error.downcast_ref::<CleanupFailure>().is_some());
         assert_eq!(fs::read_to_string(&target).unwrap(), "new occupant");
         assert_eq!(fs::read_to_string(&incoming).unwrap(), "incoming");
@@ -443,6 +494,7 @@ mod tests {
             notify: &mut notify,
             replacement: Some(replacement),
             recoveries: Vec::new(),
+            journal: None,
         };
         assert!(finish(&mut control).is_err());
         assert_eq!(control.recoveries[0].backup, backup);

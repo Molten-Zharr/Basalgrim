@@ -6,7 +6,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Clone, Debug, Default)]
@@ -20,7 +20,7 @@ impl Cancellation {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Phase {
     #[default]
     Preparing,
@@ -32,7 +32,7 @@ pub enum Phase {
     Finished,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Progress {
     pub phase: Phase,
     pub items_done: usize,
@@ -42,6 +42,7 @@ pub struct Progress {
     pub entries_total: Option<u64>,
     pub bytes_done: u64,
     pub bytes_total: Option<u64>,
+    #[serde(skip)]
     pub current: Option<PathBuf>,
 }
 impl Progress {
@@ -78,6 +79,11 @@ pub struct OperationRecord {
     pub retained_copies: Vec<crate::fs::RetainedCopy>,
     pub skipped_paths: Vec<PathBuf>,
     pub destination_recoveries: Vec<crate::conflicts::DestinationRecovery>,
+    pub journal: Option<crate::journal::Receipt>,
+    pub recorded_at: Option<i64>,
+    pub interrupted: bool,
+    pub external: bool,
+    pub from_journal: bool,
 }
 impl OperationRecord {
     pub fn new(id: u64, title: String, items_total: usize) -> Self {
@@ -98,6 +104,17 @@ impl OperationRecord {
             retained_copies: Vec::new(),
             skipped_paths: Vec::new(),
             destination_recoveries: Vec::new(),
+            journal: None,
+            recorded_at: Some(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis()
+                    .min(i64::MAX as u128) as i64,
+            ),
+            interrupted: false,
+            external: false,
+            from_journal: false,
         }
     }
     pub fn finish(&mut self, report: Report) {
@@ -113,8 +130,15 @@ impl OperationRecord {
         self.progress.items_skipped = report.skipped.len();
         self.skipped_paths = report.skipped;
         self.destination_recoveries = report.destination_recoveries;
+        self.journal = report.journal;
     }
     pub fn status(&self) -> &'static str {
+        if self.interrupted {
+            return "Прервано: нужна проверка";
+        }
+        if self.external {
+            return "В другом окне";
+        }
         if self.elapsed.is_some() {
             if self.error.is_some() {
                 "Ошибка"

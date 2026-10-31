@@ -80,6 +80,7 @@ impl Operation {
 
 #[derive(Debug, Default)]
 pub struct Report {
+    pub journal: Option<crate::journal::Receipt>,
     pub completed: Vec<PathBuf>,
     pub total: usize,
     pub error: Option<String>,
@@ -98,6 +99,12 @@ impl fmt::Display for Cancelled {
     }
 }
 impl std::error::Error for Cancelled {}
+pub(crate) fn operation_checkpoint(cancellation: &Cancellation) -> Result<()> {
+    if cancellation.is_cancelled() {
+        return Err(Cancelled.into());
+    }
+    Ok(())
+}
 #[derive(Debug)]
 struct CleanupFailure(String);
 impl fmt::Display for CleanupFailure {
@@ -106,14 +113,68 @@ impl fmt::Display for CleanupFailure {
     }
 }
 
-struct Control<'a> {
+struct Control<'a, 'db> {
     cancellation: &'a Cancellation,
     progress: Progress,
     notify: &'a mut dyn FnMut(&Progress),
     replacement: Option<conflicts::Replacement>,
     recoveries: Vec<crate::conflicts::DestinationRecovery>,
+    journal: Option<&'a mut crate::journal::Recorder<'db>>,
 }
-impl Control<'_> {
+impl Control<'_, '_> {
+    fn begin_item(&mut self, index: usize) -> Result<()> {
+        if let Some(journal) = &mut self.journal {
+            journal.begin_item(index)?;
+        }
+        Ok(())
+    }
+    fn before_step(
+        &mut self,
+        kind: &str,
+        source: Option<&Path>,
+        target: Option<&Path>,
+    ) -> Result<Option<i64>> {
+        match &mut self.journal {
+            Some(journal) => journal.before_step(kind, source, target, false),
+            None => Ok(None),
+        }
+    }
+    fn after_step(
+        &mut self,
+        id: Option<i64>,
+        kind: &str,
+        target: Option<&Path>,
+        result: &Result<()>,
+    ) {
+        if let Some(journal) = &mut self.journal {
+            journal.after_step(id, kind, target, result);
+        }
+    }
+    fn rename(&mut self, kind: &str, source: &Path, target: &Path, recovery: bool) -> Result<()> {
+        crate::journal::tracked_rename(
+            self.journal.as_deref_mut(),
+            kind,
+            source,
+            target,
+            recovery,
+            (!recovery).then_some(self.cancellation),
+        )
+    }
+    fn conclude_item(&mut self, outcome: Result<()>, completed: bool, skipped: bool) -> Result<()> {
+        let recorded = match &mut self.journal {
+            Some(journal) => journal.finish_item(
+                completed,
+                skipped,
+                outcome.as_ref().err().map(|e| format!("{e:#}")),
+            ),
+            None => Ok(()),
+        };
+        match (outcome, recorded) {
+            (Err(error), Err(recording)) => Err(error.context(format!("Журнал: {recording:#}"))),
+            (Err(error), _) => Err(error),
+            (_, result) => result,
+        }
+    }
     fn checkpoint(&self) -> Result<()> {
         if self.cancellation.is_cancelled() {
             return Err(Cancelled.into());
@@ -140,8 +201,13 @@ impl Control<'_> {
     fn publish(&mut self, source: &Path, destination: &Path) -> Result<()> {
         self.checkpoint()?;
         match &mut self.replacement {
-            Some(replacement) => replacement.publish(source, destination),
-            None => rename_new(source, destination),
+            Some(replacement) => replacement.publish(
+                source,
+                destination,
+                self.journal.as_deref_mut(),
+                self.cancellation,
+            ),
+            None => self.rename("publish", source, destination, false),
         }
     }
 }
@@ -187,7 +253,7 @@ pub fn rename_new(source: &Path, destination: &Path) -> Result<()> {
     }
 }
 
-fn measure(path: &Path, control: &mut Control<'_>) -> Result<(u64, u64)> {
+fn measure(path: &Path, control: &mut Control<'_, '_>) -> Result<(u64, u64)> {
     control.current(path)?;
     let metadata = fs::symlink_metadata(path)?;
     let mut entries = 1u64;
@@ -232,7 +298,7 @@ fn validate_paths(source: &Path, destination: &Path) -> Result<PathBuf> {
     Ok(parent)
 }
 
-fn copy_tree(source: &Path, destination: &Path, control: &mut Control<'_>) -> Result<()> {
+fn copy_tree(source: &Path, destination: &Path, control: &mut Control<'_, '_>) -> Result<()> {
     control.current(source)?;
     let meta = fs::symlink_metadata(source)?;
     if meta.is_symlink() {
@@ -283,7 +349,7 @@ fn copy_file(
     source: &Path,
     destination: &Path,
     meta: &fs::Metadata,
-    control: &mut Control<'_>,
+    control: &mut Control<'_, '_>,
     limit: Option<u64>,
 ) -> Result<()> {
     let mut input = open_regular(source)?;
@@ -366,11 +432,17 @@ pub fn transfer_one(source: &Path, destination: &Path, cut: bool) -> Result<()> 
         notify: &mut notify,
         replacement: None,
         recoveries: Vec::new(),
+        journal: None,
     };
     transfer(source, destination, cut, &mut control)
 }
 
-fn transfer(source: &Path, destination: &Path, cut: bool, control: &mut Control<'_>) -> Result<()> {
+fn transfer(
+    source: &Path,
+    destination: &Path,
+    cut: bool,
+    control: &mut Control<'_, '_>,
+) -> Result<()> {
     control.checkpoint()?;
     let parent = if control.replacement.is_some() {
         validate_paths(source, destination)?
@@ -397,6 +469,7 @@ fn transfer(source: &Path, destination: &Path, cut: bool, control: &mut Control<
     let staging = tempfile::Builder::new()
         .prefix(".basalgrim-copy-")
         .tempdir_in(parent)?;
+    let staging_id = control.before_step("staging", Some(source), Some(staging.path()))?;
     let staged = staging.path().join("item");
     let result = copy_tree(source, &staged, control).and_then(|()| {
         control.checkpoint()?;
@@ -414,6 +487,7 @@ fn transfer(source: &Path, destination: &Path, cut: bool, control: &mut Control<
         Ok(())
     }
     .and_then(|()| staging.close().map_err(Into::into));
+    control.after_step(staging_id, "staging", Some(&staging_path), &cleanup);
     match (result, cleanup) {
         (Ok(()), _) => Ok(()),
         (Err(error), Ok(())) => Err(error),
@@ -455,7 +529,7 @@ pub fn operate_with_control(
     cancellation: &Cancellation,
     notify: &mut dyn FnMut(&Progress),
 ) -> Report {
-    operate_inner(operation, cancellation, notify, None)
+    operate_inner(operation, cancellation, notify, None, None)
 }
 
 pub fn operate_with_conflicts(
@@ -464,7 +538,25 @@ pub fn operate_with_conflicts(
     notify: &mut dyn FnMut(&Progress),
     resolve: &mut dyn FnMut(&crate::conflicts::Conflict) -> crate::conflicts::Decision,
 ) -> Report {
-    operate_inner(operation, cancellation, notify, Some(resolve))
+    operate_inner(operation, cancellation, notify, Some(resolve), None)
+}
+
+pub fn operate_with_journal(
+    operation: Operation,
+    cancellation: &Cancellation,
+    notify: &mut dyn FnMut(&Progress),
+    resolve: &mut dyn FnMut(&crate::conflicts::Conflict) -> crate::conflicts::Decision,
+    journal: &mut crate::journal::Recorder<'_>,
+) -> Report {
+    let mut report = operate_inner(
+        operation,
+        cancellation,
+        notify,
+        Some(resolve),
+        Some(journal),
+    );
+    journal.finish(&mut report);
+    report
 }
 
 fn operate_inner(
@@ -472,6 +564,7 @@ fn operate_inner(
     cancellation: &Cancellation,
     notify: &mut dyn FnMut(&Progress),
     mut resolve: Option<&mut dyn FnMut(&crate::conflicts::Conflict) -> crate::conflicts::Decision>,
+    journal: Option<&mut crate::journal::Recorder<'_>>,
 ) -> Report {
     let total = operation.total();
     let cut = matches!(operation, Operation::Transfer { cut: true, .. });
@@ -485,6 +578,7 @@ fn operate_inner(
         notify,
         replacement: None,
         recoveries: Vec::new(),
+        journal,
     };
     let mut policy = duplicate.then_some(crate::conflicts::Choice::KeepBoth);
     let mut report = Report {
@@ -542,7 +636,7 @@ fn operate_inner(
         }
         control.progress.phase = Phase::Running;
         control.emit();
-        let mut complete = |path: PathBuf, control: &mut Control<'_>| {
+        let mut complete = |path: PathBuf, control: &mut Control<'_, '_>| {
             report.completed.push(path);
             control.progress.items_done = report.completed.len();
             control.emit();
@@ -556,16 +650,24 @@ fn operate_inner(
                 let path = parent.join(&name);
                 control.current(&path)?;
                 validate_name(&name)?;
-                if directory {
-                    fs::create_dir(&path)?;
+                control.begin_item(0)?;
+                let step = control.before_step("create", None, Some(&path))?;
+                control.checkpoint()?;
+                let result = if directory {
+                    fs::create_dir(&path).map_err(Into::into)
                 } else {
                     OpenOptions::new()
                         .write(true)
                         .create_new(true)
-                        .open(&path)?;
-                }
+                        .open(&path)
+                        .map(|_| ())
+                        .map_err(Into::into)
+                };
+                control.after_step(step, "create", Some(&path), &result);
+                result?;
                 control.entry_done(&path);
                 complete(path, &mut control);
+                control.conclude_item(Ok(()), true, false)?;
             }
             Operation::Rename { source, name } => {
                 control.current(&source)?;
@@ -574,6 +676,7 @@ fn operate_inner(
                     .parent()
                     .context("Нельзя переименовать корень")?
                     .join(name);
+                control.begin_item(0)?;
                 let outcome = conflicts::run(
                     conflicts::Request {
                         source: &source,
@@ -586,14 +689,17 @@ fn operate_inner(
                     &mut resolve,
                     &mut control,
                 );
-                if matches!(outcome, Ok(false)) {
+                let skipped = matches!(outcome, Ok(false));
+                let completed = matches!(outcome, Ok(true));
+                if skipped {
                     report.skipped.push(source);
                     control.progress.items_skipped = report.skipped.len();
                 } else if outcome.as_ref().is_ok_and(|done| *done) {
                     control.entry_done(&source);
                     complete(source, &mut control);
                 }
-                conflicts::conclude(outcome, &mut control)?;
+                let outcome = conflicts::conclude(outcome, &mut control);
+                control.conclude_item(outcome, completed, skipped)?;
             }
             Operation::Transfer {
                 sources,
@@ -608,6 +714,7 @@ fn operate_inner(
                 for (index, source) in sources.into_iter().enumerate() {
                     control.current(&source)?;
                     let name = source.file_name().context("Нельзя копировать корень")?;
+                    control.begin_item(index)?;
                     let outcome = conflicts::run(
                         conflicts::Request {
                             source: &source,
@@ -622,22 +729,31 @@ fn operate_inner(
                     );
                     // The whole item succeeded, including source removal for a move.
                     // Count it before observing any later cancellation.
-                    if matches!(outcome, Ok(false)) {
+                    let skipped = matches!(outcome, Ok(false));
+                    let completed = matches!(outcome, Ok(true));
+                    if skipped {
                         report.skipped.push(source);
                         control.progress.items_skipped = report.skipped.len();
                         control.emit();
                     } else if outcome.as_ref().is_ok_and(|done| *done) {
                         complete(source, &mut control);
                     }
-                    conflicts::conclude(outcome, &mut control)?;
+                    let outcome = conflicts::conclude(outcome, &mut control);
+                    control.conclude_item(outcome, completed, skipped)?;
                 }
             }
             Operation::Trash { sources } => {
-                for source in sources {
+                for (index, source) in sources.into_iter().enumerate() {
                     control.current(&source)?;
-                    trash_one(&source)?;
+                    control.begin_item(index)?;
+                    let step = control.before_step("trash", Some(&source), None)?;
+                    control.checkpoint()?;
+                    let result = trash_one(&source);
+                    control.after_step(step, "trash", None, &result);
+                    result?;
                     control.entry_done(&source);
                     complete(source, &mut control);
+                    control.conclude_item(Ok(()), true, false)?;
                 }
             }
         }

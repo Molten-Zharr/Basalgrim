@@ -6,7 +6,9 @@ use crate::{
 
 impl App {
     pub fn startup(options: Options, settings: Settings, warning: Option<String>) -> Self {
-        Self::startup_with_session(options, settings, warning, State::path())
+        let mut app = Self::startup_with_session(options, settings, warning, State::path());
+        app.configure_journal(crate::journal::Database::path());
+        app
     }
     /// Explicit storage injection keeps tests and previews independent of the user's session.
     pub fn startup_with_session(

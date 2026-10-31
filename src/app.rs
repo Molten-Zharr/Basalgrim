@@ -5,6 +5,7 @@ pub use conflicts::ConflictDialog;
 mod directories;
 pub use commands::{CommandItem, CommandMenu, MenuContext};
 mod events;
+mod journal;
 mod operations;
 mod selection;
 mod session;
@@ -29,6 +30,7 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    JournalRefresh,
     ConflictChoice(crate::conflicts::Choice),
     ConflictRemaining,
     Command(usize),
@@ -124,6 +126,10 @@ pub struct App {
     pub settings_save_available: bool,
     pub session_save_error: Option<String>,
     pub session_load_error: Option<String>,
+    pub journal_path: Option<PathBuf>,
+    pub journal_enabled: bool,
+    pub journal_loading: bool,
+    pub journal_error: Option<String>,
     pub dialog: Option<Dialog>,
     pub clipboard: Option<Clipboard>,
     pub places: Vec<Place>,
@@ -162,6 +168,7 @@ pub struct App {
     conflict_previous: Option<Dialog>,
     conflict_sequence: u64,
     session: Option<crate::session::Runtime>,
+    journal_request: u64,
 }
 
 impl App {
@@ -207,6 +214,10 @@ impl App {
             settings_save_available: false,
             session_save_error: None,
             session_load_error: None,
+            journal_path: None,
+            journal_enabled: false,
+            journal_loading: false,
+            journal_error: None,
             dialog: None,
             clipboard: None,
             places,
@@ -245,6 +256,7 @@ impl App {
             conflict_previous: None,
             conflict_sequence: 0,
             session: None,
+            journal_request: 0,
         };
         app.reload(0, 0);
         app.reload(1, 0);
@@ -333,6 +345,7 @@ impl App {
         }
         while let Ok(event) = self.worker.events.try_recv() {
             match event {
+                Event::Journal { token, result } => self.accept_journal(token, result),
                 Event::Conflict {
                     token,
                     request,

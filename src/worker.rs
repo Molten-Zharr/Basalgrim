@@ -5,6 +5,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, Sender},
     },
     thread,
@@ -16,6 +17,10 @@ mod watch;
 pub type DirectoryResult = Result<(PathBuf, Vec<Entry>), String>;
 
 pub enum Event {
+    Journal {
+        token: u64,
+        result: Result<Vec<crate::journal::Stored>, String>,
+    },
     Conflict {
         token: u64,
         request: u64,
@@ -37,17 +42,24 @@ pub enum Event {
     Open(Result<(), String>),
 }
 enum Task {
+    Journal {
+        token: u64,
+        path: Option<PathBuf>,
+        configure: bool,
+    },
     Operation {
         token: u64,
         operation: Operation,
         cancellation: Cancellation,
     },
-    Open(PathBuf),
 }
 pub struct Worker {
     scans: Sender<(u64, PathBuf, Cancellation)>,
     previews: Sender<(u64, PathBuf)>,
-    tasks: Sender<Task>,
+    tasks: Option<Sender<Task>>,
+    task_thread: Option<thread::JoinHandle<()>>,
+    opens: Sender<PathBuf>,
+    shutdown: Arc<AtomicBool>,
     pub events: Receiver<Event>,
     progress: Arc<Mutex<Option<(u64, Progress)>>>,
     watcher: watch::Watcher,
@@ -111,68 +123,153 @@ impl Worker {
                 }
             }
         });
+        let (opens, rx) = mpsc::channel::<PathBuf>();
+        let result = send.clone();
+        thread::spawn(move || {
+            for path in rx {
+                if result
+                    .send(Event::Open(
+                        fs::open_external(&path).map_err(|e| format!("{e:#}")),
+                    ))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
         let (tasks, rx) = mpsc::channel();
         let progress = Arc::new(Mutex::new(None));
         let latest = Arc::clone(&progress);
-        thread::spawn(move || {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let stopping = Arc::clone(&shutdown);
+        let task_thread = thread::spawn(move || {
+            let mut journal: Option<Result<crate::journal::Database, String>> = None;
+            let mut journal_path: Option<PathBuf> = None;
             for task in rx {
                 let event = match task {
+                    Task::Journal {
+                        token,
+                        path,
+                        configure,
+                    } => {
+                        if configure {
+                            journal_path = path;
+                            journal = None;
+                        }
+                        if journal.is_none() || journal.as_ref().is_some_and(Result::is_err) {
+                            journal = Some(
+                                journal_path
+                                    .as_deref()
+                                    .ok_or_else(|| "Путь журнала не задан".into())
+                                    .and_then(|p| {
+                                        crate::journal::Database::open(p)
+                                            .map_err(|e| format!("{e:#}"))
+                                    }),
+                            );
+                        }
+                        let result = match journal.as_mut().unwrap() {
+                            Ok(db) => db.history().map_err(|e| format!("{e:#}")),
+                            Err(error) => Err(error.clone()),
+                        };
+                        if let Err(error) = &result {
+                            journal = Some(Err(error.clone()));
+                        }
+                        Event::Journal { token, result }
+                    }
                     Task::Operation {
                         token,
                         operation,
                         cancellation,
                     } => {
+                        if stopping.load(Ordering::Acquire) {
+                            cancellation.cancel();
+                        }
                         let mut last = Instant::now()
                             .checked_sub(Duration::from_secs(1))
                             .unwrap_or_else(Instant::now);
                         let mut phase = None;
                         let mut request = 0;
-                        let report = fs::operate_with_conflicts(
-                            operation,
-                            &cancellation,
-                            &mut |progress| {
-                                if phase != Some(progress.phase)
-                                    || last.elapsed() >= Duration::from_millis(50)
-                                {
-                                    if let Ok(mut slot) = latest.lock() {
-                                        *slot = Some((token, progress.clone()));
-                                    }
-                                    phase = Some(progress.phase);
-                                    last = Instant::now();
+                        let mut notify = |progress: &Progress| {
+                            if stopping.load(Ordering::Acquire) {
+                                cancellation.cancel();
+                            }
+                            if phase != Some(progress.phase)
+                                || last.elapsed() >= Duration::from_millis(50)
+                            {
+                                if let Ok(mut slot) = latest.lock() {
+                                    *slot = Some((token, progress.clone()));
                                 }
-                            },
-                            &mut |conflict| {
-                                request += 1;
-                                let (reply, rx) = mpsc::sync_channel(1);
-                                if send
-                                    .send(Event::Conflict {
-                                        token,
-                                        request,
-                                        conflict: conflict.clone(),
-                                        reply,
-                                    })
-                                    .is_err()
-                                {
+                                phase = Some(progress.phase);
+                                last = Instant::now();
+                            }
+                        };
+                        let mut resolve = |conflict: &crate::conflicts::Conflict| {
+                            request += 1;
+                            let (reply, rx) = mpsc::sync_channel(1);
+                            if send
+                                .send(Event::Conflict {
+                                    token,
+                                    request,
+                                    conflict: conflict.clone(),
+                                    reply,
+                                })
+                                .is_err()
+                            {
+                                return crate::conflicts::Decision::CANCEL;
+                            }
+                            loop {
+                                if cancellation.is_cancelled() || stopping.load(Ordering::Acquire) {
                                     return crate::conflicts::Decision::CANCEL;
                                 }
-                                loop {
-                                    if cancellation.is_cancelled() {
+                                match rx.recv_timeout(Duration::from_millis(40)) {
+                                    Ok(decision) => return decision,
+                                    Err(mpsc::RecvTimeoutError::Disconnected) => {
                                         return crate::conflicts::Decision::CANCEL;
                                     }
-                                    match rx.recv_timeout(Duration::from_millis(40)) {
-                                        Ok(decision) => return decision,
-                                        Err(mpsc::RecvTimeoutError::Disconnected) => {
-                                            return crate::conflicts::Decision::CANCEL;
-                                        }
-                                        Err(mpsc::RecvTimeoutError::Timeout) => {}
-                                    }
+                                    Err(mpsc::RecvTimeoutError::Timeout) => {}
                                 }
-                            },
-                        );
+                            }
+                        };
+                        let report = if cancellation.is_cancelled() {
+                            Report {
+                                total: operation.total(),
+                                cancelled: true,
+                                ..Default::default()
+                            }
+                        } else {
+                            match &mut journal {
+                                None => fs::operate_with_conflicts(
+                                    operation,
+                                    &cancellation,
+                                    &mut notify,
+                                    &mut resolve,
+                                ),
+                                Some(Err(error)) => Report {
+                                    total: operation.total(),
+                                    error: Some(format!(
+                                        "Журнал недоступен; файлы не изменены: {error}"
+                                    )),
+                                    ..Default::default()
+                                },
+                                Some(Ok(database)) => match database.begin(&operation, token) {
+                                    Ok(mut recorder) => fs::operate_with_journal(
+                                        operation,
+                                        &cancellation,
+                                        &mut notify,
+                                        &mut resolve,
+                                        &mut recorder,
+                                    ),
+                                    Err(error) => Report {
+                                        total: operation.total(),
+                                        error: Some(format!(
+                                            "Не удалось начать журнал; файлы не изменены: {error:#}"
+                                        )),
+                                        ..Default::default()
+                                    },
+                                },
+                            }
+                        };
                         Event::Operation { token, report }
-                    }
-                    Task::Open(path) => {
-                        Event::Open(fs::open_external(&path).map_err(|e| format!("{e:#}")))
                     }
                 };
                 if send.send(event).is_err() {
@@ -183,7 +280,10 @@ impl Worker {
         Self {
             scans,
             previews,
-            tasks,
+            tasks: Some(tasks),
+            task_thread: Some(task_thread),
+            opens,
+            shutdown,
             events,
             progress,
             watcher: watch::Watcher::new(),
@@ -191,6 +291,17 @@ impl Worker {
     }
     pub fn scan(&self, token: u64, path: PathBuf, cancellation: Cancellation) {
         let _ = self.scans.send((token, path, cancellation));
+    }
+    pub fn journal(&self, token: u64, path: Option<PathBuf>, configure: bool) -> bool {
+        self.tasks
+            .as_ref()
+            .unwrap()
+            .send(Task::Journal {
+                token,
+                path,
+                configure,
+            })
+            .is_ok()
     }
     pub(crate) fn watch(&mut self, paths: BTreeSet<PathBuf>) {
         self.watcher.set_paths(paths);
@@ -203,6 +314,8 @@ impl Worker {
     }
     pub fn operate(&self, token: u64, operation: Operation, cancellation: Cancellation) -> bool {
         self.tasks
+            .as_ref()
+            .unwrap()
             .send(Task::Operation {
                 token,
                 operation,
@@ -214,6 +327,15 @@ impl Worker {
         self.progress.lock().ok()?.take()
     }
     pub fn open(&self, path: PathBuf) {
-        let _ = self.tasks.send(Task::Open(path));
+        let _ = self.opens.send(path);
+    }
+}
+impl Drop for Worker {
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::Release);
+        self.tasks.take();
+        if let Some(thread) = self.task_thread.take() {
+            let _ = thread.join();
+        }
     }
 }

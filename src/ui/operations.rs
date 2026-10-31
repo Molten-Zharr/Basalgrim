@@ -120,13 +120,33 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Constraint::Length(2),
     ])
     .split(inner);
-    frame.render_widget(
-        Paragraph::new(" Последние 20 операций за этот запуск").style(palette.muted()),
-        zones[0],
-    );
+    let header = if !app.journal_enabled {
+        " Последние 20 операций за этот запуск".into()
+    } else if app.journal_loading {
+        " Загрузка журнала…".into()
+    } else {
+        format!(
+            " {} · {} Обновить",
+            if app.journal_error.is_some() {
+                "Журнал недоступен"
+            } else {
+                "Последние 20 операций"
+            },
+            app.settings.shortcut(Action::Refresh)
+        )
+    };
+    frame.render_widget(Paragraph::new(header).style(palette.muted()), zones[0]);
+    if app.journal_enabled {
+        hit(app, zones[0], Target::JournalRefresh);
+    }
     if app.operations.is_empty() {
         frame.render_widget(
-            Paragraph::new("\n Операций пока нет.").style(palette.text()),
+            Paragraph::new(format!(
+                "\n {}",
+                app.journal_error.as_deref().unwrap_or("Операций пока нет.")
+            ))
+            .style(palette.text())
+            .wrap(Wrap { trim: false }),
             zones[2],
         );
     } else {
@@ -185,6 +205,24 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         );
         let progress = &record.progress;
         let mut lines = vec![Line::styled(format!(" {}", record.title), palette.accent())];
+        if let Some(journal) = &record.journal {
+            let date = record
+                .recorded_at
+                .and_then(|ms| u64::try_from(ms).ok())
+                .map(|ms| std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms));
+            lines.push(Line::raw(format!(
+                " Запись #{}{}",
+                journal.id,
+                if date.is_some() {
+                    format!(" · {}", fs::date(date))
+                } else {
+                    String::new()
+                }
+            )));
+        }
+        if let Some(error) = &app.journal_error {
+            lines.push(Line::styled(fs::clean(error), palette.accent()));
+        }
         if let Some(destination) = &record.destination {
             lines.push(Line::raw(format!(
                 " Назначение: {}",
@@ -255,6 +293,35 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
                 "  Остаток: {}",
                 fs::clean(&recovery.backup.to_string_lossy())
             )));
+        }
+        if let Some(journal) = &record.journal {
+            for item in &journal.items {
+                if let Some(target) = &item.target {
+                    lines.push(Line::raw(format!(
+                        " {} → {}",
+                        fs::clean(&crate::journal::path(&item.source).to_string_lossy()),
+                        fs::clean(&crate::journal::path(target).to_string_lossy())
+                    )));
+                }
+                if record.interrupted || item.state == "uncertain" || item.state == "partial" {
+                    for candidate in &item.recovery_paths {
+                        lines.push(Line::styled(
+                            format!(
+                                " Проверить временный путь: {}",
+                                fs::clean(&crate::journal::path(candidate).to_string_lossy())
+                            ),
+                            palette.accent(),
+                        ));
+                    }
+                }
+            }
+        }
+        if progress.items_done > record.completed_paths.len()
+            || progress.items_skipped > record.skipped_paths.len()
+        {
+            lines.push(Line::raw(
+                " Показан ограниченный список путей; полные данные сохранены в журнале.",
+            ));
         }
         if !record.skipped_paths.is_empty() {
             lines.push(Line::styled(" Пропущенные элементы:", palette.accent()));

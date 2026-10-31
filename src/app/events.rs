@@ -103,6 +103,11 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::JournalRefresh)
+                        if matches!(self.dialog, Some(Dialog::Operations)) =>
+                    {
+                        self.refresh_journal()
+                    }
                     Some(Target::ConflictChoice(choice)) => self.choose_conflict(choice),
                     Some(Target::ConflictRemaining) => self.toggle_conflict_remaining(),
                     Some(Target::DismissMenu)

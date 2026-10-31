@@ -255,9 +255,17 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             process=launch(None);key("c","ctrl");navigate(session_dirs[0]);key("v","ctrl");time.sleep(.5);key("Return")
             wait_for(lambda:(session_dirs[0]/"marker (1).txt").exists(),"Wayland restored active pane")
             assert (session_dirs[0]/"marker (1).txt").read_text()=="session-3"
+            key("F6");time.sleep(.6);run("grim","-g","0,16 1360x144",str(out/"native-wayland-journal-before.png"));key("Escape")
             key("t","ctrl");run("swaymsg",f"[pid={process.pid}] kill");process.wait(timeout=5);assert process.returncode==0
             saved=json.loads(state.read_text());assert len(saved["panes"][1]["tabs"])==3 and saved["panes"][1]["active"]==2
             print("Native Wayland session: both panes/tabs, restart, active-pane file commands and window close passed",flush=True)
+            process=launch(None);key("F6");time.sleep(.6)
+            run("grim","-g","0,16 1360x144",str(out/"native-wayland-journal-after.png"))
+            assert (out/"native-wayland-journal-before.png").read_bytes()==(out/"native-wayland-journal-after.png").read_bytes(),"Wayland journal changed across restart"
+            click(4,1);click(36,17);time.sleep(.6);run("grim","-g","0,16 1360x144",str(out/"native-wayland-journal-refreshed.png"))
+            assert (out/"native-wayland-journal-after.png").read_bytes()==(out/"native-wayland-journal-refreshed.png").read_bytes(),"Wayland journal refresh changed history"
+            key("q","ctrl");process.wait(timeout=5);assert process.returncode==0
+            print("Native Wayland journal: persistent history and mouse refresh passed",flush=True)
             print("Verified binary:", binary, hashlib.sha256(binary.read_bytes()).hexdigest())
         except Exception:
             if process and process.poll() is None:
