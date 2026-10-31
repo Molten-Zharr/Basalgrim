@@ -73,6 +73,7 @@ fn right_click_offers_only_commands_for_one_entry_or_the_marked_group() {
                     Action::Copy,
                     Action::Cut,
                     Action::Rename,
+                    Action::Duplicate,
                     Action::Trash
                 ]
             );
@@ -99,7 +100,10 @@ fn right_click_offers_only_commands_for_one_entry_or_the_marked_group() {
         }
         let r = entry(&mut app, 1);
         right(&mut app, r.x, r.y);
-        assert_eq!(actions(&app), [Action::Copy, Action::Cut, Action::Trash]);
+        assert_eq!(
+            actions(&app),
+            [Action::Copy, Action::Cut, Action::Duplicate, Action::Trash]
+        );
         render(&mut app);
         let index = actions(&app)
             .iter()

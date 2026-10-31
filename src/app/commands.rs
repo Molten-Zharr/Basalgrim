@@ -31,7 +31,16 @@ impl App {
         let count = self.tab().selection_count();
         let selection = count > 0;
         let actions: &[Action] = match context {
-            MenuContext::Entries => &[Open, Copy, Cut, Rename, Trash],
+            MenuContext::Entries => &[
+                Open,
+                Copy,
+                Cut,
+                Rename,
+                Duplicate,
+                CopyToOtherPane,
+                MoveToOtherPane,
+                Trash,
+            ],
             MenuContext::Directory => &[
                 NewFile, NewFolder, Paste, Sort, Grid, Hidden, Refresh, Search, SelectAll,
             ],
@@ -46,6 +55,9 @@ impl App {
                 Trash,
                 NewFolder,
                 NewFile,
+                CopyToOtherPane,
+                MoveToOtherPane,
+                Duplicate,
                 Operations,
                 CancelOperation,
                 NewTab,
@@ -88,6 +100,10 @@ impl App {
                         !self.busy && self.clipboard.as_ref().is_some_and(|c| !c.paths.is_empty())
                     }
                     NewFolder | NewFile => !self.busy,
+                    CopyToOtherPane | MoveToOtherPane => {
+                        selection && !self.busy && self.other_destination().is_some()
+                    }
+                    Duplicate => selection && !self.busy,
                     CancelOperation => self.busy,
                     CloseTab | NextTab => self.panes[self.active].tabs.len() > 1,
                     NextPane => self.settings.dual,

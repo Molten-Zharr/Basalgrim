@@ -312,6 +312,42 @@ fn main() -> Result<()> {
     app.operations_selected = 0;
     app.operations_detail_offset = 0;
     render(&mut app, &out, "operations-partial", 120, 36)?;
+    app.cancel_dialog();
+    app.settings.dual = true;
+    app.settings.grid = false;
+    app.settings.preview = false;
+    app.active = 1;
+    app.navigate(demo.path().join("Operations"), true);
+    settle(&mut app)?;
+    app.active = 0;
+    app.tab_mut().selected = app
+        .tab()
+        .visible
+        .iter()
+        .position(|&i| app.tab().entries[i].name == "browser.rs")
+        .unwrap();
+    app.tab_mut().marked = [demo.path().join("browser.rs"), demo.path().join("notes.md")].into();
+    app.tab_mut().explicit_selection = true;
+    render(&mut app, &out, "pane-transfer", 150, 44)?;
+    let selected = app.tab().selected;
+    let entry = app
+        .hits
+        .iter()
+        .find_map(|(r, t)| {
+            matches!(t, Target::Entry { pane: 0, index } if *index == selected).then_some(*r)
+        })
+        .unwrap();
+    app.handle(Input::SecondaryClick {
+        x: entry.x,
+        y: entry.y,
+    });
+    for _ in 0..3 {
+        app.handle(Input::Key(basalgrim::input::KeyPress::plain(
+            basalgrim::input::Key::Down,
+        )));
+    }
+    render(&mut app, &out, "pane-commands", 150, 44)?;
+    render(&mut app, &out, "pane-commands-compact", 34, 14)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

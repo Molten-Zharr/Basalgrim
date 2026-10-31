@@ -36,6 +36,10 @@ pub enum Operation {
         destination: PathBuf,
         cut: bool,
     },
+    Duplicate {
+        sources: Vec<PathBuf>,
+        destination: PathBuf,
+    },
     Trash {
         sources: Vec<PathBuf>,
     },
@@ -50,18 +54,23 @@ impl Operation {
             Self::Rename { .. } => "Переименование",
             Self::Transfer { cut: false, .. } => "Копирование",
             Self::Transfer { .. } => "Перемещение",
+            Self::Duplicate { .. } => "Дублирование",
             Self::Trash { .. } => "Отправка в корзину",
         }
     }
     pub fn total(&self) -> usize {
         match self {
-            Self::Transfer { sources, .. } | Self::Trash { sources } => sources.len(),
+            Self::Transfer { sources, .. }
+            | Self::Duplicate { sources, .. }
+            | Self::Trash { sources } => sources.len(),
             _ => 1,
         }
     }
     pub fn destination(&self) -> Option<PathBuf> {
         match self {
-            Self::Transfer { destination, .. } => Some(destination.clone()),
+            Self::Transfer { destination, .. } | Self::Duplicate { destination, .. } => {
+                Some(destination.clone())
+            }
             Self::Create { parent, name, .. } => Some(parent.join(name)),
             Self::Rename { source, name } => source.parent().map(|parent| parent.join(name)),
             Self::Trash { .. } => None,
@@ -465,6 +474,8 @@ fn operate_inner(
     mut resolve: Option<&mut dyn FnMut(&crate::conflicts::Conflict) -> crate::conflicts::Decision>,
 ) -> Report {
     let total = operation.total();
+    let cut = matches!(operation, Operation::Transfer { cut: true, .. });
+    let duplicate = matches!(operation, Operation::Duplicate { .. });
     let mut control = Control {
         cancellation,
         progress: Progress {
@@ -475,7 +486,7 @@ fn operate_inner(
         replacement: None,
         recoveries: Vec::new(),
     };
-    let mut policy = None;
+    let mut policy = duplicate.then_some(crate::conflicts::Choice::KeepBoth);
     let mut report = Report {
         total,
         ..Default::default()
@@ -486,7 +497,11 @@ fn operate_inner(
         if let Operation::Transfer {
             sources,
             destination,
-            cut,
+            ..
+        }
+        | Operation::Duplicate {
+            sources,
+            destination,
         } = &operation
         {
             let (mut entries, mut bytes, mut known) = (0u64, 0u64, true);
@@ -494,13 +509,13 @@ fn operate_inner(
                 control.checkpoint()?;
                 let measured = (|| {
                     let name = source.file_name().context("Нельзя копировать корень")?;
-                    if resolve.is_some() {
+                    if resolve.is_some() || duplicate {
                         validate_paths(source, &destination.join(name))?;
                     } else {
                         validate_transfer(source, &destination.join(name))?;
                     }
                     #[cfg(unix)]
-                    if *cut {
+                    if cut {
                         use std::os::unix::fs::MetadataExt;
                         if fs::symlink_metadata(source)?.dev() == fs::metadata(destination)?.dev() {
                             return Ok((1, 0));
@@ -520,7 +535,7 @@ fn operate_inner(
             }
             if known {
                 control.progress.entries_total = Some(entries);
-                control.progress.bytes_total = (!*cut || bytes > 0).then_some(bytes);
+                control.progress.bytes_total = (!cut || bytes > 0).then_some(bytes);
             }
         } else {
             control.progress.entries_total = Some(total as u64);
@@ -583,7 +598,11 @@ fn operate_inner(
             Operation::Transfer {
                 sources,
                 destination,
-                cut,
+                ..
+            }
+            | Operation::Duplicate {
+                sources,
+                destination,
             } => {
                 let total = sources.len();
                 for (index, source) in sources.into_iter().enumerate() {

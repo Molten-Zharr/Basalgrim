@@ -16,6 +16,14 @@ impl Drop for RunningOperation {
 }
 
 impl App {
+    pub(super) fn other_destination(&self) -> Option<&Path> {
+        if !self.settings.dual {
+            return None;
+        }
+        let tab = self.panes[1 - self.active].tab();
+        (tab.error.is_none() && (!tab.loading || tab.refreshing)).then_some(tab.cwd.as_path())
+    }
+
     pub fn current_operation(&self) -> Option<&OperationRecord> {
         let id = self.running_operation.as_ref()?.id;
         self.operations.iter().find(|record| record.id == id)

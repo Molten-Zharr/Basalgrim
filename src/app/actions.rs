@@ -156,6 +156,39 @@ impl App {
                     });
                 }
             }
+            Action::CopyToOtherPane | Action::MoveToOtherPane => {
+                let Some(destination) = self.other_destination().map(Path::to_path_buf) else {
+                    self.message(
+                        if self.settings.dual {
+                            "Каталог соседней панели ещё не готов или недоступен".into()
+                        } else {
+                            format!(
+                                "Включите две панели: {}",
+                                self.settings.shortcut(Action::Dual)
+                            )
+                        },
+                        true,
+                    );
+                    return;
+                };
+                let sources = self.tab().targets();
+                if !sources.is_empty() {
+                    self.start_operation(Operation::Transfer {
+                        sources,
+                        destination,
+                        cut: action == Action::MoveToOtherPane,
+                    });
+                }
+            }
+            Action::Duplicate => {
+                let sources = self.tab().targets();
+                if !sources.is_empty() {
+                    self.start_operation(Operation::Duplicate {
+                        sources,
+                        destination: self.tab().cwd.clone(),
+                    });
+                }
+            }
             Action::Rename => {
                 if let Some(entry) = self.tab().entry() {
                     // A lossy display name must never silently replace a non-UTF-8 filename.

@@ -279,7 +279,7 @@ pub(super) fn run(
         rename,
         remaining,
     } = request;
-    if resolve.is_none() {
+    if resolve.is_none() && policy.is_none() {
         if rename {
             control.publish(source, destination)?;
         } else {
@@ -324,7 +324,10 @@ pub(super) fn run(
             } else {
                 control.progress.phase = Phase::AwaitingDecision;
                 control.emit();
-                let decision = resolve.as_mut().unwrap()(&conflict);
+                let resolver = resolve
+                    .as_mut()
+                    .context("Совпадение требует явного выбора")?;
+                let decision = resolver(&conflict);
                 control.checkpoint()?;
                 ensure!(
                     conflict.allows(decision.choice),

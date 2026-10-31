@@ -139,6 +139,9 @@ pub enum Action {
     Copy,
     Cut,
     Paste,
+    CopyToOtherPane,
+    MoveToOtherPane,
+    Duplicate,
     Rename,
     NewFolder,
     NewFile,
@@ -175,6 +178,9 @@ impl Action {
         Self::Copy,
         Self::Cut,
         Self::Paste,
+        Self::CopyToOtherPane,
+        Self::MoveToOtherPane,
+        Self::Duplicate,
         Self::Rename,
         Self::NewFolder,
         Self::NewFile,
@@ -214,6 +220,9 @@ impl Action {
             Self::Copy => "Копировать",
             Self::Cut => "Вырезать",
             Self::Paste => "Вставить",
+            Self::CopyToOtherPane => "Копировать в соседнюю панель",
+            Self::MoveToOtherPane => "Переместить в соседнюю панель",
+            Self::Duplicate => "Дублировать",
             Self::Rename => "Переименовать",
             Self::NewFolder => "Новая папка",
             Self::NewFile => "Новый файл",
@@ -280,6 +289,21 @@ pub fn default_bindings() -> Vec<Binding> {
             ..KeyPress::plain(Key::F(6))
         },
     });
+    for (action, key, ctrl, shift) in [
+        (CopyToOtherPane, Key::F(5), false, true),
+        (MoveToOtherPane, Key::F(6), false, true),
+        (Duplicate, Key::F(5), true, false),
+    ] {
+        result.push(Binding {
+            action,
+            key: KeyPress {
+                key,
+                ctrl,
+                alt: false,
+                shift,
+            },
+        });
+    }
     for (action, c) in [
         (Quit, 'q'),
         (Copy, 'c'),

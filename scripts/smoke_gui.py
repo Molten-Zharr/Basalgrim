@@ -268,9 +268,9 @@ try:
             assert screenshot(window,'native-menu-hover-padding.png').tobytes()==baseline.tobytes(), 'Menu background flashed on hover'
             click(window,6,10,3) # Dismiss the complete command palette.
             screenshot(window,'native-mouse-start.png')
-            # 170x53 cells, first file row 11. A file has five commands.
+            # 170x53 cells, first file row 11. Contextual file commands.
             click(window,34,13,3); screenshot(window,'native-context-menu.png')
-            click(window,36,15) # Open, Copy, Cut, Rename, Trash
+            click(window,36,15) # Open, Copy, Cut, Rename, Duplicate, Trash
             click(window,34,11); click(window,34,11)
             # Directory background -> New File, New Folder, Paste, ...
             click(window,34,22,3); screenshot(window,'native-directory-menu.png'); click(window,36,25)
@@ -301,7 +301,7 @@ try:
         try:
             key('Control_L',True); click(window,34,12); click(window,34,13); key('Control_L',False)
             click(window,34,12,3); screenshot(window,'native-group-menu.png')
-            click(window,36,13) # Group has only Copy, Cut, Trash.
+            click(window,36,13) # Group: Copy, Cut, Duplicate, Trash.
             click(window,34,11); click(window,34,11)
             click(window,34,22,3); click(window,36,25)
             wait_for(lambda:all((group/'destination'/n).exists() for n in ('alpha.txt','beta.txt')),'Ctrl-selected group copy')
@@ -484,6 +484,34 @@ try:
             print('Native GUI conflicts: Keep Both/Replace/Skip for remaining, Escape/close, compact disabled row passed',flush=True)
         except Exception:
             screenshot(window,'native-conflict-failure.png'); raise
+        finally: stop(process,log)
+        pane_source=base/'pane-source'; pane_source.mkdir()
+        pane_dest=base/'pane-destination'; pane_dest.mkdir()
+        for name in ('a.txt','b.txt','untouched'): (pane_source/name).write_text('incoming '+name)
+        preferences=json.loads(settings.read_text()); preferences.update(dual=True,grid=False,preview=False)
+        settings.write_text(json.dumps(preferences))
+        process,window,log=launch(pane_source,config)
+        try:
+            key('Tab'); navigate(pane_dest); key('Tab')
+            key('Control_L',True); click(window,34,11); click(window,34,12); key('Control_L',False)
+            chord('F5','Shift_L')
+            wait_for(lambda:all((pane_dest/n).exists() for n in ('a.txt','b.txt')),'GUI copy to other pane')
+            assert not (pane_dest/'untouched').exists()
+            time.sleep(.4); click(window,34,11,3); screenshot(window,'native-pane-commands.png'); click(window,36,14)
+            wait_for(lambda:all((pane_source/n).exists() for n in ('a (1).txt','b (1).txt')),'GUI mouse group duplicate')
+            time.sleep(.4); chord('F6','Shift_L'); time.sleep(.6); key('space'); key('Up'); key('Return'); time.sleep(.4)
+            for name in ('a.txt','b.txt'): assert (pane_source/name).exists(); (pane_dest/name).unlink()
+            time.sleep(.5); click(window,34,12,3); click(window,36,17)
+            wait_for(lambda:all(not (pane_source/n).exists() and (pane_dest/n).exists() for n in ('a.txt','b.txt')),'GUI mouse move to other pane')
+            time.sleep(.4); key('Home'); chord('F5','Control_L')
+            wait_for(lambda:(pane_source/'a (1) (1).txt').exists(),'GUI duplicate shortcut')
+            time.sleep(.4); x.XResizeWindow(d,window,400,360); x.XFlush(d); time.sleep(.4)
+            chord('F10','Shift_L'); screenshot(window,'native-pane-compact.png'); click(window,12,14)
+            wait_for(lambda:(pane_source/'a (1) (2).txt').exists(),'GUI compact mouse duplicate')
+            time.sleep(.3); chord('q','Control_L'); process.wait(timeout=5); assert process.returncode==0
+            print('Native GUI panes: group copy/move, conflict skip, mouse duplicate, shortcuts and compact Actions passed',flush=True)
+        except Exception:
+            screenshot(window,'native-pane-failure.png'); raise
         finally: stop(process,log)
     print('Verified binary:', binary, hashlib.sha256(binary.read_bytes()).hexdigest(), flush=True)
 finally:

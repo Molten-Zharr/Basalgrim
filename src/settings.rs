@@ -81,6 +81,9 @@ impl Settings {
             Action::Operations,
             Action::CancelOperation,
             Action::Commands,
+            Action::CopyToOtherPane,
+            Action::MoveToOtherPane,
+            Action::Duplicate,
         ] {
             if self.bindings.iter().any(|binding| binding.action == action) {
                 continue;

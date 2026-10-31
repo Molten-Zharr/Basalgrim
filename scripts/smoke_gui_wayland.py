@@ -226,6 +226,26 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             key("v","ctrl");time.sleep(.6);key("Escape");time.sleep(.3)
             key("q","ctrl");process.wait(timeout=5);assert process.returncode==0
             print("Native Wayland conflicts: mouse Keep Both/Replace for remaining and Escape passed",flush=True)
+            pane_source=base/"pane-source"; pane_source.mkdir()
+            pane_dest=base/"pane-destination"; pane_dest.mkdir()
+            for name in ("a.txt","b.txt"): (pane_source/name).write_text("incoming "+name)
+            settings=base/"config/molten-zharr/basalgrim/settings.json"
+            preferences=json.loads(settings.read_text()); preferences.update(dual=True,grid=False,preview=False)
+            settings.write_text(json.dumps(preferences))
+            process=launch(pane_source)
+            key("Tab");navigate(pane_dest);key("Tab");key("a","ctrl")
+            key("F5","shift")
+            wait_for(lambda:all((pane_dest/n).exists() for n in ("a.txt","b.txt")),"Wayland copy to other pane")
+            time.sleep(.3);click(34,11,3);click(36,14)
+            wait_for(lambda:all((pane_source/n).exists() for n in ("a (1).txt","b (1).txt")),"Wayland mouse duplicate")
+            key("F6","shift");time.sleep(.5);key("space");key("Up");key("Return");time.sleep(.3)
+            for name in ("a.txt","b.txt"): assert (pane_source/name).exists();(pane_dest/name).unlink()
+            time.sleep(.4);click(34,12,3);click(36,17)
+            wait_for(lambda:all(not (pane_source/n).exists() and (pane_dest/n).exists() for n in ("a.txt","b.txt")),"Wayland mouse move to other pane")
+            key("Home");key("F5","ctrl")
+            wait_for(lambda:(pane_source/"a (1) (1).txt").exists(),"Wayland duplicate shortcut")
+            key("q","ctrl");process.wait(timeout=5);assert process.returncode==0
+            print("Native Wayland panes: group copy/move, conflicts, mouse duplicate and shortcuts passed",flush=True)
             print("Verified binary:", binary, hashlib.sha256(binary.read_bytes()).hexdigest())
         except Exception:
             if process and process.poll() is None:
