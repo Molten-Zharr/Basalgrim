@@ -51,7 +51,7 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
         env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), WLR_BACKENDS="headless",
                    WLR_RENDERER="pixman", WLR_LIBINPUT_NO_DEVICES="1",
                    LIBGL_ALWAYS_SOFTWARE="1", XDG_STATE_HOME=str(base / "state"), XDG_CONFIG_HOME=str(base / "config"),
-                   XDG_DATA_HOME=str(base / "data"))
+                   XDG_DATA_HOME=str(base / "data"), HOME=str(base), GIO_USE_VFS="local")
         for name in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "SWAYSOCK"):
             env.pop(name, None)
         server_log = open(out / "native-wayland-server.log", "w")
@@ -107,7 +107,7 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             return None
 
         def launch(path):
-            child = subprocess.Popen([str(binary), *([] if path is None else [str(path)])], env=env, stdout=app_log, stderr=app_log)
+            child = subprocess.Popen([str(binary), "--trash-home-only", *([] if path is None else [str(path)])], env=env, stdout=app_log, stderr=app_log)
             def mapped():
                 assert child.poll() is None, "Native Wayland app exited; see native-wayland.log"
                 return find(json.loads(run("swaymsg", "-t", "get_tree").stdout), child.pid)
@@ -305,7 +305,13 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             preferences=json.loads(settings.read_text());preferences.update(dual=False,grid=False,preview=False)
             settings.write_text(json.dumps(preferences));process=launch(undo_dir)
             key("F5","ctrl");wait_for(copied.exists,"Wayland duplicate for undo");time.sleep(.35)
-            key("z","ctrl");wait_for(lambda:not copied.exists(),"Wayland Ctrl+Z");time.sleep(.2)
+            def idle_file_view():
+                run("grim", "-g", "0,0 1360x860", str(out / "native-wayland-idle.png"))
+                with Image.open(out / "native-wayland-idle.png") as image:
+                    # Busy operations draw the Stop control at the right of the status row.
+                    return len(set(image.crop((1160,832,1350,848)).getdata())) == 1
+            key("z","ctrl");wait_for(lambda:not copied.exists(),"Wayland Ctrl+Z")
+            wait_for(idle_file_view,"Wayland undo result acknowledged by UI")
             key("y","ctrl");wait_for(copied.exists,"Wayland Ctrl+Y");time.sleep(.2)
             key("F6");time.sleep(.3);click(4,50);wait_for(lambda:not copied.exists(),"Wayland F6 mouse undo");time.sleep(.2)
             click(22,50);wait_for(copied.exists,"Wayland F6 mouse redo");time.sleep(.2)
@@ -323,15 +329,59 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings.write_text(json.dumps({"preview":False,"grid":False,"font_size":16,"theme":"light"}))
             process=launch(path_dir)
             def copied_path():return run("wl-paste","--no-newline",check=False).stdout
-            click(159,8);wait_for(lambda:copied_path()==str(path_dir),"Wayland copy full Unicode path")
+            click(165,8);wait_for(lambda:copied_path()==str(path_dir),"Wayland copy full Unicode path")
+            current_x=25+sum(len(part)+3 for part in path_dir.parts[:-1])+1
+            click(current_x,8);key("c","ctrl");assert copied_path()==str(path_dir);key("Escape")
+            click(current_x,8);run("wtype","-s","100","/tmp/abcdef","-s","100");key("End")
+            run("grim","-g","200,128 1000x16",str(out/"native-wayland-caret-end.png"))
+            key("Left");run("grim","-g","200,128 1000x16",str(out/"native-wayland-caret-left.png"))
+            with Image.open(out/"native-wayland-caret-end.png") as end_caret, Image.open(out/"native-wayland-caret-left.png") as left_caret:
+                assert end_caret.tobytes()!=left_caret.tobytes(),"Wayland caret did not move on unchanged text"
+            run("wtype","x");key("c","ctrl");wait_for(lambda:copied_path()=="/tmp/abcdexf","Wayland insertion follows visible caret")
+            click(32,8);run("wtype","y");key("c","ctrl");wait_for(lambda:copied_path()=="/tmp/abycdexf","Wayland mouse positions caret");key("Escape")
             key("l","ctrl");key("c","ctrl");assert copied_path()==str(path_dir);key("Escape")
             parent_x=25+sum(len(part)+3 for part in path_parent.parts[:-1])+1
-            click(parent_x,8);click(159,8);wait_for(lambda:copied_path()==str(path_parent),"Wayland ancestor breadcrumb")
-            click(26,8);click(159,8);wait_for(lambda:copied_path()=="/","Wayland root breadcrumb")
-            click(165,8);run("wtype","-s","100",str(path_parent),"-s","100");key("Return");time.sleep(.2)
-            click(159,8);wait_for(lambda:copied_path()==str(path_parent),"Wayland mouse path editor replaces selection")
+            click(parent_x,8);click(165,8);wait_for(lambda:copied_path()==str(path_parent),"Wayland ancestor breadcrumb")
+            click(26,8);click(165,8);wait_for(lambda:copied_path()=="/","Wayland root breadcrumb")
+            click(26,8);run("wtype","-s","100",str(path_parent),"-s","100");key("Return");time.sleep(.2)
+            click(165,8);wait_for(lambda:copied_path()==str(path_parent),"Wayland mouse path editor replaces selection")
             key("q","ctrl");process.wait(timeout=5);assert process.returncode==0
             print("Native Wayland paths: Unicode clipboard, Ctrl+L/C, ancestors, root and mouse editor passed",flush=True)
+            trash_dir=base/"trash-native";trash_dir.mkdir();a=trash_dir/"a.txt";tree=trash_dir/"b-tree"
+            a.write_text("native restore");tree.mkdir();(tree/"nested").write_text("native tree")
+            subprocess.run(["gio","trash","--",str(a),str(tree)],env=env,check=True)
+            settings.write_text(json.dumps({"preview":False,"grid":False,"font_size":16,"theme":"light"}));process=launch(trash_dir)
+            key("b","ctrl","shift");time.sleep(.4);key("f","ctrl");run("wtype","-s","100",str(trash_dir),"-s","100");key("Return");time.sleep(.3)
+            key("a","ctrl");click(34,11,3);click(36,12);click(57,29)
+            wait_for(lambda:a.exists() and tree.exists(),"Wayland trash group via context menu");time.sleep(.3)
+            assert a.read_text()=="native restore" and (tree/"nested").read_text()=="native tree"
+            key("z","ctrl");wait_for(lambda:not a.exists() and not tree.exists(),"Wayland undo restoration");time.sleep(.3)
+            key("y","ctrl");wait_for(lambda:a.exists() and tree.exists(),"Wayland redo restoration");time.sleep(.3)
+            subprocess.run(["gio","trash","--",str(a)],env=env,check=True);a.write_text("occupied");key("r","ctrl");time.sleep(.4)
+            click(34,11);click(34,9);click(57,29);time.sleep(.3);key("Return")
+            restored=trash_dir/"a (1).txt";wait_for(restored.exists,"Wayland Keep Both restoration");time.sleep(.3)
+            assert restored.read_text()=="native restore" and a.read_text()=="occupied"
+            key("q","ctrl");process.wait(timeout=5)
+            subprocess.run(["gio","trash","--",str(tree)],env=env,check=True)
+            destination=base/"trash-destination";destination.mkdir();process=launch(destination)
+            key("b","ctrl","shift");time.sleep(.4);key("f","ctrl");run("wtype","-s","100",str(trash_dir),"-s","100");key("Return");time.sleep(.3)
+            click(34,11,3);click(36,13);click(57,29);wait_for(lambda:(destination/"b-tree/nested").exists(),"Wayland restore to current directory after restart");time.sleep(.3)
+            assert (destination/"b-tree/nested").read_text()=="native tree" and not tree.exists()
+            purge_a=destination/"delete-a.txt";purge_b=destination/"delete-b.txt"
+            purge_a.write_text("selected deletion");purge_b.write_text("hidden deletion")
+            subprocess.run(["gio","trash","--",str(purge_a),str(purge_b)],env=env,check=True)
+            key("f","ctrl");key("u","ctrl");run("wtype","delete-");key("Return");key("r","ctrl");time.sleep(.4)
+            click(34,11,3);click(36,14);key("Escape")
+            trash_files=base/"data/Trash/files";trash_info=base/"data/Trash/info"
+            assert (trash_files/purge_a.name).exists() and (trash_files/purge_b.name).exists()
+            key("Delete");click(57,29);wait_for(lambda:not (trash_files/purge_a.name).exists(),"Wayland selected permanent deletion");time.sleep(.3)
+            assert (trash_files/purge_b.name).exists()
+            key("f","ctrl");key("u","ctrl");run("wtype","no-matching-file");key("Return")
+            click(34,3);time.sleep(.4);click(57,29)
+            wait_for(lambda:not any(trash_files.iterdir()) and not any(trash_info.iterdir()),"Wayland whole-trash empty with hidden entries");time.sleep(.3)
+            assert (destination/"b-tree/nested").read_text()=="native tree"
+            key("q","ctrl");process.wait(timeout=5);assert process.returncode==0
+            print("Native Wayland trash: gio group, context mouse, undo/redo, conflicts, restart and current-folder restore passed",flush=True)
             print("Verified binary:", binary, hashlib.sha256(binary.read_bytes()).hexdigest())
         except Exception:
             if process and process.poll() is None:

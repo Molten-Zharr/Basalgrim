@@ -2,8 +2,8 @@
 mod lineage;
 mod model;
 mod recorder;
-mod snapshot;
-mod trash;
+pub(crate) mod snapshot;
+pub(crate) mod trash;
 mod undo;
 use anyhow::{Context, Result, ensure};
 pub use model::{Identity, Inverse, Item, Receipt, Stored, bytes, path};
@@ -256,7 +256,7 @@ impl Database {
         for row in rows {
             let (index, kind, source, target, before, after, state, inverse, issue) = row?;
             let recovery_paths = if matches!(state.as_str(), "uncertain" | "partial" | "failed") {
-                let mut stmt=self.connection.prepare("SELECT destination FROM steps WHERE operation_id=?1 AND item=?2 AND destination IS NOT NULL AND kind IN ('claim_source','replace_claim','staging','publish','replay_restore') ORDER BY id DESC LIMIT 20")?;
+                let mut stmt=self.connection.prepare("SELECT destination FROM steps WHERE operation_id=?1 AND item=?2 AND destination IS NOT NULL AND kind IN ('claim_source','replace_claim','staging','publish','replay_restore','delete_claim') ORDER BY id DESC LIMIT 20")?;
                 stmt.query_map(params![id, index], |r| r.get(0))?
                     .collect::<rusqlite::Result<_>>()?
             } else {

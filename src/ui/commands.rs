@@ -8,8 +8,8 @@ use ratatui::widgets::Clear;
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     let items = app.command_items();
     let area = frame.area();
-    let full =
-        matches!(&app.dialog, Some(Dialog::Commands(menu)) if menu.context == MenuContext::All);
+    let full = !app.in_trash()
+        && matches!(&app.dialog, Some(Dialog::Commands(menu)) if menu.context == MenuContext::All);
     let border_rows = if palette.borders == BorderWeight::None {
         0
     } else {

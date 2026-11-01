@@ -147,8 +147,7 @@ pub fn kind(entry: &Entry) -> &'static str {
     } else if entry.directory {
         "Папка"
     } else {
-        match entry
-            .path
+        match Path::new(&entry.name)
             .extension()
             .and_then(|s| s.to_str())
             .unwrap_or("")

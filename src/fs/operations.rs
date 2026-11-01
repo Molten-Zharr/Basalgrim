@@ -11,6 +11,8 @@ use std::{
 mod conflicts;
 #[cfg(target_os = "linux")]
 mod cross_device;
+mod delete_trash;
+mod restore;
 
 #[derive(Debug, Clone)]
 pub struct RetainedCopy {
@@ -43,6 +45,14 @@ pub enum Operation {
     Trash {
         sources: Vec<PathBuf>,
     },
+    DeleteTrash {
+        targets: Vec<crate::trash::Deletion>,
+        empty: bool,
+    },
+    RestoreTrash {
+        entries: Vec<crate::trash::Entry>,
+        destination: Option<PathBuf>,
+    },
     Replay {
         original: i64,
         redo: bool,
@@ -61,6 +71,9 @@ impl Operation {
             Self::Transfer { .. } => "Перемещение",
             Self::Duplicate { .. } => "Дублирование",
             Self::Trash { .. } => "Отправка в корзину",
+            Self::DeleteTrash { empty: true, .. } => "Очистка корзины",
+            Self::DeleteTrash { .. } => "Удаление из корзины",
+            Self::RestoreTrash { .. } => "Восстановление из корзины",
             Self::Replay { redo: true, .. } => "Повтор операции",
             Self::Replay { .. } => "Отмена операции",
         }
@@ -71,6 +84,8 @@ impl Operation {
             | Self::Duplicate { sources, .. }
             | Self::Trash { sources } => sources.len(),
             Self::Replay { count, .. } => *count,
+            Self::DeleteTrash { targets, .. } => targets.len(),
+            Self::RestoreTrash { entries, .. } => entries.len(),
             _ => 1,
         }
     }
@@ -81,7 +96,8 @@ impl Operation {
             }
             Self::Create { parent, name, .. } => Some(parent.join(name)),
             Self::Rename { source, name } => source.parent().map(|parent| parent.join(name)),
-            Self::Trash { .. } => None,
+            Self::Trash { .. } | Self::DeleteTrash { .. } => None,
+            Self::RestoreTrash { destination, .. } => destination.clone(),
             Self::Replay { .. } => None,
         }
     }
@@ -132,6 +148,7 @@ struct Control<'a, 'db> {
     replacement: Option<conflicts::Replacement>,
     recoveries: Vec<crate::conflicts::DestinationRecovery>,
     journal: Option<&'a mut crate::journal::Recorder<'db>>,
+    restore_guard: Option<(crate::trash::Entry, PathBuf)>,
 }
 impl Control<'_, '_> {
     fn begin_item(&mut self, index: usize) -> Result<()> {
@@ -212,6 +229,9 @@ impl Control<'_, '_> {
     }
     fn publish(&mut self, source: &Path, destination: &Path) -> Result<()> {
         self.checkpoint()?;
+        if let Some((entry, parked)) = &self.restore_guard {
+            entry.validate_claimed(parked, self.cancellation)?;
+        }
         match &mut self.replacement {
             Some(replacement) => replacement.publish(
                 source,
@@ -445,6 +465,7 @@ pub fn transfer_one(source: &Path, destination: &Path, cut: bool) -> Result<()> 
         replacement: None,
         recoveries: Vec::new(),
         journal: None,
+        restore_guard: None,
     };
     transfer(source, destination, cut, &mut control)
 }
@@ -592,6 +613,7 @@ fn operate_inner(
         replacement: None,
         recoveries: Vec::new(),
         journal,
+        restore_guard: None,
     };
     let mut policy = duplicate.then_some(crate::conflicts::Choice::KeepBoth);
     let mut report = Report {
@@ -655,6 +677,46 @@ fn operate_inner(
             control.emit();
         };
         match operation {
+            Operation::DeleteTrash { targets, .. } => {
+                for (index, target) in targets.into_iter().enumerate() {
+                    control.current(target.path())?;
+                    control.begin_item(index)?;
+                    let (completed, outcome) = delete_trash::run(&target, &mut control);
+                    if completed {
+                        complete(target.path().to_path_buf(), &mut control);
+                    }
+                    control.conclude_item(outcome, completed, false)?;
+                }
+            }
+            Operation::RestoreTrash {
+                entries,
+                destination,
+            } => {
+                let total = entries.len();
+                for (index, entry) in entries.into_iter().enumerate() {
+                    control.current(&entry.data)?;
+                    control.begin_item(index)?;
+                    let outcome = restore::run(
+                        &entry,
+                        destination.as_deref(),
+                        total - index - 1,
+                        &mut policy,
+                        &mut resolve,
+                        &mut control,
+                    );
+                    let completed = matches!(outcome, Ok(true));
+                    let skipped = matches!(outcome, Ok(false));
+                    if completed {
+                        control.entry_done(&entry.data);
+                        complete(entry.data.clone(), &mut control);
+                    } else if skipped {
+                        report.skipped.push(entry.data.clone());
+                        control.progress.items_skipped = report.skipped.len();
+                    }
+                    let outcome = conflicts::conclude(outcome, &mut control);
+                    control.conclude_item(outcome, completed, skipped)?;
+                }
+            }
             Operation::Replay { .. } => bail!("Для отмены/повтора требуется устойчивый журнал"),
             Operation::Create {
                 parent,
@@ -819,6 +881,7 @@ pub(crate) fn relocate_recorded(
         replacement: None,
         recoveries: Vec::new(),
         journal: Some(journal),
+        restore_guard: None,
     };
     let result = control
         .current(source)

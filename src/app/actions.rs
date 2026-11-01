@@ -2,6 +2,9 @@ use super::*;
 
 impl App {
     pub fn action(&mut self, action: Action) {
+        if self.in_trash() && self.dialog.is_none() && self.trash_action(action) {
+            return;
+        }
         if action == Action::Commands && self.dialog.is_none() {
             self.open_commands(
                 self.pointer.unwrap_or(Position::new(2, 4)),
@@ -61,6 +64,11 @@ impl App {
             self.tab_mut().selected = index;
         }
         match action {
+            Action::TrashView => self.open_trash(None),
+            Action::RestoreTrash
+            | Action::RestoreTrashHere
+            | Action::DeleteTrash
+            | Action::EmptyTrash => {}
             Action::Back => {
                 if let Some(path) = self.tab_mut().back.pop() {
                     let current = self.tab().cwd.clone();
@@ -243,6 +251,18 @@ impl App {
                 self.refresh();
             }
             Action::CloseTab => {
+                self.finish_marquee(true);
+                if self.panes[self.active].tabs.len() > 1 {
+                    let removed = self.panes[self.active].active;
+                    if self.in_trash() {
+                        self.close_trash();
+                    } else if let Some(view) = &mut self.trash
+                        && view.owner.pane == self.active
+                        && view.owner.tab > removed
+                    {
+                        view.owner.tab -= 1;
+                    }
+                }
                 let pane = &mut self.panes[self.active];
                 if pane.tabs.len() > 1 {
                     pane.tabs.remove(pane.active);
@@ -303,6 +323,19 @@ impl App {
             return;
         }
         if let Some(Dialog::Edit {
+            kind: EditKind::TrashSearch { original },
+            ..
+        }) = &self.dialog
+        {
+            if let Some(view) = &mut self.trash {
+                view.filter = original.clone();
+                view.follow_selection = true;
+                view.rebuild();
+            }
+            self.dialog = None;
+            return;
+        }
+        if let Some(Dialog::Edit {
             kind: EditKind::Search { original },
             ..
         }) = self.dialog.take()
@@ -323,6 +356,8 @@ impl App {
                 self.dialog,
                 Some(
                     Dialog::Trash(_)
+                        | Dialog::DeleteTrash { .. }
+                        | Dialog::RestoreTrash { .. }
                         | Dialog::Edit {
                             kind: EditKind::Folder | EditKind::File | EditKind::Rename(_),
                             ..
@@ -346,6 +381,16 @@ impl App {
             return;
         };
         match dialog {
+            Dialog::DeleteTrash { targets, empty } => {
+                self.start_operation(Operation::DeleteTrash { targets, empty })
+            }
+            Dialog::RestoreTrash {
+                entries,
+                destination,
+            } => self.start_operation(Operation::RestoreTrash {
+                entries,
+                destination,
+            }),
             Dialog::Conflict(_) => unreachable!(),
             Dialog::Settings | Dialog::CaptureBinding { .. } => {
                 self.dialog = Some(Dialog::Settings)
@@ -367,8 +412,10 @@ impl App {
                     }
                     return;
                 }
-                if !matches!(kind, EditKind::Search { .. } | EditKind::Path(_))
-                    && let Err(e) = fs::validate_name(&text)
+                if !matches!(
+                    kind,
+                    EditKind::Search { .. } | EditKind::TrashSearch { .. } | EditKind::Path(_)
+                ) && let Err(e) = fs::validate_name(&text)
                 {
                     self.dialog = Some(Dialog::Edit {
                         kind,
@@ -379,8 +426,12 @@ impl App {
                 }
                 match kind {
                     EditKind::Setting(_) => unreachable!(),
-                    EditKind::Search { .. } => {}
+                    EditKind::Search { .. } | EditKind::TrashSearch { .. } => {}
                     EditKind::Path(original) => {
+                        if text == "trash:///" {
+                            self.open_trash(None);
+                            return;
+                        }
                         let path = if text == original.to_string_lossy() {
                             original
                         } else if text == "~" {
@@ -395,7 +446,9 @@ impl App {
                                 self.tab().cwd.join(path)
                             }
                         };
-                        self.navigate(path, true);
+                        if self.in_trash() || self.tab().cwd != path {
+                            self.navigate(path, true);
+                        }
                     }
                     EditKind::Folder | EditKind::File => self.start_operation(Operation::Create {
                         parent: self.tab().cwd.clone(),

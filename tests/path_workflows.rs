@@ -70,10 +70,13 @@ fn breadcrumbs_navigate_with_history_and_hover_does_not_select() {
     render(&mut app, 170, 44);
     let current = hit(
         &app,
-        |t| matches!(t,Target::PathGo { path: p, .. } if p == &path),
+        |t| matches!(t,Target::PathEdit(owner) if owner.cwd == path),
     );
     click(&mut app, current);
     assert_eq!(app.tab().marked.len(), 1);
+    assert!(app.text_active());
+    key(&mut app, KeyPress::plain(Key::Escape));
+    render(&mut app, 170, 44);
     let parent = path.parent().unwrap();
     let target = hit(
         &app,
@@ -292,4 +295,101 @@ fn new_path_shortcut_preserves_existing_clipboard_bindings() {
             .any(|b| b.action == Action::CopyPath && b.key != custom)
     );
     settings.validate_bindings().unwrap();
+}
+
+#[test]
+fn clicking_current_component_edits_in_place_without_hidden_buttons() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("opt");
+    let dest = root.path().join("Другая папка");
+    fs::create_dir(&dest).unwrap();
+    let mut app = setup(&path);
+    let before = render(&mut app, 150, 44);
+    let current = hit(
+        &app,
+        |t| matches!(t, Target::PathEdit(owner) if owner.cwd == path),
+    );
+    let edit_hits: Vec<_> = app
+        .hits
+        .iter()
+        .filter(|(_, t)| matches!(t, Target::PathEdit(_)))
+        .collect();
+    assert_eq!(edit_hits.len(), 1);
+    assert_eq!(
+        current.width, 5,
+        "only the visible 'opt' component edits the path"
+    );
+    app.handle(Input::Pointer(Some(
+        (current.right() + 2, current.y).into(),
+    )));
+    render(&mut app, 150, 44);
+    assert_eq!(
+        app.hovered_area(),
+        None,
+        "blank space must not be an invisible button"
+    );
+    click(&mut app, current);
+    let editing = render(&mut app, 150, 44);
+    let field = hit(&app, |t| matches!(t, Target::PathTextSelect { .. }));
+    assert_eq!(field.y, current.y);
+    for y in 0..current.y {
+        for x in 0..150 {
+            assert_eq!(before[(x, y)], editing[(x, y)]);
+        }
+    }
+    app.handle(Input::Text(dest.to_str().unwrap().into()));
+    render(&mut app, 150, 44);
+    let go = hit(&app, |t| matches!(t, Target::Confirm));
+    assert_eq!(go.y, current.y);
+    click(&mut app, go);
+    settle(&mut app);
+    assert_eq!(app.tab().cwd, dest);
+}
+
+#[test]
+fn inline_path_cursor_edits_unicode_and_outside_click_dismisses_without_navigation() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = setup(root.path());
+    app.action(Action::Path);
+    app.handle(Input::Text("/tmp/ёж".into()));
+    key(&mut app, KeyPress::plain(Key::Left));
+    app.handle(Input::Text("я".into()));
+    key(&mut app, KeyPress::plain(Key::Delete));
+    assert!(matches!(app.dialog, Some(Dialog::Edit {ref text,..}) if text == "/tmp/ёя"));
+    let buffer = render(&mut app, 34, 14);
+    assert!(
+        text_row(
+            &buffer,
+            hit(&app, |t| matches!(t, Target::PathTextSelect { .. })).y
+        )
+        .contains("/tmp/ёя")
+    );
+    click(&mut app, Rect::new(0, 0, 1, 1));
+    assert!(app.dialog.is_none());
+    assert_eq!(app.tab().cwd, root.path());
+}
+fn text_row(buffer: &Buffer, y: u16) -> String {
+    (0..buffer.area.width)
+        .map(|x| buffer[(x, y)].symbol())
+        .collect()
+}
+
+#[test]
+fn mouse_positions_caret_and_unicode_arrows_use_the_rendered_graphemes() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = setup(root.path());
+    app.action(Action::Path);
+    app.handle(Input::Text("/tmp/文件 e\u{301}x".into()));
+    render(&mut app, 150, 44);
+    let field = hit(&app, |target| {
+        matches!(target, Target::PathTextSelect { .. })
+    });
+    click(&mut app, Rect::new(field.x + 7, field.y, 1, 1)); // after the first wide character
+    app.handle(Input::Text("Z".into()));
+    assert!(matches!(app.dialog,Some(Dialog::Edit{ref text,..}) if text=="/tmp/文Z件 e\u{301}x"));
+    key(&mut app, KeyPress::plain(Key::End));
+    key(&mut app, KeyPress::plain(Key::Left));
+    key(&mut app, KeyPress::plain(Key::Left));
+    app.handle(Input::Text("Y".into()));
+    assert!(matches!(app.dialog,Some(Dialog::Edit{ref text,..}) if text=="/tmp/文Z件 Ye\u{301}x"));
 }

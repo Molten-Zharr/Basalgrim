@@ -60,7 +60,7 @@ impl App {
         });
     }
     pub(super) fn other_destination(&self) -> Option<&Path> {
-        if !self.settings.dual {
+        if !self.settings.dual || self.trash_in(1 - self.active) {
             return None;
         }
         let tab = self.panes[1 - self.active].tab();
@@ -203,6 +203,9 @@ impl App {
             }
         }
         self.preview_path = None;
+        if self.trash.is_some() {
+            self.refresh_trash();
+        }
         self.refresh_journal();
     }
     pub(super) fn operations_key(&mut self, press: crate::input::KeyPress) {

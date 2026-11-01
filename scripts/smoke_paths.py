@@ -58,7 +58,7 @@ def main():
             x=rows[y].index(label)
             send(f"\x1b[<0;{x+1};{y+1}M\x1b[<0;{x+1};{y+1}m")
         def copy(expected):
-            start=len(output);click_label("Коп.",lambda row:"Изм." in row)
+            start=len(output);click_label("Коп.",lambda row:"Коп." in row)
             wait(lambda:b"\x1b]52;c;" in output[start:],"OSC 52 clipboard output")
             payload=re.findall(rb"\x1b\]52;c;([^\x07\x1b]*)(?:\x07|\x1b\\)",output[start:])[-1]
             assert base64.b64decode(payload).decode()==str(expected),(payload,expected)
@@ -66,7 +66,10 @@ def main():
         try:
             wait(lambda:"a.txt" in text(),"initial directory")
             send(b"\x03");copy(folder)
-            click_label("path parent",lambda row:"Изм." in row);pump(.2);copy(folder.parent)
+            click_label("Кириллица spaces",lambda row:"Коп." in row)
+            assert "Ввод" in text(),"current breadcrumb must edit inline"
+            send(b"\x03");send(b"\x1b")
+            click_label("path parent",lambda row:"Коп." in row);pump(.2);copy(folder.parent)
             send(b"\x1b[1;3D");pump(.2);copy(folder)
             send(b"\x0c\x03")
             start=len(output);send(b"\x03");wait(lambda:b"\x1b]52;c;" in output[start:],"Ctrl+L Ctrl+C")
@@ -78,7 +81,7 @@ def main():
             long.mkdir(parents=True);navigate(long)
             width,height=34,14
             fcntl.ioctl(slave,termios.TIOCSWINSZ,struct.pack("HHHH",height,width,0,0));child.send_signal(signal.SIGWINCH);pump(.3)
-            copy(long);click_label("…",lambda row:"Изм." in row)
+            copy(long);click_label("…",lambda row:"Коп." in row)
             wait(lambda:"Папки пути" in text(),"compact hidden parents")
             send(b"\x1b[H");pump(.1)
             click_label(" / ",lambda row:row.startswith("│ / ") and "›" not in row)
@@ -93,14 +96,14 @@ def main():
             local=dict(env,WAYLAND_DISPLAY="private-test",PATH=str(helpers))
             output.clear()
             child=subprocess.Popen([str(binary),"--no-session",str(folder)],stdin=slave,stdout=slave,stderr=slave,env=local)
-            wait(lambda:"a.txt" in text(),"local-helper startup");click_label("Коп.",lambda row:"Изм." in row)
+            wait(lambda:"a.txt" in text(),"local-helper startup");click_label("Коп.",lambda row:"Коп." in row)
             wait(lambda:captured.exists() and captured.read_text()==str(folder),"bounded local helper")
             wait(lambda:"Путь скопирован" in text(),"local-helper acknowledgement")
             assert b"\x1b]52;c;" not in output,"local clipboard success also sent OSC 52"
             send(b"\x11");child.wait(timeout=5);assert child.returncode==0
             output.clear()
             child=subprocess.Popen([str(binary),"--no-session",str(folder)],stdin=slave,stdout=slave,stderr=slave,env=dict(env,TERM="linux"))
-            wait(lambda:"a.txt" in text(),"console startup");click_label("Коп.",lambda row:"Изм." in row)
+            wait(lambda:"a.txt" in text(),"console startup");click_label("Коп.",lambda row:"Коп." in row)
             wait(lambda:"Не удалось скопировать путь" in text(),"unsupported clipboard error")
             assert b"\x1b]52;c;" not in output,"Linux console received unsupported clipboard controls"
             send(b"\x11");child.wait(timeout=5);assert child.returncode==0

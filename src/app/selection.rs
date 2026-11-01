@@ -61,7 +61,7 @@ impl App {
                     && matches!(target, None | Some(Target::Entry { .. }))
             })
             .map(|pane| {
-                let tab = self.panes[pane].tab();
+                let tab = self.file_tab(pane);
                 Marquee {
                     pane,
                     tab: self.panes[pane].active,
@@ -140,8 +140,8 @@ impl App {
                 .filter(|(r, _)| !r.intersection(area).is_empty())
                 .map(|(_, p)| p.clone()),
         );
-        self.panes[pane].tab_mut().marked = marked;
-        self.panes[pane].tab_mut().explicit_selection = true;
+        self.file_tab_mut(pane).marked = marked;
+        self.file_tab_mut(pane).explicit_selection = true;
     }
 
     pub(super) fn finish_marquee(&mut self, restore: bool) {
@@ -150,9 +150,10 @@ impl App {
         };
         if restore
             && drag.dragging
-            && let Some(tab) = self.panes[drag.pane].tabs.get_mut(drag.tab)
-            && tab.cwd == drag.cwd
+            && self.panes[drag.pane].active == drag.tab
+            && self.file_tab(drag.pane).cwd == drag.cwd
         {
+            let tab = self.file_tab_mut(drag.pane);
             let visible: BTreeSet<_> = tab
                 .visible
                 .iter()
@@ -180,8 +181,8 @@ impl App {
             self.dialog.is_some()
                 || self.active != d.pane
                 || self.panes[d.pane].active != d.tab
-                || self.panes[d.pane].tab().cwd != d.cwd
-                || self.panes[d.pane].tab().request != d.request
+                || self.file_tab(d.pane).cwd != d.cwd
+                || self.file_tab(d.pane).request != d.request
                 || self.settings.grid != d.grid
                 || self.file_areas[d.pane] != d.viewport
         }) {

@@ -87,6 +87,25 @@ pub struct Spec {
 }
 pub fn specs(operation: &Operation) -> Vec<Spec> {
     match operation {
+        Operation::DeleteTrash { targets, .. } => targets
+            .iter()
+            .map(|target| Spec {
+                kind: "delete_trash",
+                source: target.path().to_path_buf(),
+                target: None,
+            })
+            .collect(),
+        Operation::RestoreTrash {
+            entries,
+            destination,
+        } => entries
+            .iter()
+            .map(|entry| Spec {
+                kind: "restore",
+                source: entry.data.clone(),
+                target: entry.target(destination.as_deref()).ok(),
+            })
+            .collect(),
         Operation::Replay { .. } => Vec::new(),
         Operation::Create {
             parent,

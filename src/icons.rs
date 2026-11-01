@@ -36,9 +36,10 @@ pub enum IconKind {
     Application,
     Font,
     Link,
+    Trash,
 }
 impl IconKind {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Folder,
         Self::File,
         Self::Document,
@@ -51,6 +52,7 @@ impl IconKind {
         Self::Application,
         Self::Font,
         Self::Link,
+        Self::Trash,
     ];
 
     pub fn for_entry(entry: &Entry) -> Self {
@@ -86,7 +88,7 @@ impl IconKind {
     pub fn color_role(self) -> &'static str {
         match self {
             Self::Folder | Self::Image | Self::Video => "folder_icon",
-            Self::Archive | Self::Application | Self::Font => "selection_accent",
+            Self::Archive | Self::Application | Self::Font | Self::Trash => "selection_accent",
             Self::Code | Self::Audio | Self::Pdf => "help_heading",
             Self::File | Self::Document | Self::Link => "folder_path",
         }

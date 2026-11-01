@@ -292,7 +292,7 @@ impl Database {
                             .transaction_with_behavior(TransactionBehavior::Immediate)?;
                         if outcome.is_ok()
                             && !redo
-                            && matches!(plan.kind.as_str(), "move" | "rename")
+                            && matches!(plan.kind.as_str(), "move" | "rename" | "restore")
                             && let Some(origin) = &plan.origin
                         {
                             lineage::rebase(
@@ -376,7 +376,7 @@ impl Plan {
         ensure!(
             matches!(
                 self.kind.as_str(),
-                "copy" | "duplicate" | "create" | "mkdir" | "move" | "rename" | "trash"
+                "copy" | "duplicate" | "create" | "mkdir" | "move" | "rename" | "trash" | "restore"
             ),
             "Неизвестная команда отмены"
         );
@@ -435,7 +435,7 @@ impl Plan {
             absent(&path(&self.target))?;
         }
         if !redo {
-            if matches!(self.kind.as_str(), "move" | "rename" | "trash") {
+            if matches!(self.kind.as_str(), "move" | "rename" | "trash" | "restore") {
                 absent(&path(&self.source))?;
             }
             if let Some(parking) = &self.parking {
@@ -450,11 +450,36 @@ impl Plan {
                 check(&path(&locator.info), &locator.metadata, cancellation)?;
             }
         }
+        if self.kind == "restore" {
+            let locator = self
+                .trash
+                .as_ref()
+                .context("Нет метаданных восстановления")?;
+            ensure!(
+                locator.data == self.source,
+                "Адрес корзины не соответствует восстановлению"
+            );
+            let parked = path(
+                self.info_parking
+                    .as_ref()
+                    .context("Нет сохранённых метаданных восстановления")?,
+            );
+            check(
+                &if redo {
+                    path(&locator.info)
+                } else {
+                    parked.clone()
+                },
+                &locator.metadata,
+                cancellation,
+            )?;
+            absent(&if redo { parked } else { path(&locator.info) })?;
+        }
         Ok(())
     }
     fn execute(&mut self, redo: bool, execution: &mut Execution<'_, '_>) -> Result<()> {
         let original = self.expected.clone();
-        if redo && matches!(self.kind.as_str(), "move" | "rename") {
+        if redo && matches!(self.kind.as_str(), "move" | "rename" | "restore") {
             self.origin = Some(original.clone());
         }
         if self.kind == "trash" {
@@ -490,6 +515,43 @@ impl Plan {
                     execution.move_one(&path(&self.target), &source, &original, false)?;
                 locator.metadata =
                     execution.move_one(&path(&locator.info), &info, &locator.metadata, true)?;
+            }
+        } else if self.kind == "restore" {
+            let locator = self
+                .trash
+                .as_mut()
+                .context("Нет метаданных восстановления")?;
+            let parked = path(
+                self.info_parking
+                    .as_ref()
+                    .context("Нет сохранённых метаданных")?,
+            );
+            let source = path(&self.source);
+            let target = path(&self.target);
+            if redo {
+                locator.metadata =
+                    execution.move_one(&path(&locator.info), &parked, &locator.metadata, false)?;
+                if let Some(backup) = &mut self.backup {
+                    backup.snapshot = execution.move_one(
+                        &target,
+                        &path(&backup.path),
+                        &backup.snapshot,
+                        false,
+                    )?;
+                }
+                self.expected = execution.move_one(&source, &target, &original, true)?;
+            } else {
+                self.expected = execution.move_one(&target, &source, &original, false)?;
+                if let Some(backup) = &mut self.backup {
+                    backup.snapshot = execution.move_one(
+                        &path(&backup.path),
+                        &target,
+                        &backup.snapshot,
+                        false,
+                    )?;
+                }
+                locator.metadata =
+                    execution.move_one(&parked, &path(&locator.info), &locator.metadata, true)?;
             }
         } else {
             let copy = matches!(
@@ -527,7 +589,9 @@ impl Plan {
         }
         execution.recorder.target(&if redo {
             path(&self.target)
-        } else if self.kind == "trash" || matches!(self.kind.as_str(), "move" | "rename") {
+        } else if self.kind == "trash"
+            || matches!(self.kind.as_str(), "move" | "rename" | "restore")
+        {
             path(&self.source)
         } else {
             path(self.parking.as_ref().unwrap())

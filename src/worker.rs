@@ -17,6 +17,10 @@ mod watch;
 pub type DirectoryResult = Result<(PathBuf, Vec<Entry>), String>;
 
 pub enum Event {
+    Trash {
+        token: u64,
+        result: Result<crate::trash::Catalog, String>,
+    },
     Journal {
         token: u64,
         result: Result<Vec<crate::journal::Stored>, String>,
@@ -54,6 +58,7 @@ enum Task {
     },
 }
 pub struct Worker {
+    trash: Sender<(u64, Option<Vec<crate::trash::Root>>, Cancellation)>,
     scans: Sender<(u64, PathBuf, Cancellation)>,
     previews: Sender<(u64, PathBuf, bool, Cancellation)>,
     tasks: Option<Sender<Task>>,
@@ -72,6 +77,37 @@ impl Default for Worker {
 impl Worker {
     pub fn new() -> Self {
         let (send, events) = mpsc::channel();
+        let (trash, rx) = mpsc::channel::<(u64, Option<Vec<crate::trash::Root>>, Cancellation)>();
+        let result = send.clone();
+        thread::spawn(move || {
+            while let Ok(mut request) = rx.recv() {
+                for newer in rx.try_iter() {
+                    request = newer;
+                }
+                let (token, roots, cancel) = request;
+                if cancel.is_cancelled() {
+                    continue;
+                }
+                let catalog = (|| -> anyhow::Result<_> {
+                    let roots = match roots {
+                        Some(r) => r,
+                        None => crate::trash::discover(&cancel)?,
+                    };
+                    crate::trash::read(&roots, &cancel)
+                })()
+                .map_err(|e| format!("{e:#}"));
+                if !cancel.is_cancelled()
+                    && result
+                        .send(Event::Trash {
+                            token,
+                            result: catalog,
+                        })
+                        .is_err()
+                {
+                    break;
+                }
+            }
+        });
         let (scans, rx) = mpsc::channel::<(u64, PathBuf, Cancellation)>();
         let result = send.clone();
         thread::spawn(move || {
@@ -295,6 +331,7 @@ impl Worker {
             }
         });
         Self {
+            trash,
             scans,
             previews,
             tasks: Some(tasks),
@@ -308,6 +345,14 @@ impl Worker {
     }
     pub fn scan(&self, token: u64, path: PathBuf, cancellation: Cancellation) {
         let _ = self.scans.send((token, path, cancellation));
+    }
+    pub fn read_trash(
+        &self,
+        token: u64,
+        roots: Option<Vec<crate::trash::Root>>,
+        cancellation: Cancellation,
+    ) -> bool {
+        self.trash.send((token, roots, cancellation)).is_ok()
     }
     pub fn journal(&self, token: u64, path: Option<PathBuf>, configure: bool) -> bool {
         self.tasks

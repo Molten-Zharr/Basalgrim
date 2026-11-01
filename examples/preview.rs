@@ -453,7 +453,56 @@ fn main() -> Result<()> {
     render(&mut image_app, &out, "path-parents", 50, 20)?;
     image_app.cancel_dialog();
     image_app.action(Action::Path);
+    image_app.handle(Input::Key(basalgrim::input::KeyPress::plain(
+        basalgrim::input::Key::End,
+    )));
     render(&mut image_app, &out, "path-editor", 100, 28)?;
+    image_app.cancel_dialog();
+    image_app.navigate(demo.path().into(), true);
+    settle(&mut image_app)?;
+    let trash = basalgrim::trash::Root::home(demo.path().join("trash-demo"));
+    use std::os::unix::fs::PermissionsExt;
+    for dir in [
+        trash.directory.clone(),
+        trash.directory.join("files"),
+        trash.directory.join("info"),
+    ] {
+        fs::create_dir_all(&dir)?;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
+    }
+    for (index, name) in [
+        "Documents/report.pdf",
+        "Projects/Basalgrim/notes.md",
+        "Pictures/landscape.svg",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        fs::write(
+            trash
+                .directory
+                .join("files")
+                .join(format!("stored-{index}")),
+            "example content",
+        )?;
+        fs::write(
+            trash
+                .directory
+                .join("info")
+                .join(format!("stored-{index}.trashinfo")),
+            format!(
+                "[Trash Info]\nPath={}\nDeletionDate=2026-11-01T12:30:45\n",
+                demo.path().join(name).display()
+            ),
+        )?;
+    }
+    image_app.open_trash(Some(vec![trash]));
+    settle(&mut image_app)?;
+    image_app.action(Action::SelectAll);
+    render(&mut image_app, &out, "trash", 140, 32)?;
+    render(&mut image_app, &out, "trash-compact", 34, 14)?;
+    image_app.action(Action::RestoreTrash);
+    render(&mut image_app, &out, "trash-confirm", 100, 28)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

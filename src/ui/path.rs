@@ -60,9 +60,13 @@ fn crumb(
         frame,
         rect,
         &format!(" {label} "),
-        Target::PathGo {
-            owner: owner.clone(),
-            path: item.path.clone(),
+        if current {
+            Target::PathEdit(owner.clone())
+        } else {
+            Target::PathGo {
+                owner: owner.clone(),
+                path: item.path.clone(),
+            }
         },
         if current {
             palette.accent().add_modifier(Modifier::BOLD)
@@ -84,8 +88,19 @@ pub fn bar(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Pa
         return;
     }
     let owner = PathOwner::current(app, pane);
-    let copy = Rect::new(row.right() - 12, row.y, 6, 1);
-    let edit = Rect::new(row.right() - 6, row.y, 6, 1);
+    if pane == app.active
+        && matches!(
+            app.dialog,
+            Some(Dialog::Edit {
+                kind: crate::app::EditKind::Path(_),
+                ..
+            })
+        )
+    {
+        editor(app, frame, row, palette);
+        return;
+    }
+    let copy = Rect::new(row.right() - 6, row.y, 6, 1);
     label_button(
         app,
         frame,
@@ -94,15 +109,18 @@ pub fn bar(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Pa
         Target::PathCopy(owner.clone()),
         palette.accent(),
     );
-    label_button(
-        app,
-        frame,
-        edit,
-        " Изм. ",
-        Target::PathEdit(owner.clone()),
-        palette.accent(),
-    );
-    let available = row.width - 12;
+    let available = row.width - 6;
+    if app.trash_in(pane) {
+        label_button(
+            app,
+            frame,
+            Rect::new(row.x, row.y, available.min(9), 1),
+            " Корзина ",
+            Target::PathEdit(owner),
+            palette.accent().add_modifier(Modifier::BOLD),
+        );
+        return;
+    }
     let items = crumbs(&owner.cwd);
     let total =
         items.iter().map(|p| p.label.width() + 2).sum::<usize>() + items.len().saturating_sub(1);
@@ -136,7 +154,7 @@ pub fn bar(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Pa
             separator(frame, row, &mut x, palette);
         }
         let width = (row.x + available).saturating_sub(x);
-        x += crumb(
+        crumb(
             app,
             frame,
             Rect::new(x, row.y, width, 1),
@@ -194,13 +212,6 @@ pub fn bar(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Pa
                 palette,
             );
         }
-    }
-    if x < copy.x {
-        hit(
-            app,
-            Rect::new(x, row.y, copy.x - x, 1),
-            Target::PathEdit(owner),
-        );
     }
 }
 
@@ -333,27 +344,45 @@ pub fn menu(app: &mut App, frame: &mut Frame, palette: Palette) {
     }
 }
 
-pub fn editor_footer(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
-    let labels = if area.width < 50 {
-        [" Перейти ", " Коп. ", " Esc "]
-    } else {
-        [" Enter Перейти ", " Ctrl+C Копировать ", " Esc Закрыть "]
+fn editor(app: &mut App, frame: &mut Frame, row: Rect, palette: Palette) {
+    let Some(Dialog::Edit { text, .. }) = &app.dialog else {
+        return;
     };
-    let mut x = area.x;
-    for (label, target) in
-        labels
-            .into_iter()
-            .zip([Target::Confirm, Target::PathTextCopy, Target::Cancel])
-    {
-        let width = (label.width() as u16).min(area.right().saturating_sub(x));
-        label_button(
-            app,
-            frame,
-            Rect::new(x, area.y, width, 1),
-            label,
-            target,
-            palette.accent(),
-        );
-        x = x.saturating_add(width + 1);
+    let field = Rect::new(row.x, row.y, row.width.saturating_sub(17), 1);
+    let cursor = app.path_cursor.min(text.len());
+    let available = usize::from(field.width.saturating_sub(1));
+    let mut start = 0;
+    let span = Span::raw(text.as_str());
+    let mut offset = 0;
+    for grapheme in span.styled_graphemes(ratatui::style::Style::default()) {
+        if offset >= cursor || text[offset..cursor].width() <= available {
+            break;
+        }
+        offset += grapheme.symbol.len();
+        start = offset;
+    }
+    let visible = &text[start..];
+    frame.render_widget(
+        Paragraph::new(visible.to_owned()).style(if app.path_text_selected {
+            palette.selection()
+        } else {
+            palette.text()
+        }),
+        field,
+    );
+    if !app.path_text_selected && field.width > 0 {
+        frame.set_cursor_position((
+            field.x + (text[start..cursor].width() as u16).min(field.width - 1),
+            field.y,
+        ));
+    }
+    hit(app, field, Target::PathTextSelect { area: field, start });
+    for (offset, width, label, target) in [
+        (0, 7, " Коп. ", Target::PathTextCopy),
+        (7, 7, " Ввод ", Target::Confirm),
+        (14, 3, " × ", Target::Cancel),
+    ] {
+        let rect = Rect::new(field.right() + offset, row.y, width, 1).intersection(row);
+        label_button(app, frame, rect, label, target, palette.accent());
     }
 }

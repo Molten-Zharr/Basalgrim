@@ -14,7 +14,7 @@ pub struct Search {
     existing: BTreeSet<PathBuf>,
     readable: BTreeSet<PathBuf>,
 }
-fn regular(path: &Path) -> Result<Vec<u8>> {
+pub(crate) fn regular(path: &Path) -> Result<Vec<u8>> {
     let file = File::from(rustix::fs::open(
         path,
         rustix::fs::OFlags::RDONLY
@@ -32,14 +32,20 @@ fn regular(path: &Path) -> Result<Vec<u8>> {
     ensure!(bytes.len() <= 65_536, "Метаданные корзины слишком большие");
     Ok(bytes)
 }
-fn original(info: &[u8], base: &Path) -> Result<PathBuf> {
+pub(crate) fn original(info: &[u8], base: &Path) -> Result<PathBuf> {
+    let mut lines = info.split(|&b| b == b'\n');
     ensure!(
-        info.starts_with(b"[Trash Info]\n"),
+        lines
+            .next()
+            .is_some_and(|line| line.strip_suffix(b"\r").unwrap_or(line) == b"[Trash Info]"),
         "Неверные метаданные корзины"
     );
-    let value = info
-        .split(|&b| b == b'\n')
-        .find_map(|line| line.strip_prefix(b"Path="))
+    let value = lines
+        .find_map(|line| {
+            line.strip_suffix(b"\r")
+                .unwrap_or(line)
+                .strip_prefix(b"Path=")
+        })
         .context("Нет исходного пути корзины")?;
     let mut decoded = Vec::new();
     let mut index = 0;
@@ -56,6 +62,7 @@ fn original(info: &[u8], base: &Path) -> Result<PathBuf> {
         }
     }
     ensure!(!decoded.contains(&0), "Нулевой байт в пути корзины");
+    ensure!(!decoded.is_empty(), "Пустой путь корзины");
     let path = path(&decoded);
     ensure!(
         !path

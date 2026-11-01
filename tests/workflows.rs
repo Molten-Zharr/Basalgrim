@@ -391,7 +391,10 @@ fn grid_names_have_gaps_and_elide_without_losing_extensions_or_graphemes() {
 
 #[test]
 fn icon_capabilities_and_user_preference_choose_graphics_or_symbols() {
-    use basalgrim::{icons::IconBackend, preferences::IconMode};
+    use basalgrim::{
+        icons::{IconBackend, IconKind},
+        preferences::IconMode,
+    };
     let (_root, mut app) = setup();
     for grid in [true, false] {
         app.settings.grid = grid;
@@ -415,9 +418,21 @@ fn icon_capabilities_and_user_preference_choose_graphics_or_symbols() {
                 }
                 assert_eq!(app.tab().selected, selected);
                 assert_eq!(app.settings.appearance.icon_mode, mode);
+                assert!(!text.contains('♲'));
+                assert_eq!(text.contains("[] Корзина"), !has_images);
                 for slot in &app.icon_slots {
                     assert!(slot.area.right() <= buffer.area.right());
                     assert!(slot.area.bottom() <= buffer.area.bottom());
+                    if slot.kind == IconKind::Trash {
+                        assert_eq!(slot.area.width, 2);
+                        assert_eq!(slot.area.height, 1);
+                        assert!(app.hits.iter().any(|(area, target)| matches!(
+                            target,
+                            Target::Action(Action::TrashView)
+                        )
+                            && area.intersection(slot.area) == slot.area));
+                        continue;
+                    }
                     let card = app
                         .hits
                         .iter()

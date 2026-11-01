@@ -7,6 +7,7 @@ mod path;
 mod selection;
 mod settings;
 pub mod theme;
+mod trash;
 
 use crate::{
     app::{App, Target},
@@ -174,14 +175,25 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     if show_preview {
         preview(app, frame, content[1], palette);
     }
-    let shortcuts = [
-        ("Имя", Action::Rename),
-        ("Превью", Action::Preview),
-        ("Обновить", Action::Refresh),
-        ("Папка", Action::NewFolder),
-        ("Корзина", Action::Trash),
-        ("Сортировка", Action::Sort),
-    ];
+    let shortcuts = if app.in_trash() {
+        [
+            ("Восстановить", Action::RestoreTrash),
+            ("Удалить", Action::DeleteTrash),
+            ("Превью", Action::Preview),
+            ("Обновить", Action::Refresh),
+            ("Поиск", Action::Search),
+            ("Сортировка", Action::Sort),
+        ]
+    } else {
+        [
+            ("Имя", Action::Rename),
+            ("Превью", Action::Preview),
+            ("Обновить", Action::Refresh),
+            ("Папка", Action::NewFolder),
+            ("Корзина", Action::Trash),
+            ("Сортировка", Action::Sort),
+        ]
+    };
     let inner = if compact {
         zones[3]
     } else {
@@ -248,7 +260,7 @@ fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
             ),
         ];
     }
-    vec![
+    let mut commands = vec![
         (" Действия ".into(), Action::Commands),
         (" ← ".into(), Action::Back),
         (" → ".into(), Action::Forward),
@@ -289,7 +301,17 @@ fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
             format!(" {} Помощь ", app.settings.shortcut(Action::Help)),
             Action::Help,
         ),
-    ]
+    ];
+    if app.in_trash() {
+        commands.retain(|(_, action)| {
+            !matches!(
+                action,
+                Action::NewFolder | Action::Copy | Action::Cut | Action::Paste
+            )
+        });
+        commands.insert(5, (" Очистить корзину ".into(), Action::EmptyTrash));
+    }
+    commands
 }
 fn toolbar_rows(width: u16, commands: &[(String, Action)]) -> u16 {
     let limit = width.saturating_sub(2);
@@ -346,7 +368,7 @@ fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
             break;
         }
         let place = &app.places[i];
-        let selected = app.tab().cwd == place.path;
+        let selected = !app.in_trash() && app.tab().cwd == place.path;
         let style = if selected {
             palette
                 .text()
@@ -365,6 +387,40 @@ fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
             rect,
         );
         hit(app, rect, Target::Place(place.path.clone()));
+        y += 2;
+    }
+    if y < inner.bottom() {
+        let rect = Rect::new(inner.x, y, inner.width, 1);
+        let images = app.icon_backend.supports_images()
+            && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images;
+        let style = if app.in_trash() {
+            palette.selection()
+        } else {
+            palette.text()
+        };
+        frame.render_widget(
+            Paragraph::new(if images {
+                "    Корзина"
+            } else {
+                " [] Корзина"
+            })
+            .style(style),
+            rect,
+        );
+        if images && rect.width >= 3 {
+            let rgb = |role| match palette.color(role) {
+                ratatui::style::Color::Rgb(r, g, b) => [r, g, b],
+                _ => unreachable!("Palette colors are RGB"),
+            };
+            app.icon_slots.push(crate::icons::IconSlot {
+                kind: crate::icons::IconKind::Trash,
+                area: Rect::new(rect.x + 1, rect.y, 2, 1),
+                foreground: rgb("text"),
+                accent: rgb("selection_accent"),
+                background: rgb("background"),
+            });
+        }
+        hit(app, rect, Target::Action(Action::TrashView));
         y += 2;
     }
     if y + 5 < inner.bottom() {

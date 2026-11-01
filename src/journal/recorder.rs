@@ -13,6 +13,7 @@ struct Current {
     backup: Option<undo::Backup>,
     trash: Option<trash::Search>,
     undo_issue: Option<String>,
+    restore: Option<(trash::Locator, Vec<u8>)>,
 }
 pub struct Recorder<'a> {
     pub(super) database: &'a mut Database,
@@ -26,6 +27,31 @@ pub struct Recorder<'a> {
     guard: Option<(PathBuf, snapshot::Snapshot)>,
 }
 impl<'a> Recorder<'a> {
+    pub(crate) fn restore_metadata(
+        &mut self,
+        entry: &crate::trash::Entry,
+        parked: &Path,
+    ) -> Result<()> {
+        let metadata = snapshot::Snapshot::read(&entry.info, &self.cancellation)?;
+        let source = snapshot::Snapshot::read(&entry.data, &self.cancellation)?;
+        entry.validate(&self.cancellation)?;
+        self.guard = Some((entry.data.clone(), source.clone()));
+        let current = self
+            .current
+            .as_mut()
+            .context("Нет текущего элемента журнала")?;
+        current.origin = Some(source.clone());
+        current.expected = Some(source);
+        current.restore = Some((
+            trash::Locator {
+                data: bytes(&entry.data),
+                info: bytes(&entry.info),
+                metadata,
+            },
+            bytes(parked),
+        ));
+        Ok(())
+    }
     pub(super) fn new(database: &'a mut Database, id: i64, requested: Vec<Spec>) -> Self {
         Self {
             database,
@@ -37,6 +63,11 @@ impl<'a> Recorder<'a> {
             cancellation: Default::default(),
             replaying: false,
             guard: None,
+        }
+    }
+    pub(crate) fn destructive_started(&mut self) {
+        if let Some(current) = &mut self.current {
+            current.published = true;
         }
     }
     pub fn set_cancellation(&mut self, cancellation: crate::operations::Cancellation) {
@@ -84,6 +115,7 @@ impl<'a> Recorder<'a> {
             "UPDATE items SET state='running',before=?3 WHERE operation_id=?1 AND sequence=?2",
             params![self.id, index as i64, serde_json::to_vec(&before)?],
         )?;
+        let irreversible = spec.kind == "delete_trash";
         self.current = Some(Current {
             index,
             target: spec.target.clone(),
@@ -95,7 +127,8 @@ impl<'a> Recorder<'a> {
             origin: None,
             backup: None,
             trash: None,
-            undo_issue: None,
+            undo_issue: irreversible.then(|| "Безвозвратное удаление не отменяется".into()),
+            restore: None,
         });
         Ok(())
     }
@@ -292,8 +325,18 @@ impl<'a> Recorder<'a> {
                     origin: current.origin.take(),
                     backup,
                     parking: None,
-                    trash: locator,
-                    info_parking: None,
+                    trash: if let Some((mut locator, parked)) = current.restore.clone() {
+                        let actual = snapshot::Snapshot::read(&path(&parked), &Default::default())?;
+                        ensure!(
+                            locator.metadata.relocated(&actual, false),
+                            "Метаданные восстановленного элемента изменились"
+                        );
+                        locator.metadata = actual;
+                        Some(locator)
+                    } else {
+                        locator
+                    },
+                    info_parking: current.restore.as_ref().map(|(_, parked)| parked.clone()),
                 };
                 ensure!(
                     serde_json::to_vec(&plan)?.len() <= 32 * 1024 * 1024,
@@ -321,8 +364,9 @@ impl<'a> Recorder<'a> {
             let blocked = current.undo_issue.clone();
             Some(Inverse {
                 action: match current.spec.kind {
-                    "move" | "rename" => "move_back",
+                    "move" | "rename" | "restore" => "move_back",
                     "trash" => "restore_trash",
+                    "delete_trash" => "permanent_delete",
                     "mkdir" => "remove_empty_directory",
                     _ => "remove_created",
                 }

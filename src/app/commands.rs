@@ -6,6 +6,8 @@ pub enum MenuContext {
     All,
     Entries,
     Directory,
+    Trash,
+    TrashBackground,
 }
 
 pub struct CommandMenu {
@@ -31,6 +33,19 @@ impl App {
         let count = self.tab().selection_count();
         let selection = count > 0;
         let actions: &[Action] = match context {
+            MenuContext::Trash => &[RestoreTrash, RestoreTrashHere, DeleteTrash],
+            MenuContext::TrashBackground => &[EmptyTrash, Sort, Grid, Refresh],
+            MenuContext::All if self.in_trash() => &[
+                RestoreTrash,
+                RestoreTrashHere,
+                DeleteTrash,
+                EmptyTrash,
+                SelectAll,
+                Search,
+                Sort,
+                Refresh,
+                Operations,
+            ],
             MenuContext::Entries => &[
                 Open,
                 Copy,
@@ -53,6 +68,7 @@ impl App {
                 Paste,
                 Rename,
                 Trash,
+                TrashView,
                 NewFolder,
                 NewFile,
                 CopyToOtherPane,
@@ -91,6 +107,25 @@ impl App {
             .copied()
             .map(|action| {
                 let enabled = match action {
+                    DeleteTrash => {
+                        !self.busy
+                            && self.in_trash()
+                            && self.trash.as_ref().is_some_and(|t| t.can_delete())
+                    }
+                    EmptyTrash => {
+                        !self.busy
+                            && self.in_trash()
+                            && self.trash.as_ref().is_some_and(|t| {
+                                !t.loading && t.error.is_none() && !t.catalog.deletions.is_empty()
+                            })
+                    }
+                    RestoreTrash | RestoreTrashHere => {
+                        !self.busy && self.trash.as_ref().is_some_and(|t| t.can_restore())
+                    }
+                    SelectAll if self.in_trash() => {
+                        !self.trash.as_ref().unwrap().visible.is_empty()
+                    }
+                    Mark if self.in_trash() => self.trash.as_ref().unwrap().entry().is_some(),
                     Open | Rename if context == MenuContext::Entries && count != 1 => false,
                     Rename if context == MenuContext::Entries => {
                         self.tab().entry().is_some_and(|entry| {
@@ -120,12 +155,13 @@ impl App {
                 } && (!self.busy || !matches!(action, Rename | Trash));
                 CommandItem { action, enabled }
             })
-            .filter(|item| context == MenuContext::All || item.enabled)
+            .filter(|item| (context == MenuContext::All && !self.in_trash()) || item.enabled)
             .collect()
     }
 
     pub(crate) fn command_title(&self) -> String {
         match &self.dialog {
+            Some(Dialog::Commands(menu)) if menu.context == MenuContext::Trash => "КОРЗИНА".into(),
             Some(Dialog::Commands(menu)) if menu.context == MenuContext::Directory => {
                 "ТЕКУЩАЯ ПАПКА".into()
             }

@@ -61,7 +61,17 @@ impl App {
             Input::Text(text) => self.insert_text(&text),
             Input::Key(key) => self.key(key),
             Input::SecondaryClick { .. }
-                if matches!(self.dialog, Some(Dialog::Commands(_) | Dialog::Paths(_))) =>
+                if matches!(
+                    self.dialog,
+                    Some(
+                        Dialog::Commands(_)
+                            | Dialog::Paths(_)
+                            | Dialog::Edit {
+                                kind: EditKind::Path(_),
+                                ..
+                            }
+                    )
+                ) =>
             {
                 self.dialog = None;
             }
@@ -96,10 +106,24 @@ impl App {
                         self.tab_mut().marked.clear();
                         self.tab_mut().explicit_selection = false;
                     }
-                    self.open_commands(point, MenuContext::Entries);
+                    self.open_commands(
+                        point,
+                        if self.in_trash() {
+                            MenuContext::Trash
+                        } else {
+                            MenuContext::Entries
+                        },
+                    );
                 } else if let Some(pane) = self.pane_areas.iter().position(|r| r.contains(point)) {
                     self.active = pane;
-                    self.open_commands(point, MenuContext::Directory);
+                    self.open_commands(
+                        point,
+                        if self.in_trash() {
+                            MenuContext::TrashBackground
+                        } else {
+                            MenuContext::Directory
+                        },
+                    );
                 }
             }
             Input::Click {
@@ -139,7 +163,7 @@ impl App {
                         self.edit_menu_path()
                     }
                     Some(Target::PathTextCopy) => self.copy_path_text(),
-                    Some(Target::PathTextSelect)
+                    Some(Target::PathTextSelect { area, start })
                         if matches!(
                             self.dialog,
                             Some(Dialog::Edit {
@@ -148,10 +172,20 @@ impl App {
                             })
                         ) =>
                     {
-                        self.path_text_selected = true
+                        self.position_path_cursor(start, x.saturating_sub(area.x), double)
                     }
                     Some(Target::DismissMenu)
-                        if matches!(self.dialog, Some(Dialog::Commands(_) | Dialog::Paths(_))) =>
+                        if matches!(
+                            self.dialog,
+                            Some(
+                                Dialog::Commands(_)
+                                    | Dialog::Paths(_)
+                                    | Dialog::Edit {
+                                        kind: EditKind::Path(_),
+                                        ..
+                                    }
+                            )
+                        ) =>
                     {
                         self.cancel_dialog()
                     }
@@ -223,11 +257,24 @@ impl App {
                     _ if self.dialog.is_some() => {}
                     Some(Target::PathGo { owner, path }) => self.go_path(owner, path),
                     Some(Target::PathCopy(owner)) if owner.valid(self) => {
-                        self.copy_path(&owner.cwd)
+                        if self.trash_in(owner.pane) {
+                            self.request_text_copy("trash:///".into());
+                        } else {
+                            self.copy_path(&owner.cwd);
+                        }
                     }
                     Some(Target::PathEdit(owner)) => self.edit_path(owner),
                     Some(Target::PathParents { owner, anchor }) => self.path_parents(owner, anchor),
-                    Some(Target::Action(a)) => self.action(a),
+                    Some(Target::Action(a)) => {
+                        if let Some(pane) = self
+                            .pane_areas
+                            .iter()
+                            .position(|r| r.contains(Position::new(x, y)))
+                        {
+                            self.active = pane;
+                        }
+                        self.action(a);
+                    }
                     Some(Target::Place(path)) => self.navigate(path, true),
                     Some(Target::Tab { pane, index }) => {
                         self.active = pane;
@@ -324,8 +371,7 @@ impl App {
                     && !self.file_areas[pane].is_empty()
                 {
                     let step = if self.settings.grid { 1 } else { 3 };
-                    self.panes[pane]
-                        .tab_mut()
+                    self.file_tab_mut(pane)
                         .scroll_rows((delta as isize).saturating_mul(step));
                 }
             }
@@ -346,12 +392,39 @@ impl App {
                 self.path_text_selected = false;
             }
             let remaining = 4096usize.saturating_sub(value.chars().count());
-            value.extend(text.chars().filter(|c| !c.is_control()).take(remaining));
+            let inserted: String = text
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(remaining)
+                .collect();
+            if matches!(kind, EditKind::Path(_)) {
+                if self.path_text_selected {
+                    value.clear();
+                }
+                let cursor = self.path_cursor.min(value.len());
+                value.insert_str(cursor, &inserted);
+                self.path_cursor = cursor + inserted.len();
+            } else {
+                value.push_str(&inserted);
+            }
             *error = None;
         }
         self.live_search();
     }
     fn live_search(&mut self) {
+        if let Some(Dialog::Edit {
+            kind: EditKind::TrashSearch { .. },
+            text,
+            ..
+        }) = &self.dialog
+        {
+            if let Some(view) = &mut self.trash {
+                view.filter = text.clone();
+                view.follow_selection = true;
+                view.rebuild();
+            }
+            return;
+        }
         if let Some(Dialog::Edit {
             kind: EditKind::Search { .. },
             text,
@@ -377,6 +450,9 @@ impl App {
             .min(tab.visible.len().saturating_sub(1));
     }
     pub(super) fn toggle_mark(&mut self) {
+        if self.in_trash() {
+            self.tab_mut().explicit_selection = true;
+        }
         if let Some(path) = self.tab().entry().map(|e| e.path.clone())
             && !self.tab_mut().marked.remove(&path)
         {
@@ -385,6 +461,9 @@ impl App {
     }
     fn key(&mut self, press: KeyPress) {
         let press = press.normalized();
+        if self.path_editor_key(press) {
+            return;
+        }
         if matches!(self.dialog, Some(Dialog::Paths(_))) {
             self.path_menu_key(press);
             return;
@@ -432,34 +511,6 @@ impl App {
             return;
         }
         if self.dialog.is_some() {
-            if matches!(
-                self.dialog,
-                Some(Dialog::Edit {
-                    kind: EditKind::Path(_),
-                    ..
-                })
-            ) {
-                if press == KeyPress::ctrl('c') {
-                    self.copy_path_text();
-                    return;
-                }
-                if press == KeyPress::ctrl('a') {
-                    self.path_text_selected = true;
-                    return;
-                }
-                if self.path_text_selected
-                    && matches!(key, Key::Backspace | Key::Delete)
-                    && !ctrl
-                    && !alt
-                {
-                    if let Some(Dialog::Edit { text, error, .. }) = &mut self.dialog {
-                        text.clear();
-                        *error = None;
-                    }
-                    self.path_text_selected = false;
-                    return;
-                }
-            }
             if matches!(self.dialog, Some(Dialog::Help)) {
                 let delta = match key {
                     Key::Down => 1,
@@ -519,10 +570,17 @@ impl App {
             Key::PageUp => self.move_selection(-(self.tab().page_size as isize)),
             Key::PageDown => self.move_selection(self.tab().page_size as isize),
             Key::Escape => {
+                if self.in_trash() {
+                    self.tab_mut().explicit_selection = false;
+                }
                 self.tab_mut().marked.clear();
                 self.tab_mut().filter.clear();
                 let h = self.settings.hidden;
-                self.tab_mut().rebuild(h);
+                if self.in_trash() {
+                    self.trash.as_mut().unwrap().rebuild();
+                } else {
+                    self.tab_mut().rebuild(h);
+                }
             }
             _ => {}
         }

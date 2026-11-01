@@ -12,10 +12,12 @@ pub use path::{PathMenu, PathOwner};
 mod selection;
 mod session;
 mod settings;
+mod trash;
 pub use settings::{
     SettingControl, SettingRow, SettingsEdit, SettingsFocus, SettingsSection, SettingsTab,
     SettingsView,
 };
+pub use trash::TrashView;
 
 use crate::{
     fs::{self, Operation, Preview},
@@ -47,7 +49,10 @@ pub enum Target {
     PathMenuCopy,
     PathMenuEdit,
     PathTextCopy,
-    PathTextSelect,
+    PathTextSelect {
+        area: Rect,
+        start: usize,
+    },
     JournalRefresh,
     ConflictChoice(crate::conflicts::Choice),
     ConflictRemaining,
@@ -86,6 +91,7 @@ pub enum Target {
 
 #[derive(Clone)]
 pub enum EditKind {
+    TrashSearch { original: String },
     Search { original: String },
     Path(PathBuf),
     Folder,
@@ -96,6 +102,7 @@ pub enum EditKind {
 impl EditKind {
     pub fn title(&self) -> &'static str {
         match self {
+            Self::TrashSearch { .. } => "Поиск в корзине",
             Self::Search { .. } => "Поиск в текущей папке",
             Self::Path(_) => "Перейти к папке",
             Self::Folder => "Новая папка",
@@ -106,6 +113,14 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    DeleteTrash {
+        targets: Vec<crate::trash::Deletion>,
+        empty: bool,
+    },
+    RestoreTrash {
+        entries: Vec<crate::trash::Entry>,
+        destination: Option<PathBuf>,
+    },
     Paths(PathMenu),
     Conflict(ConflictDialog),
     Commands(CommandMenu),
@@ -134,6 +149,8 @@ pub struct Place {
 }
 
 pub struct App {
+    pub trash: Option<TrashView>,
+    pub trash_home_only: bool,
     pub icon_backend: crate::icons::IconBackend,
     pub icon_slots: Vec<crate::icons::IconSlot>,
     pub preview_slot: Option<crate::preview::PreviewSlot>,
@@ -155,6 +172,7 @@ pub struct App {
     text_copy: Option<crate::clipboard::TextCopy>,
     text_copy_token: u64,
     pub path_text_selected: bool,
+    pub path_cursor: usize,
     pub places: Vec<Place>,
     pub preview: Option<Preview>,
     pub preview_error: Option<String>,
@@ -219,6 +237,8 @@ impl App {
             path: PathBuf::from("/"),
         });
         let mut app = Self {
+            trash: None,
+            trash_home_only: false,
             icon_backend: crate::icons::IconBackend::Symbols,
             icon_slots: Vec::new(),
             preview_slot: None,
@@ -249,6 +269,7 @@ impl App {
             text_copy: None,
             text_copy_token: 0,
             path_text_selected: false,
+            path_cursor: 0,
             places,
             preview: None,
             preview_error: None,
@@ -302,8 +323,22 @@ impl App {
         self.serial += 1;
         self.serial
     }
+    pub fn file_tab(&self, pane: usize) -> &Tab {
+        if self.trash_in(pane) {
+            &self.trash.as_ref().unwrap().files
+        } else {
+            self.panes[pane].tab()
+        }
+    }
+    pub fn file_tab_mut(&mut self, pane: usize) -> &mut Tab {
+        if self.trash_in(pane) {
+            &mut self.trash.as_mut().unwrap().files
+        } else {
+            self.panes[pane].tab_mut()
+        }
+    }
     pub fn tab(&self) -> &Tab {
-        self.panes[self.active].tab()
+        self.file_tab(self.active)
     }
     /// Resolve against this frame's active hit regions, including modal overlays.
     pub fn hovered_area(&self) -> Option<Rect> {
@@ -320,12 +355,13 @@ impl App {
             })
     }
     pub fn tab_mut(&mut self) -> &mut Tab {
-        self.panes[self.active].tab_mut()
+        self.file_tab_mut(self.active)
     }
     pub fn loading(&self) -> bool {
         self.panes.iter().flat_map(|p| &p.tabs).any(|t| t.loading)
             || self.preview_loading
             || self.busy
+            || self.trash.as_ref().is_some_and(|t| t.loading)
     }
     pub fn text_active(&self) -> bool {
         matches!(self.dialog, Some(Dialog::Edit { .. }))
@@ -350,6 +386,10 @@ impl App {
         self.reload(self.active, self.panes[self.active].active);
     }
     pub fn navigate(&mut self, path: PathBuf, history: bool) {
+        self.finish_marquee(true);
+        if self.in_trash() {
+            self.close_trash();
+        }
         let tab = self.tab_mut();
         if history && tab.cwd != path {
             tab.back.push(tab.cwd.clone());
@@ -368,6 +408,7 @@ impl App {
         self.update_preview();
     }
     pub fn tick(&mut self) {
+        self.tick_trash();
         if matches!(&self.dialog,Some(Dialog::Paths(menu)) if !menu.owner.valid(self)) {
             self.dialog = None;
             self.hits.clear();
@@ -380,6 +421,7 @@ impl App {
         }
         while let Ok(event) = self.worker.events.try_recv() {
             match event {
+                Event::Trash { token, result } => self.accept_trash(token, result),
                 Event::Journal { token, result } => self.accept_journal(token, result),
                 Event::Conflict {
                     token,
@@ -415,6 +457,7 @@ impl App {
         self.apply_directory_results();
         self.refresh_changed_directories();
         self.update_preview();
+        self.apply_trash();
     }
     pub fn update_preview(&mut self) {
         let path = if self.settings.preview {
@@ -445,6 +488,10 @@ impl App {
         }
     }
     pub fn open_selected(&mut self) {
+        if self.in_trash() {
+            self.confirm_restore_trash(false);
+            return;
+        }
         if let Some(entry) = self.tab().entry() {
             if entry.directory {
                 self.navigate(entry.path.clone(), true);

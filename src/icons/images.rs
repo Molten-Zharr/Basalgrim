@@ -56,13 +56,13 @@ pub fn rasterize(key: IconKey) -> Result<RgbaImage> {
         (1..=2048).contains(&key.width) && (1..=2048).contains(&key.height),
         "Invalid icon dimensions"
     );
-    let template = if key.kind == IconKind::Folder {
-        include_str!("../../assets/icons/folder.svg")
-    } else {
-        include_str!("../../assets/icons/file.svg")
+    let template = match key.kind {
+        IconKind::Folder => include_str!("../../assets/icons/folder.svg"),
+        IconKind::Trash => include_str!("../../assets/icons/trash.svg"),
+        _ => include_str!("../../assets/icons/file.svg"),
     };
     let symbol = match key.kind {
-        IconKind::Folder => "",
+        IconKind::Folder | IconKind::Trash => "",
         IconKind::File | IconKind::Document => "<path d=\"M27 36h17M27 42h17M27 48h11\"/>",
         IconKind::Code => "<path d=\"m29 36-5 6 5 6m14-12 5 6-5 6m-5-13-4 14\"/>",
         IconKind::Archive => "<path d=\"M34 31v5h5v5h-5v5h5v6M32 46h9v7h-9Z\"/>",

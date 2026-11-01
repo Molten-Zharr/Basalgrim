@@ -18,6 +18,7 @@ impl App {
         path: Option<PathBuf>,
     ) -> Self {
         let mut app = Self::new(options.directory, settings);
+        app.trash_home_only = options.trash_home_only;
         let mut warnings: Vec<_> = warning.into_iter().collect();
         if !options.no_session
             && let Some(path) = path

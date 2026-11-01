@@ -3,6 +3,26 @@ use crate::app::Dialog;
 use ratatui::widgets::{Clear, Wrap};
 
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
+    if matches!(
+        app.dialog,
+        Some(Dialog::Edit {
+            kind: crate::app::EditKind::Path(_),
+            ..
+        })
+    ) {
+        // The editor is drawn by the address bar. Outside clicks dismiss it without click-through.
+        app.hits.retain(|(_, target)| {
+            matches!(
+                target,
+                Target::PathTextSelect { .. }
+                    | Target::PathTextCopy
+                    | Target::Confirm
+                    | Target::Cancel
+            )
+        });
+        app.hits.insert(0, (frame.area(), Target::DismissMenu));
+        return;
+    }
     if matches!(app.dialog, Some(Dialog::Paths(_))) {
         super::path::menu(app, frame, palette);
         return;
@@ -53,6 +73,9 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     let title = match dialog {
         Dialog::Edit { kind, .. } => kind.title(),
         Dialog::Trash(_) => "Отправить в корзину?",
+        Dialog::RestoreTrash { .. } => "Восстановить из корзины?",
+        Dialog::DeleteTrash { empty: true, .. } => "Очистить всю корзину?",
+        Dialog::DeleteTrash { .. } => "Удалить безвозвратно?",
         Dialog::Help => "Управление · basalgrim",
         Dialog::Settings
         | Dialog::CaptureBinding { .. }
@@ -104,6 +127,67 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
                 palette.muted(),
             ));
         }
+        Dialog::DeleteTrash { targets, empty } => {
+            lines.push(Line::styled(
+                if *empty {
+                    format!(" Вся корзина: {} элемент(ов)", targets.len())
+                } else {
+                    format!(" Выбрано: {} элемент(ов)", targets.len())
+                },
+                palette.accent(),
+            ));
+            lines.push(Line::styled(
+                " Это удаление невозможно отменить.",
+                palette.text(),
+            ));
+            for target in targets.iter().take(2) {
+                lines.push(Line::styled(
+                    format!(
+                        " {}",
+                        app.trash
+                            .as_ref()
+                            .and_then(|view| view
+                                .catalog
+                                .entries
+                                .iter()
+                                .find(|entry| entry.data == target.path()))
+                            .map(|entry| entry.name.clone())
+                            .unwrap_or_else(|| fs::clean(
+                                &target
+                                    .path()
+                                    .file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy()
+                            ))
+                    ),
+                    palette.muted(),
+                ));
+            }
+        }
+        Dialog::RestoreTrash {
+            entries,
+            destination,
+        } => {
+            lines.push(Line::styled(
+                format!(" {} элемент(ов)", entries.len()),
+                palette.accent(),
+            ));
+            lines.push(Line::styled(
+                if let Some(path) = destination {
+                    format!(" В папку: {}", fs::clean(&path.to_string_lossy()))
+                } else {
+                    " На исходные места".into()
+                },
+                palette.text(),
+            ));
+            for entry in entries.iter().take(2) {
+                lines.push(Line::styled(format!(" {}", entry.name), palette.text()));
+            }
+            lines.push(Line::styled(
+                " Совпадения имён требуют отдельного выбора.",
+                palette.muted(),
+            ));
+        }
         Dialog::Trash(paths) => {
             lines.push(Line::styled(
                 format!(" {} элемент(ов) → системная корзина", paths.len()),
@@ -120,7 +204,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
             }
             lines.push(Line::raw(""));
             lines.push(Line::styled(
-                " Восстановление доступно в корзине рабочего стола.",
+                " Восстановление доступно в разделе «Корзина».",
                 palette.muted(),
             ));
         }
@@ -183,25 +267,16 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         inner.width.saturating_sub(2),
         1,
     );
-    if matches!(
-        app.dialog,
-        Some(Dialog::Edit {
-            kind: crate::app::EditKind::Path(_),
-            ..
-        })
-    ) {
-        hit(
-            app,
-            Rect::new(inner.x, inner.y + 1, inner.width, 1),
-            Target::PathTextSelect,
-        );
-        super::path::editor_footer(app, frame, bottom, palette);
-        return;
-    }
     let confirm = Rect::new(bottom.x, bottom.y, 22.min(bottom.width), 1);
     frame.render_widget(
         Paragraph::new(if matches!(app.dialog, Some(Dialog::Trash(_))) {
             " Enter  В корзину "
+        } else if matches!(app.dialog, Some(Dialog::DeleteTrash { empty: true, .. })) {
+            " Enter  Очистить "
+        } else if matches!(app.dialog, Some(Dialog::DeleteTrash { .. })) {
+            " Enter  Удалить "
+        } else if matches!(app.dialog, Some(Dialog::RestoreTrash { .. })) {
+            " Enter  Восстановить "
         } else if matches!(app.dialog, Some(Dialog::Help)) {
             " Enter  Закрыть "
         } else {

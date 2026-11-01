@@ -69,12 +69,20 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette
         let label = format!(
             " {}:{} ",
             i + 1,
-            fs::clean(
-                &tab.cwd
-                    .file_name()
-                    .unwrap_or_else(|| std::ffi::OsStr::new("/"))
-                    .to_string_lossy()
-            )
+            if app
+                .trash
+                .as_ref()
+                .is_some_and(|view| view.owner.pane == pane && view.owner.tab == i)
+            {
+                "Корзина".into()
+            } else {
+                fs::clean(
+                    &tab.cwd
+                        .file_name()
+                        .unwrap_or_else(|| std::ffi::OsStr::new("/"))
+                        .to_string_lossy(),
+                )
+            }
         );
         let width = (label.width() as u16)
             .min(22)
@@ -101,7 +109,8 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette
         pane,
         palette,
     );
-    let tab = app.panes[pane].tab();
+    let is_trash = app.trash_in(pane);
+    let tab = app.file_tab(pane);
     let filter = if tab.filter.is_empty() {
         String::new()
     } else {
@@ -117,6 +126,10 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette
         .style(palette.text().fg(palette.color("separator"))),
         parts[2],
     );
+    if is_trash {
+        super::trash::controls(app, frame, parts[2], palette);
+    }
+    let tab = app.file_tab(pane);
     if tab.loading && !tab.refreshing {
         frame.render_widget(
             Paragraph::new("\n Чтение каталога…").style(palette.muted()),
@@ -152,7 +165,7 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette
         );
         list(app, frame, parts[3], pane, palette);
     }
-    let tab = app.panes[pane].tab();
+    let tab = app.file_tab(pane);
     let total = tab.visible.iter().fold(0u64, |sum, &i| {
         sum.saturating_add(if tab.entries[i].directory {
             0
@@ -160,7 +173,9 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette
             tab.entries[i].size
         })
     });
-    let footer = if tab.marked.is_empty() && !tab.explicit_selection {
+    let footer = if is_trash {
+        super::trash::details(app)
+    } else if tab.marked.is_empty() && !tab.explicit_selection {
         format!(
             " {} / {}   ·   {}",
             if tab.visible.is_empty() {
@@ -227,7 +242,7 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
     let columns = (usize::from(area.width) / 18).max(1);
     let rows = (usize::from(area.height) / 5).max(1);
     let count = columns * rows;
-    let tab = app.panes[pane].tab_mut();
+    let tab = app.file_tab_mut(pane);
     tab.columns = columns;
     tab.page_size = count;
     let selected_row = tab.selected / columns;
@@ -262,10 +277,10 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
             right - left,
             5.min(area.height.saturating_sub((row * 5) as u16)),
         );
-        let entry = &app.panes[pane].tab().entries[app.panes[pane].tab().visible[index]];
+        let entry = &app.file_tab(pane).entries[app.file_tab(pane).visible[index]];
         let selected =
-            app.panes[pane].tab().selected == index && !app.panes[pane].tab().explicit_selection;
-        let marked = app.panes[pane].tab().marked.contains(&entry.path);
+            app.file_tab(pane).selected == index && !app.file_tab(pane).explicit_selection;
+        let marked = app.file_tab(pane).marked.contains(&entry.path);
         let base = if selected || marked {
             palette.selection()
         } else {
@@ -283,11 +298,11 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
             "folder_path"
         }));
         let icon_area = Rect::new(rect.x, rect.y, rect.width, 2.min(rect.height));
-        if app.icon_backend.supports_images()
+        let slot = if app.icon_backend.supports_images()
             && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images
         {
             let width = icon_area.width.min(6);
-            app.icon_slots.push(image_slot(
+            Some(image_slot(
                 entry,
                 Rect::new(
                     icon_area.x + (icon_area.width - width) / 2,
@@ -296,7 +311,7 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
                     icon_area.height,
                 ),
                 palette,
-            ));
+            ))
         } else {
             frame.render_widget(
                 Paragraph::new(icon.join("\n"))
@@ -304,7 +319,8 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
                     .style(icon_style),
                 icon_area,
             );
-        }
+            None
+        };
         if rect.height > 2 && rect.width > 2 {
             let prefix = if marked { "● " } else { "" };
             let suffix = if entry.symlink { " ↗" } else { "" };
@@ -332,6 +348,7 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
                 Rect::new(rect.x, rect.y + 3, rect.width, 1),
             );
         }
+        app.icon_slots.extend(slot);
         hit(app, rect, Target::Entry { pane, index });
         let mark_area = Rect::new(rect.right().saturating_sub(3), rect.y, 3.min(rect.width), 1);
         frame.render_widget(
@@ -345,7 +362,9 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
     let rows = usize::from(area.height.saturating_sub(1));
     let images = app.icon_backend.supports_images()
         && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images;
-    let tab = app.panes[pane].tab_mut();
+    let is_trash = app.trash_in(pane);
+    let mut icon_slots = Vec::new();
+    let tab = app.file_tab_mut(pane);
     tab.columns = 1;
     tab.page_size = rows.max(1);
     if rows == 0 {
@@ -383,7 +402,7 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
             if entry.symlink { " ↗" } else { "" }
         );
         if images {
-            app.icon_slots.push(image_slot(
+            icon_slots.push(image_slot(
                 entry,
                 Rect::new(area.x + 3, area.y + 1 + (index - start) as u16, 2, 1),
                 palette,
@@ -416,10 +435,23 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
             Constraint::Length(if area.width > 85 { 15 } else { 0 }),
         ],
     )
-    .header(Row::new([" Имя", "Размер", "Тип", "Изменён"]).style(palette.muted()))
+    .header(
+        Row::new([
+            " Имя",
+            "Размер",
+            "Тип",
+            if is_trash {
+                "Удалён"
+            } else {
+                "Изменён"
+            },
+        ])
+        .style(palette.muted()),
+    )
     .column_spacing(1);
     frame.render_widget(table, area);
     let len = tab.visible.len();
+    app.icon_slots.extend(icon_slots);
     for index in start..(start + rows).min(len) {
         hit(
             app,

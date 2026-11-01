@@ -500,6 +500,7 @@ mod tests {
             replacement: Some(replacement),
             recoveries: Vec::new(),
             journal: None,
+            restore_guard: None,
         };
         assert!(finish(&mut control).is_err());
         assert_eq!(control.recoveries[0].backup, backup);

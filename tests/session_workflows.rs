@@ -32,6 +32,7 @@ fn options(directory: &Path, explicit: bool, no_session: bool) -> Options {
         directory: directory.into(),
         explicit_directory: explicit,
         no_session,
+        trash_home_only: false,
     }
 }
 fn settings() -> Settings {

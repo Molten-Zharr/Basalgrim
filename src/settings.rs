@@ -89,6 +89,11 @@ impl Settings {
             Action::Undo,
             Action::Redo,
             Action::CopyPath,
+            Action::TrashView,
+            Action::RestoreTrash,
+            Action::RestoreTrashHere,
+            Action::DeleteTrash,
+            Action::EmptyTrash,
         ] {
             if self.bindings.iter().any(|binding| binding.action == action) {
                 continue;

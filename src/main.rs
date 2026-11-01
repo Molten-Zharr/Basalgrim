@@ -47,6 +47,7 @@ fn run() -> Result<()> {
         ..Default::default()
     };
     let mut uploaded: Option<Buffer> = None;
+    let mut uploaded_cursor = None;
     let mut uploaded_icons = Vec::new();
     let mut uploaded_preview = None;
     let mut uploaded_selection = None;
@@ -104,9 +105,13 @@ fn run() -> Result<()> {
                     .input(|input| input.pointer.hover_pos())
                     .and_then(|point| pointer_cell(hover_image, Size::new(columns, rows), point));
                 app.handle(Input::Pointer(pointer));
+                // Cursor overlays are separate from Buffer cells. Keep the insertion
+                // point visible and include its rendered position in texture invalidation.
+                terminal.backend_mut().soft_backend.cursor_config.blink = false;
                 let _ = terminal.draw(|frame| ui::render(&mut app, frame));
                 let backend = terminal.backend_mut();
                 if uploaded.as_ref() != Some(&backend.soft_backend.buffer)
+                    || uploaded_cursor != backend.soft_backend.rendered_cursor
                     || uploaded_icons != app.icon_slots
                     || uploaded_preview != app.preview_slot
                     || uploaded_selection != app.selection_area()
@@ -146,6 +151,7 @@ fn run() -> Result<()> {
                         ));
                     }
                     uploaded = Some(backend.soft_backend.buffer.clone());
+                    uploaded_cursor = backend.soft_backend.rendered_cursor;
                     uploaded_icons = app.icon_slots.clone();
                     uploaded_preview = app.preview_slot.clone();
                     uploaded_selection = app.selection_area();

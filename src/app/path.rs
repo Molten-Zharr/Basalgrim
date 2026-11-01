@@ -32,6 +32,17 @@ pub struct PathMenu {
     pub offset: usize,
     pub capacity: usize,
 }
+/// Boundaries of the same graphemes Ratatui renders, expressed as UTF-8 offsets.
+fn grapheme_offsets(text: &str) -> Vec<usize> {
+    let span = ratatui::text::Span::raw(text);
+    let mut offset = 0;
+    let mut result = vec![0];
+    for grapheme in span.styled_graphemes(ratatui::style::Style::default()) {
+        offset += grapheme.symbol.len();
+        result.push(offset);
+    }
+    result
+}
 impl App {
     pub fn take_text_copy(&mut self) -> Option<TextCopy> {
         self.text_copy.take()
@@ -57,7 +68,7 @@ impl App {
             Err(error) => self.message(format!("Не удалось скопировать путь: {error}"), true),
         }
     }
-    fn request_text_copy(&mut self, text: String) {
+    pub(super) fn request_text_copy(&mut self, text: String) {
         let id = self.token();
         self.text_copy_token = id;
         self.text_copy = Some(TextCopy { id, text });
@@ -95,19 +106,135 @@ impl App {
         }
         self.active = owner.pane;
         self.path_text_selected = true;
+        let text = if self.in_trash() {
+            "trash:///".into()
+        } else {
+            owner.cwd.to_string_lossy().into_owned()
+        };
+        self.path_cursor = text.len();
         self.dialog = Some(Dialog::Edit {
             kind: EditKind::Path(owner.cwd.clone()),
-            text: owner.cwd.to_string_lossy().into(),
+            text,
             error: None,
         });
+    }
+    pub(super) fn position_path_cursor(&mut self, start: usize, column: u16, select_all: bool) {
+        use unicode_width::UnicodeWidthStr;
+        let Some(Dialog::Edit {
+            kind: EditKind::Path(_),
+            text,
+            ..
+        }) = &self.dialog
+        else {
+            return;
+        };
+        let boundaries = grapheme_offsets(text);
+        let mut position = start.min(text.len());
+        position = *boundaries
+            .iter()
+            .take_while(|&&i| i <= position)
+            .last()
+            .unwrap_or(&0);
+        let mut width = 0;
+        let first = position;
+        for pair in boundaries.windows(2).filter(|pair| pair[0] >= first) {
+            let w = text[pair[0]..pair[1]].width();
+            if width + w > usize::from(column) {
+                break;
+            }
+            width += w;
+            position = pair[1];
+        }
+        self.path_cursor = position;
+        self.path_text_selected = select_all;
+    }
+    pub(super) fn path_editor_key(&mut self, press: KeyPress) -> bool {
+        if !matches!(
+            self.dialog,
+            Some(Dialog::Edit {
+                kind: EditKind::Path(_),
+                ..
+            })
+        ) {
+            return false;
+        }
+        if press == KeyPress::ctrl('c') {
+            self.copy_path_text();
+            return true;
+        }
+        if press == KeyPress::ctrl('a') {
+            self.path_text_selected = true;
+            return true;
+        }
+        if !press.ctrl && !press.alt && press.key == Key::Escape {
+            self.cancel_dialog();
+            return true;
+        }
+        if !press.ctrl && !press.alt && press.key == Key::Enter {
+            self.confirm_dialog();
+            return true;
+        }
+        let Some(Dialog::Edit { text, error, .. }) = &mut self.dialog else {
+            unreachable!()
+        };
+        let cursor = self.path_cursor.min(text.len());
+        let boundaries = grapheme_offsets(text);
+        let previous = boundaries
+            .iter()
+            .copied()
+            .take_while(|&i| i < cursor)
+            .last()
+            .unwrap_or(0);
+        let next = boundaries
+            .iter()
+            .copied()
+            .find(|&i| i > cursor)
+            .unwrap_or(cursor);
+        if press == KeyPress::ctrl('u')
+            || (self.path_text_selected
+                && !press.ctrl
+                && !press.alt
+                && matches!(press.key, Key::Backspace | Key::Delete))
+        {
+            text.clear();
+            self.path_cursor = 0;
+            self.path_text_selected = false;
+            *error = None;
+        } else if !press.ctrl && !press.alt {
+            match press.key {
+                Key::Left => self.path_cursor = if self.path_text_selected { 0 } else { previous },
+                Key::Right => {
+                    self.path_cursor = if self.path_text_selected {
+                        text.len()
+                    } else {
+                        next
+                    }
+                }
+                Key::Home => self.path_cursor = 0,
+                Key::End => self.path_cursor = text.len(),
+                Key::Backspace => {
+                    text.replace_range(previous..cursor, "");
+                    self.path_cursor = previous;
+                }
+                Key::Delete => {
+                    text.replace_range(cursor..next, "");
+                }
+                _ => return true,
+            }
+            self.path_text_selected = false;
+            *error = None;
+        }
+        true
     }
     pub(super) fn go_path(&mut self, owner: PathOwner, path: PathBuf) {
         if !owner.valid(self) {
             return;
         }
         self.active = owner.pane;
-        if self.tab().cwd != path {
+        if self.tab().cwd != path || self.in_trash() {
             self.navigate(path, true);
+        } else {
+            self.edit_path(owner);
         }
     }
     pub(super) fn path_parents(&mut self, owner: PathOwner, anchor: Position) {

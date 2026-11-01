@@ -61,7 +61,14 @@ def main():
                 send(b"\x03"); navigate(cancelled); send(b"\x16")
                 wait_for(lambda:all((cancelled/n).exists() for n in ("alpha.txt","beta.txt")),"Escape selection restore")
                 assert not (cancelled/"gamma.txt").exists()
-                send(b"\x11"); child.wait(timeout=5); assert child.returncode==0
+                # Publication precedes the completion event; Quit is rejected while busy.
+                deadline=time.monotonic()+8
+                while child.poll() is None:
+                    send(b"\x11")
+                    try: child.wait(timeout=.15)
+                    except subprocess.TimeoutExpired:
+                        assert time.monotonic()<deadline,"copy worker did not finish before Quit"
+                assert child.returncode==0
                 print(f"Selection PTY passed: {'grid' if grid else 'list'}, exact copied set, Ctrl addition, Escape restore")
             finally:
                 if child.poll() is None: child.terminate(); child.wait(timeout=5)

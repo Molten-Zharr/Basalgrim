@@ -161,6 +161,11 @@ pub enum Action {
     FontLarger,
     FontSmaller,
     CopyPath,
+    TrashView,
+    RestoreTrash,
+    RestoreTrashHere,
+    DeleteTrash,
+    EmptyTrash,
 }
 
 impl Action {
@@ -205,6 +210,11 @@ impl Action {
         Self::Undo,
         Self::Redo,
         Self::CopyPath,
+        Self::TrashView,
+        Self::RestoreTrash,
+        Self::RestoreTrashHere,
+        Self::DeleteTrash,
+        Self::EmptyTrash,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -214,6 +224,11 @@ impl Action {
             Self::Undo => "Отменить завершённую операцию",
             Self::Redo => "Повторить отменённую операцию",
             Self::CopyPath => "Копировать путь папки",
+            Self::TrashView => "Открыть корзину",
+            Self::RestoreTrash => "Восстановить из корзины",
+            Self::RestoreTrashHere => "Восстановить в текущую папку",
+            Self::DeleteTrash => "Удалить из корзины",
+            Self::EmptyTrash => "Очистить корзину",
             Self::Back => "История: назад",
             Self::Forward => "История: вперёд",
             Self::Parent => "Родительская папка",
@@ -292,6 +307,45 @@ pub fn default_bindings() -> Vec<Binding> {
         key: KeyPress {
             shift: true,
             ..KeyPress::ctrl('c')
+        },
+    });
+    for (action, key) in [
+        (
+            TrashView,
+            KeyPress {
+                shift: true,
+                ..KeyPress::ctrl('b')
+            },
+        ),
+        (
+            RestoreTrash,
+            KeyPress {
+                shift: true,
+                ..KeyPress::ctrl('r')
+            },
+        ),
+        (
+            RestoreTrashHere,
+            KeyPress {
+                alt: true,
+                ..KeyPress::ctrl('r')
+            },
+        ),
+    ] {
+        result.push(Binding { action, key });
+    }
+    result.push(Binding {
+        action: DeleteTrash,
+        key: KeyPress {
+            shift: true,
+            ..KeyPress::plain(Key::Delete)
+        },
+    });
+    result.push(Binding {
+        action: EmptyTrash,
+        key: KeyPress {
+            shift: true,
+            ..KeyPress::ctrl('e')
         },
     });
     result.push(Binding {

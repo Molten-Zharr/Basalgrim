@@ -144,6 +144,17 @@ def wait_for(predicate, description):
         assert time.monotonic() < until, description
         time.sleep(.01)
 
+def quit_when_ready(process):
+    # A visible path change precedes worker/journal completion. Quit is
+    # deliberately rejected while busy; retry like a user after that notice.
+    deadline=time.monotonic()+8
+    while process.poll() is None:
+        chord('q','Control_L')
+        try:process.wait(timeout=.15)
+        except subprocess.TimeoutExpired:
+            assert time.monotonic()<deadline,'GUI did not finish the operation and accept Quit'
+    assert process.returncode==0
+
 def type_text(text):
     for c in text:
         name = {'/':'slash', '.':'period', '-':'minus', '_':'underscore', ' ':'space'}.get(c,c)
@@ -157,10 +168,10 @@ def search(name):
     key('slash'); type_text(name); key('Return'); time.sleep(.2)
 
 def launch(path, config):
-    env = dict(os.environ, XDG_CONFIG_HOME=str(config), XDG_DATA_HOME=str(config.parent/'data'), XDG_STATE_HOME=str(config.parent/'state'), LIBGL_ALWAYS_SOFTWARE='1', WINIT_X11_SCALE_FACTOR='1')
+    env = dict(os.environ, HOME=str(config.parent), GIO_USE_VFS='local', XDG_CONFIG_HOME=str(config), XDG_DATA_HOME=str(config.parent/'data'), XDG_STATE_HOME=str(config.parent/'state'), LIBGL_ALWAYS_SOFTWARE='1', WINIT_X11_SCALE_FACTOR='1')
     for n in ('WAYLAND_DISPLAY','WAYLAND_SOCKET'): env.pop(n, None)
     log = open('target/preview/native-gui.log', 'w')
-    process = subprocess.Popen([str(binary), *([] if path is None else [str(path)])], env=env, stdout=log, stderr=log)
+    process = subprocess.Popen([str(binary), '--trash-home-only', *([] if path is None else [str(path)])], env=env, stdout=log, stderr=log)
     window = None; until=time.monotonic()+10
     while window is None:
         assert process.poll() is None, 'GUI exited before opening'
@@ -256,7 +267,7 @@ try:
             chord('x','Control_L','Shift_L'); navigate(source); chord('v','Control_L','Shift_L')
             wait_for(lambda:(source/'beta.txt').exists(),'reassigned Ctrl+Shift+X/V')
             assert not (custom/'destination/beta.txt').exists()
-            chord('q','Control_L'); process.wait(timeout=5); assert process.returncode==0
+            quit_when_ready(process)
             print('Native GUI: custom clipboard shortcuts, exact modifiers and capture passed',flush=True)
         except Exception:
             screenshot(window,'native-custom-failure.png'); raise
@@ -383,7 +394,7 @@ try:
                 protected=base/f'wheel-protected-{mode}'; protected.mkdir()
                 chord('c','Control_L'); navigate(protected); chord('v','Control_L')
                 wait_for(lambda:(protected/'file-000.txt').exists(),'wheel preserves original keyboard selection')
-                assert sorted(p.name for p in protected.iterdir())==['file-000.txt']
+                assert sorted(p.name for p in protected.iterdir())==['file-000.txt'], sorted(p.name for p in protected.iterdir())
                 navigate(wheel_files)
                 for _ in range(notches): click(window,50,20,5)
                 click(window,34,12 if grid else 11)
@@ -414,7 +425,7 @@ try:
                 protected=base/f'watch-protected-{mode}'; protected.mkdir()
                 chord('c','Control_L'); navigate(protected); chord('v','Control_L')
                 wait_for(lambda:(protected/'file-000.txt').exists(),'watch refresh preserves keyboard selection')
-                assert sorted(p.name for p in protected.iterdir())==['file-000.txt']
+                assert sorted(p.name for p in protected.iterdir())==['file-000.txt'], sorted(p.name for p in protected.iterdir())
                 # A newly created first entry must gain its current hit region
                 # without navigation, refresh keys or any pointer input.
                 live=base/f'live-{mode}'; live.mkdir(); (live/'beta.txt').write_text('original')
@@ -523,7 +534,7 @@ try:
             time.sleep(.4); key('Home'); chord('F5','Control_L')
             wait_for(lambda:(pane_source/'a (1) (1).txt').exists(),'GUI duplicate shortcut')
             time.sleep(.4); x.XResizeWindow(d,window,400,360); x.XFlush(d); time.sleep(.4)
-            chord('F10','Shift_L'); screenshot(window,'native-pane-compact.png'); click(window,12,14)
+            chord('F10','Shift_L'); screenshot(window,'native-pane-compact.png'); click(window,12,15)
             wait_for(lambda:(pane_source/'a (1) (2).txt').exists(),'GUI compact mouse duplicate')
             time.sleep(.3); chord('q','Control_L'); process.wait(timeout=5); assert process.returncode==0
             print('Native GUI panes: group copy/move, conflict skip, mouse duplicate, shortcuts and compact Actions passed',flush=True)
@@ -629,19 +640,71 @@ try:
         def copied_path():
             return subprocess.check_output([xclip,'-selection','clipboard','-out'],timeout=3).decode()
         try:
-            click(window,159,8);wait_for(lambda:copied_path()==str(path_dir),'GUI copy full Unicode path')
+            click(window,165,8);wait_for(lambda:copied_path()==str(path_dir),'GUI copy full Unicode path')
+            current_x=25+sum(len(part)+3 for part in path_dir.parts[:-1])+1
+            click(window,current_x,8);screenshot(window,'native-path-inline.png');chord('c','Control_L');assert copied_path()==str(path_dir);key('Escape')
+            click(window,current_x,8);type_text('/tmp/abcdef');key('End')
+            end_caret=screenshot(window,'native-path-caret-end.png').crop((200,128,1200,144))
+            key('Left');left_caret=screenshot(window,'native-path-caret-left.png').crop((200,128,1200,144))
+            assert end_caret.tobytes()!=left_caret.tobytes(),'GUI caret did not move on unchanged text'
+            type_text('x');chord('c','Control_L');wait_for(lambda:copied_path()=='/tmp/abcdexf','GUI insertion follows visible caret')
+            click(window,32,8);type_text('y');chord('c','Control_L');wait_for(lambda:copied_path()=='/tmp/abycdexf','GUI click positions insertion caret')
+            key('Escape')
             chord('l','Control_L');chord('c','Control_L');assert copied_path()==str(path_dir);key('Escape')
             parent_x=25+sum(len(part)+3 for part in path_parent.parts[:-1])+1
-            click(window,parent_x,8);click(window,159,8)
+            click(window,parent_x,8);click(window,165,8)
             wait_for(lambda:copied_path()==str(path_parent),'GUI ancestor breadcrumb')
-            click(window,26,8);click(window,159,8);wait_for(lambda:copied_path()=='/','GUI root breadcrumb')
-            click(window,165,8);type_text(str(path_parent));key('Return');time.sleep(.2)
-            click(window,159,8);wait_for(lambda:copied_path()==str(path_parent),'GUI mouse path editor replaces selection')
+            click(window,26,8);click(window,165,8);wait_for(lambda:copied_path()=='/','GUI root breadcrumb')
+            click(window,26,8);type_text(str(path_parent));key('Return');time.sleep(.2)
+            click(window,165,8);wait_for(lambda:copied_path()==str(path_parent),'GUI mouse path editor replaces selection')
             x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.3)
-            click(window,39,8);assert copied_path()==str(path_parent),'GUI compact path copy'
+            click(window,45,8);assert copied_path()==str(path_parent),'GUI compact path copy'
             screenshot(window,'native-path-compact.png')
             chord('q','Control_L');process.wait(timeout=5);assert process.returncode==0
             print('Native GUI paths: Unicode clipboard, Ctrl+L/C, ancestors, root, mouse editor and compact copy passed',flush=True)
+        finally:stop(process,log)
+        trash_dir=base/'trash-native';trash_dir.mkdir();a=trash_dir/'a.txt';tree=trash_dir/'b-tree'
+        a.write_text('native restore');tree.mkdir();(tree/'nested').write_text('native tree')
+        trash_env=dict(os.environ,HOME=str(base),XDG_DATA_HOME=str(base/'data'),GIO_USE_VFS='local')
+        subprocess.run(['gio','trash','--',str(a),str(tree)],env=trash_env,check=True)
+        settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'light'}))
+        process,window,log=launch(trash_dir,config)
+        try:
+            chord('b','Control_L','Shift_L');time.sleep(.4);chord('f','Control_L');type_text(str(trash_dir));key('Return');time.sleep(.3)
+            chord('a','Control_L');screenshot(window,'native-trash-pane.png');click(window,34,11,3);click(window,36,12);time.sleep(.2);click(window,57,29)
+            wait_for(lambda:a.exists() and tree.exists(),'GUI trash group via context menu');time.sleep(.3)
+            assert a.read_text()=='native restore' and (tree/'nested').read_text()=='native tree'
+            chord('z','Control_L');wait_for(lambda:not a.exists() and not tree.exists(),'GUI undo restoration');time.sleep(.3)
+            chord('y','Control_L');wait_for(lambda:a.exists() and tree.exists(),'GUI redo restoration');time.sleep(.3)
+            subprocess.run(['gio','trash','--',str(a)],env=trash_env,check=True);a.write_text('occupied')
+            chord('r','Control_L');time.sleep(.4);click(window,34,11);x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.3)
+            click(window,12,19);click(window,6,14);time.sleep(.3);key('Return')
+            restored=trash_dir/'a (1).txt';wait_for(restored.exists,'GUI compact Keep Both restoration');time.sleep(.3)
+            assert restored.read_text()=='native restore' and a.read_text()=='occupied'
+            screenshot(window,'native-trash-compact.png');chord('q','Control_L');process.wait(timeout=5)
+        finally:stop(process,log)
+        subprocess.run(['gio','trash','--',str(tree)],env=trash_env,check=True)
+        destination=base/'trash-destination';destination.mkdir();process,window,log=launch(destination,config)
+        try:
+            chord('b','Control_L','Shift_L');time.sleep(.4);chord('f','Control_L');type_text(str(trash_dir));key('Return');time.sleep(.3)
+            click(window,34,11,3);click(window,36,13);click(window,57,29);wait_for(lambda:(destination/'b-tree/nested').exists(),'GUI restore to current directory after restart');time.sleep(.3)
+            assert (destination/'b-tree/nested').read_text()=='native tree' and not tree.exists()
+            purge_a=destination/'delete-a.txt';purge_b=destination/'delete-b.txt'
+            purge_a.write_text('selected deletion');purge_b.write_text('hidden deletion')
+            subprocess.run(['gio','trash','--',str(purge_a),str(purge_b)],env=trash_env,check=True)
+            chord('f','Control_L');chord('u','Control_L');type_text('delete-');key('Return');chord('r','Control_L');time.sleep(.4)
+            click(window,34,11,3);click(window,36,14);key('Escape')
+            trash_files=base/'data/Trash/files';trash_info=base/'data/Trash/info'
+            assert (trash_files/purge_a.name).exists() and (trash_files/purge_b.name).exists()
+            key('Delete');click(window,57,29)
+            wait_for(lambda:not (trash_files/purge_a.name).exists(),'GUI selected permanent deletion');time.sleep(.3)
+            assert (trash_files/purge_b.name).exists()
+            chord('f','Control_L');chord('u','Control_L');type_text('no-matching-file');key('Return')
+            click(window,34,3);time.sleep(.4);click(window,57,29)
+            wait_for(lambda:not any(trash_files.iterdir()) and not any(trash_info.iterdir()),'GUI empty entire trash with hidden entries');time.sleep(.3)
+            assert (destination/'b-tree/nested').read_text()=='native tree'
+            screenshot(window,'native-trash-restored.png');chord('q','Control_L');process.wait(timeout=5);assert process.returncode==0
+            print('Native GUI trash: gio group, context mouse, undo/redo, compact conflicts, restart and current-folder restore passed',flush=True)
         finally:stop(process,log)
     print('Verified binary:', binary, hashlib.sha256(binary.read_bytes()).hexdigest(), flush=True)
 finally:
