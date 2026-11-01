@@ -259,20 +259,29 @@ impl Worker {
                                     )),
                                     ..Default::default()
                                 },
-                                Some(Ok(database)) => match database.begin(&operation, token) {
-                                    Ok(mut recorder) => fs::operate_with_journal(
-                                        operation,
+                                Some(Ok(database)) => match operation {
+                                    Operation::Replay { original, redo, .. } => database.replay(
+                                        original,
+                                        redo,
+                                        token,
                                         &cancellation,
                                         &mut notify,
-                                        &mut resolve,
-                                        &mut recorder,
                                     ),
-                                    Err(error) => Report {
-                                        total: operation.total(),
-                                        error: Some(format!(
-                                            "Не удалось начать журнал; файлы не изменены: {error:#}"
-                                        )),
-                                        ..Default::default()
+                                    operation => match database.begin(&operation, token) {
+                                        Ok(mut recorder) => fs::operate_with_journal(
+                                            operation,
+                                            &cancellation,
+                                            &mut notify,
+                                            &mut resolve,
+                                            &mut recorder,
+                                        ),
+                                        Err(error) => Report {
+                                            total: operation.total(),
+                                            error: Some(format!(
+                                                "Не удалось начать журнал; файлы не изменены: {error:#}"
+                                            )),
+                                            ..Default::default()
+                                        },
                                     },
                                 },
                             }

@@ -140,6 +140,16 @@ impl OperationRecord {
             return "В другом окне";
         }
         if self.elapsed.is_some() {
+            if let Some(journal) = &self.journal
+                && journal.history.replay_of.is_none()
+                && journal.history.redo > 0
+            {
+                return if journal.history.undo > 0 {
+                    "Частично отменена"
+                } else {
+                    "Отменена"
+                };
+            }
             if self.error.is_some() {
                 "Ошибка"
             } else if self.cancelled {

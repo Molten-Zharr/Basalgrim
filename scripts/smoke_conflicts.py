@@ -66,7 +66,10 @@ def main():
             click(5,8);assert "Совпадение имён" in text(),"disabled Replace resolved a self-copy"
             click(5,11);closed()
             assert sorted(p.name for p in source.iterdir())==["b (1).txt","b.txt"]
-            assert not list(base.rglob(".basalgrim-*"))
+            retained=[p for directory in base.rglob(".basalgrim-replaced-*") for p in directory.iterdir()]
+            assert sorted(p.read_text() for p in retained)==["existing a.txt","existing b.txt"],"replacement undo data was not retained exactly"
+            for prefix in (".basalgrim-copy-*",".basalgrim-move-*",".basalgrim-undo-*"):
+                assert not list(base.rglob(prefix)),"unfinished staging data survived"
             send(b"\x11");child.wait(timeout=5);assert child.returncode==0
             print("Conflict PTY passed: mouse/keyboard decisions, batch scope, keep-both, replace, skip, Esc/Stop, rename and compact disabled controls")
         except BaseException:

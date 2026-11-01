@@ -191,6 +191,11 @@ pub(super) fn finish(control: &mut Control<'_, '_>) -> Result<()> {
         return Ok(());
     };
     let dir = backup.parent().unwrap();
+    // Journalled replacements retain old user data for explicit undo/redo.
+    // Never remove it merely because the new result was published.
+    if replacement.published && control.journal.is_some() {
+        return Ok(());
+    }
     let cleanup = if replacement.published {
         control.progress.phase = Phase::CleaningUp;
         control.emit();

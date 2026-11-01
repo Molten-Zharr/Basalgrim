@@ -59,6 +59,8 @@ impl App {
                 MoveToOtherPane,
                 Duplicate,
                 Operations,
+                Undo,
+                Redo,
                 CancelOperation,
                 NewTab,
                 CloseTab,
@@ -105,6 +107,8 @@ impl App {
                     }
                     Duplicate => selection && !self.busy,
                     CancelOperation => self.busy,
+                    Undo => self.replay_candidate(false).is_some(),
+                    Redo => self.replay_candidate(true).is_some(),
                     CloseTab | NextTab => self.panes[self.active].tabs.len() > 1,
                     NextPane => self.settings.dual,
                     Back => !self.tab().back.is_empty(),

@@ -592,6 +592,34 @@ try:
             chord('q','Control_L');process.wait(timeout=5);assert process.returncode==0
             print('Native GUI preview: symbol icons, aspect, watched rewrite, menu dismissal, F3, resize and text passed',flush=True)
         finally:stop(process,log)
+        undo_dir=base/'undo';undo_dir.mkdir();(undo_dir/'a.txt').write_text('undo source')
+        copied=undo_dir/'a (1).txt'
+        preferences=json.loads(settings.read_text());preferences.update(dual=False,grid=False,preview=False)
+        settings.write_text(json.dumps(preferences))
+        process,window,log=launch(undo_dir,config)
+        try:
+            chord('F5','Control_L');wait_for(copied.exists,'GUI duplicate for undo');time.sleep(.35)
+            chord('z','Control_L');wait_for(lambda:not copied.exists(),'GUI Ctrl+Z');time.sleep(.2)
+            chord('y','Control_L');wait_for(copied.exists,'GUI Ctrl+Y');time.sleep(.2)
+            key('F6');time.sleep(.3);click(window,4,50);wait_for(lambda:not copied.exists(),'GUI F6 mouse undo');time.sleep(.2)
+            click(window,22,50);wait_for(copied.exists,'GUI F6 mouse redo');time.sleep(.2)
+            x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.3)
+            click(window,4,19);wait_for(lambda:not copied.exists(),'GUI compact mouse undo');time.sleep(.2)
+            screenshot(window,'native-undo-compact.png')
+            chord('q','Control_L');process.wait(timeout=5)
+        finally:stop(process,log)
+        process,window,log=launch(undo_dir,config)
+        try:
+            copied.write_text('external destination');time.sleep(.3)
+            chord('y','Control_L');time.sleep(.4);assert copied.read_text()=='external destination','GUI redo overwrote a conflict'
+            copied.unlink();time.sleep(.2);chord('y','Control_L');wait_for(copied.exists,'GUI redo after restart');time.sleep(.2)
+            assert copied.read_text()=='undo source'
+            copied.write_text('external edit');time.sleep(.3);chord('z','Control_L');time.sleep(.4)
+            assert copied.read_text()=='external edit','GUI undo hid an edited file'
+            key('F6');time.sleep(.3);screenshot(window,'native-undo-history.png')
+            chord('q','Control_L');process.wait(timeout=5);assert process.returncode==0
+            print('Native GUI undo: Ctrl+Z/Y, F6 mouse, compact layout, restart, conflicts and edited-file guard passed',flush=True)
+        finally:stop(process,log)
     print('Verified binary:', binary, hashlib.sha256(binary.read_bytes()).hexdigest(), flush=True)
 finally:
     x.XCloseDisplay(d)

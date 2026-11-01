@@ -86,6 +86,8 @@ impl Settings {
             Action::CopyToOtherPane,
             Action::MoveToOtherPane,
             Action::Duplicate,
+            Action::Undo,
+            Action::Redo,
         ] {
             if self.bindings.iter().any(|binding| binding.action == action) {
                 continue;

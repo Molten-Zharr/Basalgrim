@@ -1,6 +1,10 @@
-//! Durable write-ahead filesystem history. No inverse action is executed here.
+//! Durable write-ahead filesystem history and explicitly requested undo/redo.
+mod lineage;
 mod model;
 mod recorder;
+mod snapshot;
+mod trash;
+mod undo;
 use anyhow::{Context, Result, ensure};
 pub use model::{Identity, Inverse, Item, Receipt, Stored, bytes, path};
 use model::{Spec, Summary, now, specs};
@@ -13,8 +17,14 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
+pub use undo::HistoryState;
 
 const APPLICATION_ID: i64 = 0x4253474a;
+const UNDO_SCHEMA: &str = "
+CREATE TABLE undo_items(operation_id INTEGER NOT NULL REFERENCES operations(id),sequence INTEGER NOT NULL,data BLOB NOT NULL,state TEXT NOT NULL,issue TEXT,changed_ms INTEGER NOT NULL,last_run INTEGER REFERENCES operations(id),PRIMARY KEY(operation_id,sequence));
+CREATE TABLE replay_runs(operation_id INTEGER PRIMARY KEY REFERENCES operations(id),original_id INTEGER NOT NULL REFERENCES operations(id),redo INTEGER NOT NULL);
+PRAGMA user_version=2;
+";
 const SCHEMA: &str = "
 PRAGMA application_id=1112753994;
 PRAGMA user_version=1;
@@ -94,7 +104,10 @@ impl Database {
             "Неизвестный формат журнала"
         );
         ensure!(
-            preflight.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? == 1,
+            matches!(
+                preflight.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?,
+                1 | 2
+            ),
             "Версия журнала не поддерживается"
         );
         ensure!(
@@ -107,7 +120,10 @@ impl Database {
         ensure!(
             connection.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))?
                 == APPLICATION_ID
-                && connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? == 1,
+                && matches!(
+                    connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?,
+                    1 | 2
+                ),
             "Формат журнала изменился во время открытия"
         );
         connection.prepare("SELECT operation_id,sequence,source,destination,before,after,inverse,issue FROM items LIMIT 0")?;
@@ -117,6 +133,13 @@ impl Database {
         let mode: String = connection.query_row("PRAGMA journal_mode=WAL", [], |r| r.get(0))?;
         ensure!(mode == "wal", "Не удалось включить WAL журнала");
         connection.pragma_update(None, "synchronous", "FULL")?;
+        {
+            let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            if tx.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? == 1 {
+                tx.execute_batch(UNDO_SCHEMA)?;
+            }
+            tx.commit()?;
+        }
         let locks = parent.join("journal-locks");
         fs::create_dir_all(&locks)?;
         let lock = tempfile::Builder::new()
@@ -199,6 +222,7 @@ impl Database {
                 total,
                 summary,
                 items: self.items(id)?,
+                history: self.history_state(id)?,
                 completed: self.connection.query_row(
                     "SELECT COUNT(*) FROM items WHERE operation_id=?1 AND state='done'",
                     [id],
@@ -232,11 +256,13 @@ impl Database {
         for row in rows {
             let (index, kind, source, target, before, after, state, inverse, issue) = row?;
             let recovery_paths = if matches!(state.as_str(), "uncertain" | "partial" | "failed") {
-                let mut stmt=self.connection.prepare("SELECT destination FROM steps WHERE operation_id=?1 AND item=?2 AND kind IN ('claim_source','replace_claim','staging') ORDER BY id DESC LIMIT 20")?;
+                let mut stmt=self.connection.prepare("SELECT destination FROM steps WHERE operation_id=?1 AND item=?2 AND destination IS NOT NULL AND kind IN ('claim_source','replace_claim','staging','publish','replay_restore') ORDER BY id DESC LIMIT 20")?;
                 stmt.query_map(params![id, index], |r| r.get(0))?
                     .collect::<rusqlite::Result<_>>()?
             } else {
-                Vec::new()
+                let mut stmt=self.connection.prepare("SELECT destination FROM steps WHERE operation_id=?1 AND item=?2 AND kind='replace_claim' AND state='done' AND destination IS NOT NULL ORDER BY id DESC LIMIT 20")?;
+                stmt.query_map(params![id, index], |r| r.get(0))?
+                    .collect::<rusqlite::Result<_>>()?
             };
             result.push(Item {
                 index: usize::try_from(index).context("Неверный индекс журнала")?,
@@ -311,5 +337,6 @@ fn recover(connection: &mut Connection, locks: &Path) -> Result<()> {
             tx.commit()?;
         }
     }
+    connection.execute("UPDATE undo_items SET state='uncertain',issue='Прерванная отмена/повтор: требуется проверка сохранённых путей' WHERE state='busy' AND last_run IN (SELECT id FROM operations WHERE state!='running')", [])?;
     Ok(())
 }

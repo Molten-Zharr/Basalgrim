@@ -18,7 +18,7 @@ use std::{
 
 fn settle(app: &mut App) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(5);
-    while app.loading() {
+    while app.loading() || app.journal_loading {
         ensure!(Instant::now() < deadline, "Background request timed out");
         app.tick();
         std::thread::sleep(Duration::from_millis(2));
@@ -403,6 +403,10 @@ fn main() -> Result<()> {
     }
     render(&mut history, &out, "journal", 120, 36)?;
     render(&mut history, &out, "journal-compact", 34, 14)?;
+    history.action(Action::Undo);
+    settle(&mut history)?;
+    render(&mut history, &out, "undo", 120, 36)?;
+    render(&mut history, &out, "undo-compact", 34, 14)?;
     fs::write(
         demo.path().join("landscape.svg"),
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">

@@ -87,6 +87,7 @@ pub struct Spec {
 }
 pub fn specs(operation: &Operation) -> Vec<Spec> {
     match operation {
+        Operation::Replay { .. } => Vec::new(),
         Operation::Create {
             parent,
             name,
@@ -156,6 +157,7 @@ pub struct Item {
 pub struct Receipt {
     pub id: i64,
     pub items: Vec<Item>,
+    pub history: super::HistoryState,
 }
 
 type RetainedPaths = (Vec<u8>, Vec<u8>, Option<Vec<u8>>);
@@ -252,6 +254,7 @@ pub struct Stored {
     pub items: Vec<Item>,
     pub completed: usize,
     pub skipped: usize,
+    pub history: super::HistoryState,
 }
 impl Stored {
     pub fn into_record(self, token: u64) -> OperationRecord {
@@ -260,6 +263,7 @@ impl Stored {
         record.journal = Some(Receipt {
             id: self.id,
             items: self.items,
+            history: self.history,
         });
         record.recorded_at = Some(self.started_ms);
         record.from_journal = true;

@@ -16,6 +16,49 @@ impl Drop for RunningOperation {
 }
 
 impl App {
+    pub fn replay_candidate(&self, redo: bool) -> Option<(i64, usize)> {
+        if self.busy || !self.journal_enabled || self.journal_error.is_some() {
+            return None;
+        }
+        let available = |record: &OperationRecord| {
+            let receipt = record.journal.as_ref()?;
+            let count = if redo {
+                receipt.history.redo
+            } else {
+                receipt.history.undo
+            };
+            (count > 0
+                && receipt.history.blocked.is_none()
+                && !record.interrupted
+                && !record.external)
+                .then_some((receipt.history.replay_of.unwrap_or(receipt.id), count))
+        };
+        if matches!(self.dialog, Some(Dialog::Operations)) {
+            self.operations
+                .get(self.operations_selected)
+                .and_then(available)
+        } else {
+            self.operations.iter().find_map(available)
+        }
+    }
+    pub fn replay_operation(&mut self, redo: bool) {
+        let Some((original, count)) = self.replay_candidate(redo) else {
+            self.message(
+                if redo {
+                    "Нет доступной операции для повтора"
+                } else {
+                    "Нет доступной операции для отмены"
+                },
+                true,
+            );
+            return;
+        };
+        self.start_operation(Operation::Replay {
+            original,
+            redo,
+            count,
+        });
+    }
     pub(super) fn other_destination(&self) -> Option<&Path> {
         if !self.settings.dual {
             return None;
@@ -160,10 +203,19 @@ impl App {
             }
         }
         self.preview_path = None;
+        self.refresh_journal();
     }
     pub(super) fn operations_key(&mut self, press: crate::input::KeyPress) {
         use crate::input::Key;
         match self.settings.action_for(press) {
+            Some(Action::Undo) => {
+                self.replay_operation(false);
+                return;
+            }
+            Some(Action::Redo) => {
+                self.replay_operation(true);
+                return;
+            }
             Some(Action::CancelOperation) => {
                 self.cancel_operation();
                 return;

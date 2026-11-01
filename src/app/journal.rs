@@ -55,11 +55,14 @@ impl App {
             .collect();
         self.operations.retain(|r| !r.from_journal);
         for stored in records {
-            if self
+            if let Some(record) = self
                 .operations
-                .iter()
-                .any(|r| r.journal.as_ref().is_some_and(|j| j.id == stored.id))
+                .iter_mut()
+                .find(|r| r.journal.as_ref().is_some_and(|j| j.id == stored.id))
             {
+                if let Some(receipt) = &mut record.journal {
+                    receipt.history = stored.history;
+                }
                 continue;
             }
             let token = ids.get(&stored.id).copied().unwrap_or_else(|| self.token());

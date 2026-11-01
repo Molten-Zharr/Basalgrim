@@ -43,6 +43,11 @@ pub enum Operation {
     Trash {
         sources: Vec<PathBuf>,
     },
+    Replay {
+        original: i64,
+        redo: bool,
+        count: usize,
+    },
 }
 impl Operation {
     pub fn title(&self) -> &'static str {
@@ -56,6 +61,8 @@ impl Operation {
             Self::Transfer { .. } => "Перемещение",
             Self::Duplicate { .. } => "Дублирование",
             Self::Trash { .. } => "Отправка в корзину",
+            Self::Replay { redo: true, .. } => "Повтор операции",
+            Self::Replay { .. } => "Отмена операции",
         }
     }
     pub fn total(&self) -> usize {
@@ -63,6 +70,7 @@ impl Operation {
             Self::Transfer { sources, .. }
             | Self::Duplicate { sources, .. }
             | Self::Trash { sources } => sources.len(),
+            Self::Replay { count, .. } => *count,
             _ => 1,
         }
     }
@@ -74,6 +82,7 @@ impl Operation {
             Self::Create { parent, name, .. } => Some(parent.join(name)),
             Self::Rename { source, name } => source.parent().map(|parent| parent.join(name)),
             Self::Trash { .. } => None,
+            Self::Replay { .. } => None,
         }
     }
 }
@@ -104,6 +113,9 @@ pub(crate) fn operation_checkpoint(cancellation: &Cancellation) -> Result<()> {
         return Err(Cancelled.into());
     }
     Ok(())
+}
+pub(crate) fn operation_cancelled(error: &anyhow::Error) -> bool {
+    error.is::<Cancelled>()
 }
 #[derive(Debug)]
 struct CleanupFailure(String);
@@ -548,6 +560,7 @@ pub fn operate_with_journal(
     resolve: &mut dyn FnMut(&crate::conflicts::Conflict) -> crate::conflicts::Decision,
     journal: &mut crate::journal::Recorder<'_>,
 ) -> Report {
+    journal.set_cancellation(cancellation.clone());
     let mut report = operate_inner(
         operation,
         cancellation,
@@ -642,6 +655,7 @@ fn operate_inner(
             control.emit();
         };
         match operation {
+            Operation::Replay { .. } => bail!("Для отмены/повтора требуется устойчивый журнал"),
             Operation::Create {
                 parent,
                 name,
@@ -783,6 +797,49 @@ fn operate_inner(
     control.emit();
     report.progress = control.progress;
     report.destination_recoveries = control.recoveries;
+    report
+}
+
+/// Reuse the verified move engine for exact journal paths, without name substitution.
+pub(crate) fn relocate_recorded(
+    source: &Path,
+    target: &Path,
+    cancellation: &Cancellation,
+    notify: &mut dyn FnMut(&Progress),
+    journal: &mut crate::journal::Recorder<'_>,
+) -> Report {
+    let mut control = Control {
+        cancellation,
+        progress: Progress {
+            items_total: 1,
+            phase: Phase::Running,
+            ..Default::default()
+        },
+        notify,
+        replacement: None,
+        recoveries: Vec::new(),
+        journal: Some(journal),
+    };
+    let result = control
+        .current(source)
+        .and_then(|()| transfer(source, target, true, &mut control));
+    let mut report = Report {
+        total: 1,
+        progress: control.progress,
+        ..Default::default()
+    };
+    match result {
+        Ok(()) => report.completed.push(source.into()),
+        Err(error) => {
+            if let Some(partial) = error.downcast_ref::<cross_device::PartialMove>() {
+                report.retained_copies.push(partial.0.clone());
+            }
+            report.cancelled = error.is::<Cancelled>();
+            if !report.cancelled {
+                report.error = Some(format!("{error:#}"));
+            }
+        }
+    }
     report
 }
 

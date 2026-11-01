@@ -1,5 +1,7 @@
 mod operations;
+pub(crate) use operations::operation_cancelled;
 pub(crate) use operations::operation_checkpoint;
+pub(crate) use operations::relocate_recorded;
 pub use operations::{
     Operation, Report, RetainedCopy, operate, operate_with_conflicts, operate_with_control,
     operate_with_journal, rename_new, transfer_one, trash_one, validate_name,

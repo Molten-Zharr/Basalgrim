@@ -124,6 +124,8 @@ pub enum Action {
     Commands,
     Operations,
     CancelOperation,
+    Undo,
+    Redo,
     Back,
     Forward,
     Parent,
@@ -199,12 +201,16 @@ impl Action {
         Self::FontSmaller,
         Self::Operations,
         Self::CancelOperation,
+        Self::Undo,
+        Self::Redo,
     ];
     pub fn name(self) -> &'static str {
         match self {
             Self::Commands => "Меню действий",
             Self::Operations => "Операции",
             Self::CancelOperation => "Отменить текущую операцию",
+            Self::Undo => "Отменить завершённую операцию",
+            Self::Redo => "Повторить отменённую операцию",
             Self::Back => "История: назад",
             Self::Forward => "История: вперёд",
             Self::Parent => "Родительская папка",
@@ -306,6 +312,8 @@ pub fn default_bindings() -> Vec<Binding> {
     }
     for (action, c) in [
         (Quit, 'q'),
+        (Undo, 'z'),
+        (Redo, 'y'),
         (Copy, 'c'),
         (Cut, 'x'),
         (Paste, 'v'),

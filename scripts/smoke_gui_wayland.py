@@ -295,6 +295,24 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             assert not preview_fixture.bounds(preview_shot("text"),preview_fixture.BLUE),"Wayland cached image over text"
             key("q","ctrl");process.wait(timeout=5);assert process.returncode==0
             print("Native Wayland preview: aspect, watched rewrite, menu, F3, resize and text passed",flush=True)
+            undo_dir=base/"undo";undo_dir.mkdir();(undo_dir/"a.txt").write_text("undo source");copied=undo_dir/"a (1).txt"
+            preferences=json.loads(settings.read_text());preferences.update(dual=False,grid=False,preview=False)
+            settings.write_text(json.dumps(preferences));process=launch(undo_dir)
+            key("F5","ctrl");wait_for(copied.exists,"Wayland duplicate for undo");time.sleep(.35)
+            key("z","ctrl");wait_for(lambda:not copied.exists(),"Wayland Ctrl+Z");time.sleep(.2)
+            key("y","ctrl");wait_for(copied.exists,"Wayland Ctrl+Y");time.sleep(.2)
+            key("F6");time.sleep(.3);click(4,50);wait_for(lambda:not copied.exists(),"Wayland F6 mouse undo");time.sleep(.2)
+            click(22,50);wait_for(copied.exists,"Wayland F6 mouse redo");time.sleep(.2)
+            click(4,50);wait_for(lambda:not copied.exists(),"Wayland undo before restart");time.sleep(.2)
+            key("q","ctrl");process.wait(timeout=5);process=launch(undo_dir)
+            copied.write_text("external destination");time.sleep(.3);key("y","ctrl");time.sleep(.4)
+            assert copied.read_text()=="external destination","Wayland redo overwrote a conflict"
+            copied.unlink();time.sleep(.2);key("y","ctrl");wait_for(copied.exists,"Wayland redo after restart");time.sleep(.2)
+            assert copied.read_text()=="undo source"
+            copied.write_text("external edit");time.sleep(.3);key("z","ctrl");time.sleep(.4)
+            assert copied.read_text()=="external edit","Wayland undo hid an edited file"
+            key("q","ctrl");process.wait(timeout=5);assert process.returncode==0
+            print("Native Wayland undo: shortcuts, F6 mouse, restart, conflicts and edited-file guard passed",flush=True)
             print("Verified binary:", binary, hashlib.sha256(binary.read_bytes()).hexdigest())
         except Exception:
             if process and process.poll() is None:

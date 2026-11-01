@@ -133,6 +133,11 @@ impl App {
                     {
                         self.cancel_operation()
                     }
+                    Some(Target::Action(action @ (Action::Undo | Action::Redo)))
+                        if matches!(self.dialog, Some(Dialog::Operations)) =>
+                    {
+                        self.action(action)
+                    }
                     Some(Target::Confirm) => self.confirm_dialog(),
                     Some(Target::Cancel) => self.cancel_dialog(),
                     Some(Target::SettingsSection(section))

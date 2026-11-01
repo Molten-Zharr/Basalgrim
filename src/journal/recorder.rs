@@ -8,14 +8,22 @@ struct Current {
     target: Option<PathBuf>,
     published: bool,
     replaced: bool,
+    expected: Option<snapshot::Snapshot>,
+    origin: Option<snapshot::Snapshot>,
+    backup: Option<undo::Backup>,
+    trash: Option<trash::Search>,
+    undo_issue: Option<String>,
 }
 pub struct Recorder<'a> {
-    database: &'a mut Database,
+    pub(super) database: &'a mut Database,
     pub id: i64,
     requested: Vec<Spec>,
     current: Option<Current>,
     problem: Option<String>,
     started: Instant,
+    cancellation: crate::operations::Cancellation,
+    replaying: bool,
+    guard: Option<(PathBuf, snapshot::Snapshot)>,
 }
 impl<'a> Recorder<'a> {
     pub(super) fn new(database: &'a mut Database, id: i64, requested: Vec<Spec>) -> Self {
@@ -26,6 +34,31 @@ impl<'a> Recorder<'a> {
             current: None,
             problem: None,
             started: Instant::now(),
+            cancellation: Default::default(),
+            replaying: false,
+            guard: None,
+        }
+    }
+    pub fn set_cancellation(&mut self, cancellation: crate::operations::Cancellation) {
+        self.cancellation = cancellation;
+    }
+    pub(super) fn replaying(&mut self) {
+        self.replaying = true;
+    }
+    pub(super) fn protect(&mut self, path: &Path, expected: &snapshot::Snapshot) {
+        self.guard = Some((path.into(), expected.clone()));
+    }
+    pub(super) fn target(&mut self, path: &Path) {
+        if let Some(current) = &mut self.current {
+            current.target = Some(path.into());
+        }
+    }
+    pub(crate) fn published_mode(&mut self, mode: u32) {
+        if let Some(current) = &mut self.current
+            && let Some(expected) = &mut current.expected
+            && let Some(root) = expected.nodes.first_mut()
+        {
+            root.identity.mode = mode;
         }
     }
     pub fn check(&self) -> Result<()> {
@@ -58,6 +91,11 @@ impl<'a> Recorder<'a> {
             before,
             published: false,
             replaced: false,
+            expected: None,
+            origin: None,
+            backup: None,
+            trash: None,
+            undo_issue: None,
         });
         Ok(())
     }
@@ -80,6 +118,39 @@ impl<'a> Recorder<'a> {
             if kind == "replace_claim" {
                 current.replaced = true;
             }
+            if !self.replaying
+                && matches!(kind, "publish" | "replace_claim" | "trash")
+                && let Some(source) = source
+            {
+                match snapshot::Snapshot::read(source, &self.cancellation) {
+                    Ok(snapshot) if kind == "replace_claim" => {
+                        current.backup = Some(undo::Backup {
+                            path: bytes(destination.context("Нет резервного пути")?),
+                            snapshot,
+                        });
+                    }
+                    Ok(snapshot) => {
+                        if matches!(current.spec.kind, "move" | "rename")
+                            && source == current.spec.source
+                            && current.origin.is_none()
+                        {
+                            current.origin = Some(snapshot.clone());
+                        }
+                        current.expected = Some(snapshot);
+                    }
+                    Err(e) => current.undo_issue = Some(format!("Отмена недоступна: {e:#}")),
+                }
+                crate::fs::operation_checkpoint(&self.cancellation)?;
+                if kind == "trash" {
+                    match trash::Search::new(source) {
+                        Ok(search) => current.trash = Some(search),
+                        Err(e) => {
+                            current.undo_issue =
+                                Some(format!("Точный адрес корзины недоступен: {e:#}"))
+                        }
+                    }
+                }
+            }
             let before_source = source.map(Identity::read).transpose()?.flatten();
             let before_destination = destination.map(Identity::read).transpose()?.flatten();
             let tx = self
@@ -95,6 +166,17 @@ impl<'a> Recorder<'a> {
             }
             let id = tx.last_insert_rowid();
             tx.commit()?;
+            if !recovery
+                && let Some((path, expected)) = &self.guard
+                && source == Some(path.as_path())
+                && matches!(kind, "publish" | "claim_source" | "trash")
+            {
+                ensure!(
+                    expected.unchanged(&snapshot::Snapshot::read(path, &self.cancellation)?),
+                    "Файл изменился перед отменой/повтором: {}",
+                    path.display()
+                );
+            }
             Ok(id)
         })();
         match result {
@@ -142,8 +224,92 @@ impl<'a> Recorder<'a> {
         skipped: bool,
         issue: Option<String>,
     ) -> Result<()> {
-        let Some(current) = self.current.take() else {
+        let Some(mut current) = self.current.take() else {
             return Ok(());
+        };
+        let mut locator = None;
+        if completed
+            && !self.replaying
+            && current.spec.kind == "trash"
+            && let (Some(search), Some(expected)) = (&current.trash, &current.expected)
+        {
+            match search.locate(&current.spec.source, expected, &Default::default()) {
+                Ok((found, actual)) => {
+                    current.target = Some(path(&found.data));
+                    current.expected = Some(actual);
+                    locator = Some(found);
+                }
+                Err(e) => current.undo_issue = Some(format!("{e:#}")),
+            }
+        }
+        let plan = if completed && !self.replaying {
+            let prepared: Result<undo::Plan> = (|| {
+                ensure!(
+                    current.undo_issue.is_none(),
+                    "{}",
+                    current.undo_issue.as_deref().unwrap_or_default()
+                );
+                let target = current.target.as_deref().context("Нет адреса результата")?;
+                let actual = snapshot::Snapshot::read(target, &Default::default())?;
+                if current.spec.kind == "create" || current.spec.kind == "mkdir" {
+                    ensure!(
+                        actual.nodes.len() == 1 && actual.nodes[0].identity.size == 0
+                            || current.spec.kind == "mkdir" && actual.nodes.len() == 1,
+                        "Созданный файл/папка уже изменён"
+                    );
+                } else {
+                    let expected = current
+                        .expected
+                        .as_ref()
+                        .context("Не сохранён снимок перед изменением")?;
+                    ensure!(
+                        expected.relocated(&actual, false),
+                        "Результат изменился до записи снимка отмены"
+                    );
+                }
+                let backup = if let Some(mut backup) = current.backup.take() {
+                    let actual =
+                        snapshot::Snapshot::read(&path(&backup.path), &Default::default())?;
+                    ensure!(
+                        backup.snapshot.relocated(&actual, false),
+                        "Резервная копия прежней цели изменилась"
+                    );
+                    backup.snapshot = actual;
+                    Some(backup)
+                } else {
+                    None
+                };
+                ensure!(
+                    !current.replaced || backup.is_some(),
+                    "Не сохранена прежняя цель замены"
+                );
+                let plan = undo::Plan {
+                    version: 1,
+                    kind: current.spec.kind.into(),
+                    source: bytes(&current.spec.source),
+                    target: bytes(target),
+                    expected: actual,
+                    origin: current.origin.take(),
+                    backup,
+                    parking: None,
+                    trash: locator,
+                    info_parking: None,
+                };
+                ensure!(
+                    serde_json::to_vec(&plan)?.len() <= 32 * 1024 * 1024,
+                    "План отмены слишком большой"
+                );
+                Ok(plan)
+            })();
+            match prepared {
+                Ok(plan) => Some(plan),
+                Err(e) => {
+                    current.undo_issue = Some(format!("{e:#}"));
+                    None
+                }
+            }
+        } else {
+            None
         };
         let after = current
             .target
@@ -152,22 +318,7 @@ impl<'a> Recorder<'a> {
             .transpose()?
             .flatten();
         let inverse = if completed {
-            let blocked = if current.replaced {
-                Some(
-                    "Замена прежней цели: требуется ручная проверка сохранности старых данных"
-                        .into(),
-                )
-            } else if current.spec.kind == "trash" {
-                Some("Для восстановления из корзины нужен точный адрес элемента".into())
-            } else if after.as_ref().is_some_and(Identity::directory)
-                && current.spec.kind != "mkdir"
-            {
-                Some("Не записан полный снимок содержимого папки".into())
-            } else if after.is_none() {
-                Some("Идентичность результата не подтверждена".into())
-            } else {
-                None
-            };
+            let blocked = current.undo_issue.clone();
             Some(Inverse {
                 action: match current.spec.kind {
                     "move" | "rename" => "move_back",
@@ -186,7 +337,15 @@ impl<'a> Recorder<'a> {
         } else {
             None
         };
-        self.database.connection.execute("UPDATE items SET state=?3,destination=?4,after=?5,inverse=?6,issue=?7 WHERE operation_id=?1 AND sequence=?2",params![self.id,current.index as i64,if completed{"done"}else if skipped{"skipped"}else if current.published{"partial"}else{"failed"},current.target.as_deref().map(bytes),serde_json::to_vec(&after)?,inverse.as_ref().map(serde_json::to_vec).transpose()?,issue])?;
+        let tx = self
+            .database
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute("UPDATE items SET state=?3,destination=?4,after=?5,inverse=?6,issue=?7 WHERE operation_id=?1 AND sequence=?2",params![self.id,current.index as i64,if completed{"done"}else if skipped{"skipped"}else if current.published{"partial"}else{"failed"},current.target.as_deref().map(bytes),serde_json::to_vec(&after)?,inverse.as_ref().map(serde_json::to_vec).transpose()?,issue])?;
+        if completed && !self.replaying {
+            tx.execute("INSERT INTO undo_items(operation_id,sequence,data,state,issue,changed_ms) VALUES (?1,?2,?3,'applied',?4,?5)",params![self.id,current.index as i64,serde_json::to_vec(&plan)?,current.undo_issue,now()])?;
+        }
+        tx.commit()?;
         self.check()
     }
     pub fn finish(&mut self, report: &mut Report) {
@@ -230,7 +389,12 @@ impl<'a> Recorder<'a> {
                 Vec::new()
             }
         };
-        report.journal = Some(Receipt { id: self.id, items });
+        let history = self.database.history_state(self.id).unwrap_or_default();
+        report.journal = Some(Receipt {
+            id: self.id,
+            items,
+            history,
+        });
     }
 }
 pub fn append_error(report: &mut Report, error: &str) {

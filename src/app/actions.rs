@@ -13,6 +13,12 @@ impl App {
             self.cancel_operation();
             return;
         }
+        if matches!(action, Action::Undo | Action::Redo)
+            && matches!(self.dialog, None | Some(Dialog::Operations))
+        {
+            self.replay_operation(action == Action::Redo);
+            return;
+        }
         if action == Action::Operations && matches!(self.dialog, None | Some(Dialog::Operations)) {
             self.dialog = if self.dialog.is_some() {
                 None
@@ -272,7 +278,12 @@ impl App {
                     .clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
                 self.preferences_changed();
             }
-            Action::Quit | Action::Operations | Action::CancelOperation | Action::Commands => {
+            Action::Quit
+            | Action::Operations
+            | Action::CancelOperation
+            | Action::Commands
+            | Action::Undo
+            | Action::Redo => {
                 unreachable!()
             }
         }

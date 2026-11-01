@@ -206,6 +206,19 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         let progress = &record.progress;
         let mut lines = vec![Line::styled(format!(" {}", record.title), palette.accent())];
         if let Some(journal) = &record.journal {
+            if let Some(original) = journal.history.replay_of {
+                lines.push(Line::raw(format!(" Для операции #{original}")));
+            }
+            lines.push(Line::raw(format!(
+                " Можно отменить: {} · повторить: {}",
+                journal.history.undo, journal.history.redo
+            )));
+            if let Some(reason) = &journal.history.blocked {
+                lines.push(Line::styled(
+                    format!(" Отмена недоступна: {}", fs::clean(reason)),
+                    palette.muted(),
+                ));
+            }
             let date = record
                 .recorded_at
                 .and_then(|ms| u64::try_from(ms).ok())
@@ -313,6 +326,16 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
                             palette.accent(),
                         ));
                     }
+                } else {
+                    for retained in &item.recovery_paths {
+                        lines.push(Line::styled(
+                            format!(
+                                " Прежняя цель сохранена для отмены: {}",
+                                fs::clean(&crate::journal::path(retained).to_string_lossy())
+                            ),
+                            palette.muted(),
+                        ));
+                    }
                 }
             }
         }
@@ -358,10 +381,40 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         );
     }
     let footer = zones[3];
-    frame.render_widget(
-        Paragraph::new(" ↑↓ — операции · PgUp/PgDn — детали").style(palette.muted()),
-        Rect::new(footer.x, footer.y, footer.width, 1),
-    );
+    if app.busy {
+        frame.render_widget(
+            Paragraph::new(" ↑↓ — операции · PgUp/PgDn — детали").style(palette.muted()),
+            Rect::new(footer.x, footer.y, footer.width, 1),
+        );
+    }
+    if !app.busy {
+        let mut x = footer.x;
+        for (action, redo, label) in [
+            (Action::Undo, false, "Отменить"),
+            (Action::Redo, true, "Повтор"),
+        ] {
+            let label = if footer.width < 60 {
+                format!(" {label} ")
+            } else {
+                format!(" {} {label} ", app.settings.shortcut(action))
+            };
+            let width = (label.width() as u16).min(footer.right().saturating_sub(x));
+            let rect = Rect::new(x, footer.y, width, 1);
+            let enabled = app.replay_candidate(redo).is_some();
+            frame.render_widget(
+                Paragraph::new(label).style(if enabled {
+                    palette.accent()
+                } else {
+                    palette.muted()
+                }),
+                rect,
+            );
+            if enabled {
+                hit(app, rect, Target::Action(action));
+            }
+            x += width;
+        }
+    }
     let y = footer.bottom() - 1;
     button(
         app,

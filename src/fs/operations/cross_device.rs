@@ -350,6 +350,9 @@ pub(super) fn transfer(
         if let Some(dir) = &published_dir {
             // Use the held inode, even if someone replaces the public path.
             dir.set_permissions(snapshot.meta.permissions())?;
+            if let Some(journal) = &mut control.journal {
+                journal.published_mode(snapshot.meta.mode());
+            }
             dir.sync_all()?;
         }
         open_dir(parent)?.sync_all()?;

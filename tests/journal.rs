@@ -130,7 +130,7 @@ fn create_move_rename_skip_and_replacement_have_distinct_inverse_records() {
             .as_ref()
             .unwrap()
             .blocked
-            .is_some()
+            .is_none()
     );
 }
 
