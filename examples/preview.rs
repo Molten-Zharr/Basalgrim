@@ -496,13 +496,39 @@ fn main() -> Result<()> {
             ),
         )?;
     }
-    image_app.open_trash(Some(vec![trash]));
+    image_app.open_trash(Some(vec![trash.clone()]));
     settle(&mut image_app)?;
     image_app.action(Action::SelectAll);
     render(&mut image_app, &out, "trash", 140, 32)?;
     render(&mut image_app, &out, "trash-compact", 34, 14)?;
     image_app.action(Action::RestoreTrash);
     render(&mut image_app, &out, "trash-confirm", 100, 28)?;
+    image_app.cancel_dialog();
+
+    // The README shows the features being documented in a single real frame:
+    // an editable path and normal files beside the shared trash location.
+    let folder = demo.path().join("Projects/Basalgrim");
+    fs::write(
+        folder.join("README.md"),
+        "# Basalgrim\n\nShared GUI/TUI file manager.\n",
+    )?;
+    fs::write(folder.join("Cargo.toml"), include_str!("../Cargo.toml"))?;
+    fs::write(folder.join("notes.md"), "Shared GUI/TUI file operations\n")?;
+    let mut overview = App::new(folder.clone(), Settings::default());
+    overview.icon_backend = basalgrim::icons::IconBackend::Gui;
+    overview.settings.dual = true;
+    overview.settings.preview = false;
+    overview.settings.grid = false;
+    settle(&mut overview)?;
+    overview.active = 1;
+    overview.open_trash(Some(vec![trash]));
+    settle(&mut overview)?;
+    overview.action(Action::SelectAll);
+    overview.action(Action::Path);
+    overview.handle(Input::Key(basalgrim::input::KeyPress::plain(
+        basalgrim::input::Key::End,
+    )));
+    render(&mut overview, &out, "basalgrim-overview", 150, 38)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

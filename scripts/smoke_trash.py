@@ -40,7 +40,9 @@ def main():
             end=time.monotonic()+seconds
             while not predicate():
                 assert child.poll() is None and time.monotonic()<end,label;pump(.01)
-        def idle():wait(lambda:'Стоп' not in text().splitlines()[-2],'operation acknowledged by UI')
+        def idle():
+            # Trash shares the normal status bar now; do not assume a footer row.
+            wait(lambda:not any(marker in text() for marker in ('Стоп','Отмена…')),'operation acknowledged by UI')
         def click_label(label,toggle=False,button=0):
             rows=text().splitlines();y=next(i for i,row in enumerate(rows) if label in row);x=rows[y].index(label)+1
             code=16 if toggle else button
@@ -54,7 +56,17 @@ def main():
             send(b'\x1b[21;2~');click_label('Открыть корзину');wait(lambda:'Корзина' in text() and 'ФАЙЛЫ' in text(),'trash in ordinary file pane')
             send('/');send(str(base));send(b'\r');wait(lambda:'basalgrim-' in text(),'private trash listing')
         def restore_original():click_label('Восстановить');wait(lambda:'Восстановить из корзины?' in text(),'confirmation');send(b'\r')
-        def close():idle();send(b'\x11');child.wait(timeout=5);assert child.returncode==0
+        def close():
+            idle()
+            # Filesystem publication can precede App consuming worker completion.
+            # Respect the busy Quit guard and retry within a fixed deadline.
+            deadline=time.monotonic()+8
+            while child.poll() is None:
+                send(b'\x11')
+                try:child.wait(timeout=.15)
+                except subprocess.TimeoutExpired:
+                    assert time.monotonic()<deadline,'trash worker did not finish before Quit'
+            assert child.returncode==0
         try:
             launch();open_trash()
             wait(lambda:alpha.name in text() and beta.name in text() and tree.name in text(),'gio items including Unicode and directory')
@@ -116,7 +128,7 @@ def main():
             before={str(p):(p.exists(),p.stat().st_size if p.exists() else None) for p in (large,info,parked,data)}
             launch();send(b'\x1b[17~');wait(lambda:'Прервано: нужна проверка' in text(),'interrupted restoration history')
             assert {str(p):(p.exists(),p.stat().st_size if p.exists() else None) for p in (large,info,parked,data)}==before,'startup replayed or removed claimed trash data'
-            send(b'\x1b');send(b'\x11');child.wait(timeout=5);assert child.returncode==0
+            send(b'\x1b');close()
             print('Trash PTY crash recovery: SIGKILL preserves claimed metadata and data without automatic replay',flush=True)
         except BaseException:
             print(text(),file=sys.stderr);raise
