@@ -94,15 +94,14 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette
         hit(app, rect, Target::Tab { pane, index: i });
         x += width + 1;
     }
-    if focused {
-        hit(app, parts[1], Target::Action(Action::Path));
-    }
-    let tab = app.panes[pane].tab();
-    frame.render_widget(
-        Paragraph::new(format!(" {}", fs::clean(&tab.cwd.to_string_lossy())))
-            .style(palette.muted()),
+    super::path::bar(
+        app,
+        frame,
         Rect::new(parts[1].x, parts[1].bottom() - 1, parts[1].width, 1),
+        pane,
+        palette,
     );
+    let tab = app.panes[pane].tab();
     let filter = if tab.filter.is_empty() {
         String::new()
     } else {

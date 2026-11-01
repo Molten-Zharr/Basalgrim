@@ -18,7 +18,7 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{
-    io::stdout,
+    io::{Write, stdout},
     time::{Duration, Instant},
 };
 
@@ -74,8 +74,36 @@ fn run() -> Result<()> {
     }));
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     let mut previous_click: Option<((u16, u16), Instant)> = None;
+    let clipboard = basalgrim::clipboard::terminal::TerminalClipboard::new();
     while !app.quit {
         app.tick();
+        if let Some(copy) = app.take_text_copy() {
+            let id = copy.id;
+            match clipboard.submit(copy) {
+                Ok(()) => {}
+                Err(std::sync::mpsc::TrySendError::Full(copy)) => app.retry_text_copy(copy),
+                Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
+                    app.finish_text_copy(id, Err("Исполнитель буфера недоступен".into()))
+                }
+            }
+        }
+        while let Ok(result) = clipboard.results.try_recv() {
+            let id = result.id;
+            if !app.text_copy_current(result.id) {
+                continue;
+            }
+            let result = result.result.and_then(|delivery| {
+                if let basalgrim::clipboard::terminal::Delivery::Osc52(sequence) = &delivery {
+                    let mut output = stdout().lock();
+                    output
+                        .write_all(sequence.as_bytes())
+                        .and_then(|()| output.flush())
+                        .map_err(|e| e.to_string())?;
+                }
+                Ok(delivery.destination())
+            });
+            app.finish_text_copy(id, result);
+        }
         app.persist_preferences(settings_path.as_deref());
         terminal.draw(|frame| {
             ui::render(&mut app, frame);

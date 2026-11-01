@@ -7,6 +7,8 @@ pub use commands::{CommandItem, CommandMenu, MenuContext};
 mod events;
 mod journal;
 mod operations;
+mod path;
+pub use path::{PathMenu, PathOwner};
 mod selection;
 mod session;
 mod settings;
@@ -30,6 +32,22 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    PathGo {
+        owner: PathOwner,
+        path: PathBuf,
+    },
+    PathCopy(PathOwner),
+    PathEdit(PathOwner),
+    PathParents {
+        owner: PathOwner,
+        anchor: Position,
+    },
+    PathParent(usize),
+    PathScroll(isize),
+    PathMenuCopy,
+    PathMenuEdit,
+    PathTextCopy,
+    PathTextSelect,
     JournalRefresh,
     ConflictChoice(crate::conflicts::Choice),
     ConflictRemaining,
@@ -69,7 +87,7 @@ pub enum Target {
 #[derive(Clone)]
 pub enum EditKind {
     Search { original: String },
-    Path,
+    Path(PathBuf),
     Folder,
     File,
     Rename(PathBuf),
@@ -79,7 +97,7 @@ impl EditKind {
     pub fn title(&self) -> &'static str {
         match self {
             Self::Search { .. } => "Поиск в текущей папке",
-            Self::Path => "Перейти к папке",
+            Self::Path(_) => "Перейти к папке",
             Self::Folder => "Новая папка",
             Self::File => "Новый файл",
             Self::Rename(_) => "Переименовать",
@@ -88,6 +106,7 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    Paths(PathMenu),
     Conflict(ConflictDialog),
     Commands(CommandMenu),
     Operations,
@@ -133,6 +152,9 @@ pub struct App {
     pub journal_error: Option<String>,
     pub dialog: Option<Dialog>,
     pub clipboard: Option<Clipboard>,
+    text_copy: Option<crate::clipboard::TextCopy>,
+    text_copy_token: u64,
+    pub path_text_selected: bool,
     pub places: Vec<Place>,
     pub preview: Option<Preview>,
     pub preview_error: Option<String>,
@@ -224,6 +246,9 @@ impl App {
             journal_error: None,
             dialog: None,
             clipboard: None,
+            text_copy: None,
+            text_copy_token: 0,
+            path_text_selected: false,
             places,
             preview: None,
             preview_error: None,
@@ -343,6 +368,10 @@ impl App {
         self.update_preview();
     }
     pub fn tick(&mut self) {
+        if matches!(&self.dialog,Some(Dialog::Paths(menu)) if !menu.owner.valid(self)) {
+            self.dialog = None;
+            self.hits.clear();
+        }
         self.persist_session();
         self.validate_marquee();
         self.observe_directories();

@@ -95,12 +95,9 @@ impl App {
                 })
             }
             Action::Path => {
-                self.dialog = Some(Dialog::Edit {
-                    kind: EditKind::Path,
-                    text: self.tab().cwd.to_string_lossy().into(),
-                    error: None,
-                })
+                self.edit_path(PathOwner::current(self, self.active));
             }
+            Action::CopyPath => self.copy_path(&self.tab().cwd.clone()),
             Action::Grid => {
                 self.settings.grid = !self.settings.grid;
                 self.tab_mut().offset = 0;
@@ -318,6 +315,24 @@ impl App {
         }
     }
     pub fn confirm_dialog(&mut self) {
+        // A prior worker may have published its filesystem result without yet
+        // delivering completion. Keep entered data until a new operation can
+        // actually start, rather than closing a dialog and losing the command.
+        if self.busy
+            && matches!(
+                self.dialog,
+                Some(
+                    Dialog::Trash(_)
+                        | Dialog::Edit {
+                            kind: EditKind::Folder | EditKind::File | EditKind::Rename(_),
+                            ..
+                        }
+                )
+            )
+        {
+            self.message("Дождитесь завершения или отмените текущую операцию", true);
+            return;
+        }
         if let Some(Dialog::Conflict(current)) = &self.dialog {
             if current.selected == 4 {
                 self.toggle_conflict_remaining();
@@ -335,7 +350,7 @@ impl App {
             Dialog::Settings | Dialog::CaptureBinding { .. } => {
                 self.dialog = Some(Dialog::Settings)
             }
-            Dialog::Help | Dialog::Commands(_) => {}
+            Dialog::Help | Dialog::Commands(_) | Dialog::Paths(_) => {}
             Dialog::Operations => self.dialog = Some(Dialog::Operations),
             Dialog::Trash(sources) => self.start_operation(Operation::Trash { sources }),
             Dialog::Edit { kind, text, .. } => {
@@ -352,7 +367,7 @@ impl App {
                     }
                     return;
                 }
-                if !matches!(kind, EditKind::Search { .. } | EditKind::Path)
+                if !matches!(kind, EditKind::Search { .. } | EditKind::Path(_))
                     && let Err(e) = fs::validate_name(&text)
                 {
                     self.dialog = Some(Dialog::Edit {
@@ -365,8 +380,10 @@ impl App {
                 match kind {
                     EditKind::Setting(_) => unreachable!(),
                     EditKind::Search { .. } => {}
-                    EditKind::Path => {
-                        let path = if text == "~" {
+                    EditKind::Path(original) => {
+                        let path = if text == original.to_string_lossy() {
+                            original
+                        } else if text == "~" {
                             self.home().to_path_buf()
                         } else if let Some(rest) = text.strip_prefix("~/") {
                             self.home().join(rest)

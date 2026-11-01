@@ -42,7 +42,7 @@ impl App {
                 Trash,
             ],
             MenuContext::Directory => &[
-                NewFile, NewFolder, Paste, Sort, Grid, Hidden, Refresh, Search, SelectAll,
+                NewFile, NewFolder, Paste, Sort, Grid, Hidden, Refresh, Search, SelectAll, CopyPath,
             ],
             MenuContext::All => &[
                 Open,
@@ -67,6 +67,7 @@ impl App {
                 NextTab,
                 NextPane,
                 Path,
+                CopyPath,
                 Search,
                 Refresh,
                 Grid,

@@ -13,6 +13,8 @@ import sys
 import tempfile
 import termios
 import time
+sys.dont_write_bytecode = True
+from smoke_watch import screen_text
 
 
 def main():
@@ -57,6 +59,15 @@ def main():
                 assert time.monotonic() < deadline, f"Timed out: {description}"
                 pump(0.02)
 
+        def idle():
+            # Publication/deletion happens before durable journal completion.
+            # Wait for the UI to accept the worker result, not just a path change.
+            wait_for(lambda: "Стоп" not in screen_text(output, 140, 40).splitlines()[-1], "operation completion in UI")
+
+        def listing():
+            idle()
+            wait_for(lambda: "Чтение каталога…" not in screen_text(output, 140, 40), "directory refresh")
+
         def navigate(path):
             send(b"\x0c\x15")  # Ctrl+L, Ctrl+U
             send(str(path))
@@ -86,6 +97,7 @@ def main():
             navigate(destination)
             send(b"\x16")  # Paste
             wait_for(lambda: (destination / "alpha.txt").exists(), "copy")
+            listing()
             assert (folder / "alpha.txt").read_text() == (destination / "alpha.txt").read_text()
 
             send(b"\x1bOQ")  # F2 rename
@@ -93,6 +105,7 @@ def main():
             send("renamed.txt")
             send(b"\r")
             wait_for(lambda: (destination / "renamed.txt").exists(), "rename")
+            listing()
             assert not (destination / "alpha.txt").exists()
 
             search("renamed.txt")
@@ -100,6 +113,7 @@ def main():
             navigate(folder)
             send(b"\x16")
             wait_for(lambda: (folder / "renamed.txt").exists(), "move")
+            listing()
             assert not (destination / "renamed.txt").exists()
 
             search("renamed.txt")
@@ -107,6 +121,7 @@ def main():
             assert (folder / "renamed.txt").exists(), "Trash must require confirmation"
             send(b"\r")
             wait_for(lambda: not (folder / "renamed.txt").exists(), "isolated trash")
+            listing()
             trashed = list((data / "Trash/files").glob("renamed*"))
             assert len(trashed) == 1 and trashed[0].read_text() == "Basalgrim smoke test\n"
             assert list((data / "Trash/info").glob("*.trashinfo"))
@@ -115,6 +130,7 @@ def main():
             send("new.txt")
             send(b"\r")
             wait_for(lambda: (folder / "new.txt").exists(), "create file")
+            listing()
 
             send(b"\x07")  # Ctrl+G saves preference
             wait_for(lambda: (config / "molten-zharr/basalgrim/settings.json").exists(), "settings")

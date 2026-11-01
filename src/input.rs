@@ -160,6 +160,7 @@ pub enum Action {
     NextPane,
     FontLarger,
     FontSmaller,
+    CopyPath,
 }
 
 impl Action {
@@ -203,6 +204,7 @@ impl Action {
         Self::CancelOperation,
         Self::Undo,
         Self::Redo,
+        Self::CopyPath,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -211,6 +213,7 @@ impl Action {
             Self::CancelOperation => "Отменить текущую операцию",
             Self::Undo => "Отменить завершённую операцию",
             Self::Redo => "Повторить отменённую операцию",
+            Self::CopyPath => "Копировать путь папки",
             Self::Back => "История: назад",
             Self::Forward => "История: вперёд",
             Self::Parent => "Родительская папка",
@@ -282,6 +285,13 @@ pub fn default_bindings() -> Vec<Binding> {
         key: KeyPress {
             shift: true,
             ..KeyPress::plain(Key::F(10))
+        },
+    });
+    result.push(Binding {
+        action: CopyPath,
+        key: KeyPress {
+            shift: true,
+            ..KeyPress::ctrl('c')
         },
     });
     result.push(Binding {

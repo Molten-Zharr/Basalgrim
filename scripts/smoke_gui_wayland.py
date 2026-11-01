@@ -59,6 +59,7 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                                   env=env, stdout=server_log, stderr=server_log)
         process = None
         pointer = None
+        keyboard = None
         app_log = open(out / "native-wayland.log", "w")
 
         def wait_for(predicate, description, seconds=8):
@@ -125,6 +126,11 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                                        stdout=subprocess.PIPE, stderr=app_log, text=True)
             assert select.select([pointer.stdout], [], [], 8)[0], "Virtual pointer did not start"
             assert pointer.stdout.readline().strip() == "ready"
+            # Clipboard ownership uses keyboard focus even for mouse copy.
+            # Keep a seat keyboard alive between short-lived wtype commands,
+            # as with a real desktop; otherwise the headless seat loses it.
+            keyboard = subprocess.Popen([commands["wtype"], "-s", "3600000", "-k", "F24"], env=env, stdout=app_log, stderr=app_log)
+            time.sleep(.2)
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
@@ -313,6 +319,19 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             assert copied.read_text()=="external edit","Wayland undo hid an edited file"
             key("q","ctrl");process.wait(timeout=5);assert process.returncode==0
             print("Native Wayland undo: shortcuts, F6 mouse, restart, conflicts and edited-file guard passed",flush=True)
+            path_parent=base/"path parent";path_dir=path_parent/"Кириллица spaces";path_dir.mkdir(parents=True)
+            settings.write_text(json.dumps({"preview":False,"grid":False,"font_size":16,"theme":"light"}))
+            process=launch(path_dir)
+            def copied_path():return run("wl-paste","--no-newline",check=False).stdout
+            click(159,8);wait_for(lambda:copied_path()==str(path_dir),"Wayland copy full Unicode path")
+            key("l","ctrl");key("c","ctrl");assert copied_path()==str(path_dir);key("Escape")
+            parent_x=25+sum(len(part)+3 for part in path_parent.parts[:-1])+1
+            click(parent_x,8);click(159,8);wait_for(lambda:copied_path()==str(path_parent),"Wayland ancestor breadcrumb")
+            click(26,8);click(159,8);wait_for(lambda:copied_path()=="/","Wayland root breadcrumb")
+            click(165,8);run("wtype","-s","100",str(path_parent),"-s","100");key("Return");time.sleep(.2)
+            click(159,8);wait_for(lambda:copied_path()==str(path_parent),"Wayland mouse path editor replaces selection")
+            key("q","ctrl");process.wait(timeout=5);assert process.returncode==0
+            print("Native Wayland paths: Unicode clipboard, Ctrl+L/C, ancestors, root and mouse editor passed",flush=True)
             print("Verified binary:", binary, hashlib.sha256(binary.read_bytes()).hexdigest())
         except Exception:
             if process and process.poll() is None:
@@ -324,6 +343,8 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                 process.terminate(); process.wait(timeout=5)
             if pointer:
                 pointer.terminate(); pointer.wait(timeout=5)
+            if keyboard:
+                keyboard.terminate(); keyboard.wait(timeout=5)
             server.terminate(); server.wait(timeout=5)
             app_log.close(); server_log.close()
 

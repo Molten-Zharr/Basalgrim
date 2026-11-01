@@ -88,6 +88,7 @@ impl Settings {
             Action::Duplicate,
             Action::Undo,
             Action::Redo,
+            Action::CopyPath,
         ] {
             if self.bindings.iter().any(|binding| binding.action == action) {
                 continue;

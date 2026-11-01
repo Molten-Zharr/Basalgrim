@@ -287,6 +287,10 @@ fn run() -> Result<()> {
                     }
                 }
             });
+        if let Some(copy) = app.take_text_copy() {
+            ctx.copy_text(copy.text);
+            app.finish_text_copy(copy.id, Ok(basalgrim::clipboard::Destination::System));
+        }
         app.persist_preferences(settings_path.as_deref());
         if app.quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);

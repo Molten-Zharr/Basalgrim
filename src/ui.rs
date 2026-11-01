@@ -3,6 +3,7 @@ mod conflicts;
 mod dialogs;
 mod files;
 mod operations;
+mod path;
 mod selection;
 mod settings;
 pub mod theme;

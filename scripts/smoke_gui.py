@@ -146,7 +146,7 @@ def wait_for(predicate, description):
 
 def type_text(text):
     for c in text:
-        name = {'/':'slash', '.':'period', '-':'minus', '_':'underscore'}.get(c,c)
+        name = {'/':'slash', '.':'period', '-':'minus', '_':'underscore', ' ':'space'}.get(c,c)
         if c == '_': chord('minus', 'Shift_L')
         else: key(name)
 
@@ -238,6 +238,9 @@ try:
             screenshot(window,'native-keyboard-failure.png'); raise
         finally: stop(process,log)
         preferences=json.loads(settings.read_text())
+        # Emulate settings from before CopyPath existed. Its migration must
+        # preserve a user-owned Ctrl+Shift+C and assign the new command freely.
+        preferences['bindings']=[b for b in preferences['bindings'] if b['action']!='CopyPath']
         for b in preferences['bindings']:
             if b['action'] in ('Copy','Cut','Paste'): b['key']['shift']=True
         settings.write_text(json.dumps(preferences))
@@ -619,6 +622,26 @@ try:
             key('F6');time.sleep(.3);screenshot(window,'native-undo-history.png')
             chord('q','Control_L');process.wait(timeout=5);assert process.returncode==0
             print('Native GUI undo: Ctrl+Z/Y, F6 mouse, compact layout, restart, conflicts and edited-file guard passed',flush=True)
+        finally:stop(process,log)
+        path_parent=base/'path parent';path_dir=path_parent/'Кириллица spaces';path_dir.mkdir(parents=True)
+        settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'light'}))
+        process,window,log=launch(path_dir,config)
+        def copied_path():
+            return subprocess.check_output([xclip,'-selection','clipboard','-out'],timeout=3).decode()
+        try:
+            click(window,159,8);wait_for(lambda:copied_path()==str(path_dir),'GUI copy full Unicode path')
+            chord('l','Control_L');chord('c','Control_L');assert copied_path()==str(path_dir);key('Escape')
+            parent_x=25+sum(len(part)+3 for part in path_parent.parts[:-1])+1
+            click(window,parent_x,8);click(window,159,8)
+            wait_for(lambda:copied_path()==str(path_parent),'GUI ancestor breadcrumb')
+            click(window,26,8);click(window,159,8);wait_for(lambda:copied_path()=='/','GUI root breadcrumb')
+            click(window,165,8);type_text(str(path_parent));key('Return');time.sleep(.2)
+            click(window,159,8);wait_for(lambda:copied_path()==str(path_parent),'GUI mouse path editor replaces selection')
+            x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.3)
+            click(window,39,8);assert copied_path()==str(path_parent),'GUI compact path copy'
+            screenshot(window,'native-path-compact.png')
+            chord('q','Control_L');process.wait(timeout=5);assert process.returncode==0
+            print('Native GUI paths: Unicode clipboard, Ctrl+L/C, ancestors, root, mouse editor and compact copy passed',flush=True)
         finally:stop(process,log)
     print('Verified binary:', binary, hashlib.sha256(binary.read_bytes()).hexdigest(), flush=True)
 finally:

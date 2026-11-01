@@ -432,6 +432,28 @@ fn main() -> Result<()> {
     image_app.update_preview();
     settle(&mut image_app)?;
     render(&mut image_app, &out, "image-preview", 150, 44)?;
+    let path = demo.path().join("Projects/Basalgrim/src/ui");
+    fs::create_dir_all(&path)?;
+    image_app.settings.preview = false;
+    image_app.navigate(path, true);
+    settle(&mut image_app)?;
+    render(&mut image_app, &out, "paths", 120, 28)?;
+    render(&mut image_app, &out, "paths-minimum", 34, 14)?;
+    let more = image_app
+        .hits
+        .iter()
+        .find_map(|(r, t)| matches!(t, Target::PathParents { .. }).then_some(*r))
+        .unwrap();
+    image_app.handle(Input::Click {
+        x: more.x,
+        y: more.y,
+        double: false,
+        toggle: false,
+    });
+    render(&mut image_app, &out, "path-parents", 50, 20)?;
+    image_app.cancel_dialog();
+    image_app.action(Action::Path);
+    render(&mut image_app, &out, "path-editor", 100, 28)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

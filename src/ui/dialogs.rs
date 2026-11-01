@@ -3,6 +3,10 @@ use crate::app::Dialog;
 use ratatui::widgets::{Clear, Wrap};
 
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
+    if matches!(app.dialog, Some(Dialog::Paths(_))) {
+        super::path::menu(app, frame, palette);
+        return;
+    }
     if matches!(app.dialog, Some(Dialog::Commands(_))) {
         super::commands::render(app, frame, palette);
         return;
@@ -55,6 +59,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         | Dialog::Operations
         | Dialog::Conflict(_)
         | Dialog::Commands(_) => unreachable!(),
+        Dialog::Paths(_) => unreachable!(),
     };
     let block = panel(palette, format!(" {title} "), true);
     let inner = block.inner(rect);
@@ -66,21 +71,36 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         | Dialog::Operations
         | Dialog::Conflict(_)
         | Dialog::Commands(_) => unreachable!(),
+        Dialog::Paths(_) => unreachable!(),
         Dialog::Edit {
-            text: value, error, ..
+            kind,
+            text: value,
+            error,
+            ..
         } => {
             lines.push(Line::styled(
                 format!(
                     " {}▏",
-                    tail(value, usize::from(inner.width.saturating_sub(3)))
+                    tail(
+                        &fs::clean(value),
+                        usize::from(inner.width.saturating_sub(3))
+                    )
                 ),
-                palette.selection(),
+                if matches!(kind, crate::app::EditKind::Path(_)) && !app.path_text_selected {
+                    palette.text()
+                } else {
+                    palette.selection()
+                },
             ));
             lines.push(Line::raw(""));
             lines.push(Line::styled(
-                error
-                    .clone()
-                    .unwrap_or_else(|| " Ctrl+U — очистить · Backspace — удалить символ".into()),
+                error.clone().unwrap_or_else(|| {
+                    if matches!(kind, crate::app::EditKind::Path(_)) {
+                        " Ctrl+A — выделить · Ctrl+C — копировать · Ctrl+U — очистить".into()
+                    } else {
+                        " Ctrl+U — очистить · Backspace — удалить символ".into()
+                    }
+                }),
                 palette.muted(),
             ));
         }
@@ -163,6 +183,21 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         inner.width.saturating_sub(2),
         1,
     );
+    if matches!(
+        app.dialog,
+        Some(Dialog::Edit {
+            kind: crate::app::EditKind::Path(_),
+            ..
+        })
+    ) {
+        hit(
+            app,
+            Rect::new(inner.x, inner.y + 1, inner.width, 1),
+            Target::PathTextSelect,
+        );
+        super::path::editor_footer(app, frame, bottom, palette);
+        return;
+    }
     let confirm = Rect::new(bottom.x, bottom.y, 22.min(bottom.width), 1);
     frame.render_widget(
         Paragraph::new(if matches!(app.dialog, Some(Dialog::Trash(_))) {

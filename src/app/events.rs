@@ -60,7 +60,9 @@ impl App {
             }
             Input::Text(text) => self.insert_text(&text),
             Input::Key(key) => self.key(key),
-            Input::SecondaryClick { .. } if matches!(self.dialog, Some(Dialog::Commands(_))) => {
+            Input::SecondaryClick { .. }
+                if matches!(self.dialog, Some(Dialog::Commands(_) | Dialog::Paths(_))) =>
+            {
                 self.dialog = None;
             }
             Input::SecondaryClick { x, y } if self.dialog.is_none() => {
@@ -71,6 +73,16 @@ impl App {
                     .rev()
                     .find(|(r, _)| r.contains(point))
                     .map(|(_, t)| t.clone());
+                if let Some(
+                    Target::PathGo { owner, .. }
+                    | Target::PathCopy(owner)
+                    | Target::PathEdit(owner)
+                    | Target::PathParents { owner, .. },
+                ) = &target
+                {
+                    self.path_parents(owner.clone(), point);
+                    return;
+                }
                 if let Some(Target::Entry { pane, index } | Target::EntryMark { pane, index }) =
                     target
                 {
@@ -110,8 +122,36 @@ impl App {
                     }
                     Some(Target::ConflictChoice(choice)) => self.choose_conflict(choice),
                     Some(Target::ConflictRemaining) => self.toggle_conflict_remaining(),
+                    Some(Target::PathParent(index))
+                        if matches!(self.dialog, Some(Dialog::Paths(_))) =>
+                    {
+                        self.choose_parent(index)
+                    }
+                    Some(Target::PathScroll(delta))
+                        if matches!(self.dialog, Some(Dialog::Paths(_))) =>
+                    {
+                        self.scroll_paths(delta)
+                    }
+                    Some(Target::PathMenuCopy) if matches!(self.dialog, Some(Dialog::Paths(_))) => {
+                        self.copy_menu_path()
+                    }
+                    Some(Target::PathMenuEdit) if matches!(self.dialog, Some(Dialog::Paths(_))) => {
+                        self.edit_menu_path()
+                    }
+                    Some(Target::PathTextCopy) => self.copy_path_text(),
+                    Some(Target::PathTextSelect)
+                        if matches!(
+                            self.dialog,
+                            Some(Dialog::Edit {
+                                kind: EditKind::Path(_),
+                                ..
+                            })
+                        ) =>
+                    {
+                        self.path_text_selected = true
+                    }
                     Some(Target::DismissMenu)
-                        if matches!(self.dialog, Some(Dialog::Commands(_))) =>
+                        if matches!(self.dialog, Some(Dialog::Commands(_) | Dialog::Paths(_))) =>
                     {
                         self.cancel_dialog()
                     }
@@ -181,6 +221,12 @@ impl App {
                         }
                     }
                     _ if self.dialog.is_some() => {}
+                    Some(Target::PathGo { owner, path }) => self.go_path(owner, path),
+                    Some(Target::PathCopy(owner)) if owner.valid(self) => {
+                        self.copy_path(&owner.cwd)
+                    }
+                    Some(Target::PathEdit(owner)) => self.edit_path(owner),
+                    Some(Target::PathParents { owner, anchor }) => self.path_parents(owner, anchor),
                     Some(Target::Action(a)) => self.action(a),
                     Some(Target::Place(path)) => self.navigate(path, true),
                     Some(Target::Tab { pane, index }) => {
@@ -210,6 +256,9 @@ impl App {
             }
             Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::Commands(_))) => {
                 self.scroll_commands(delta as isize * 3)
+            }
+            Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::Paths(_))) => {
+                self.scroll_paths(delta as isize * 3)
             }
             Input::Scroll { x, y, delta } if matches!(self.dialog, Some(Dialog::Operations)) => {
                 if self.operations_details_area.contains(Position::new(x, y)) {
@@ -286,9 +335,16 @@ impl App {
     }
     fn insert_text(&mut self, text: &str) {
         if let Some(Dialog::Edit {
-            text: value, error, ..
+            kind,
+            text: value,
+            error,
+            ..
         }) = &mut self.dialog
         {
+            if matches!(kind, EditKind::Path(_)) && self.path_text_selected {
+                value.clear();
+                self.path_text_selected = false;
+            }
             let remaining = 4096usize.saturating_sub(value.chars().count());
             value.extend(text.chars().filter(|c| !c.is_control()).take(remaining));
             *error = None;
@@ -329,6 +385,10 @@ impl App {
     }
     fn key(&mut self, press: KeyPress) {
         let press = press.normalized();
+        if matches!(self.dialog, Some(Dialog::Paths(_))) {
+            self.path_menu_key(press);
+            return;
+        }
         if matches!(self.dialog, Some(Dialog::Conflict(_))) {
             self.conflict_key(press);
             return;
@@ -372,6 +432,34 @@ impl App {
             return;
         }
         if self.dialog.is_some() {
+            if matches!(
+                self.dialog,
+                Some(Dialog::Edit {
+                    kind: EditKind::Path(_),
+                    ..
+                })
+            ) {
+                if press == KeyPress::ctrl('c') {
+                    self.copy_path_text();
+                    return;
+                }
+                if press == KeyPress::ctrl('a') {
+                    self.path_text_selected = true;
+                    return;
+                }
+                if self.path_text_selected
+                    && matches!(key, Key::Backspace | Key::Delete)
+                    && !ctrl
+                    && !alt
+                {
+                    if let Some(Dialog::Edit { text, error, .. }) = &mut self.dialog {
+                        text.clear();
+                        *error = None;
+                    }
+                    self.path_text_selected = false;
+                    return;
+                }
+            }
             if matches!(self.dialog, Some(Dialog::Help)) {
                 let delta = match key {
                     Key::Down => 1,
@@ -405,6 +493,7 @@ impl App {
                     if let Some(Dialog::Edit { text, .. }) = &mut self.dialog {
                         text.clear();
                     }
+                    self.path_text_selected = false;
                     self.live_search();
                 }
                 _ => {}

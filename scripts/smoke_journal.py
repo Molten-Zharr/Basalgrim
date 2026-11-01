@@ -51,11 +51,16 @@ def main():
             child=subprocess.Popen([str(binary),'--no-session',str(files)],env=env,stdin=slave,stdout=slave,stderr=slave)
             wait_for(lambda:'seed.txt' in text() and bool(rows('SELECT id FROM owners')),'startup journal')
         def stop():
+            wait_for(lambda:'Стоп' not in text().splitlines()[-1],'UI worker completion before quit')
             send(b'\x11');child.wait(timeout=5);assert child.returncode==0
             os.close(master);os.close(slave)
         def navigate(path):send(b'\x0c\x15');send(str(path));send(b'\r')
         def search(name):send(b'/\x15');send(name);send(b'\r')
-        def completed(count):wait_for(lambda:rows("SELECT COUNT(*) FROM operations WHERE state='done'")==[(count,)],'durable operation result')
+        def completed(count):
+            wait_for(lambda:rows("SELECT COUNT(*) FROM operations WHERE state='done'")==[(count,)],'durable operation result')
+            # The journal commit precedes delivery of the worker event to App.
+            # New commands and Quit must wait for that UI acknowledgement too.
+            wait_for(lambda:'Стоп' not in text().splitlines()[-1],'UI worker completion')
         try:
             launch();send(b'\x0e');send('created.txt');send(b'\r');completed(1)
             search('created.txt');send(b'\x1b[15;5~');completed(2)

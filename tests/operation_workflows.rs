@@ -20,6 +20,54 @@ fn settle(app: &mut App) {
         std::thread::sleep(Duration::from_millis(1));
     }
 }
+
+#[test]
+fn confirming_during_previous_worker_completion_preserves_the_dialog_and_input() {
+    use basalgrim::app::EditKind;
+    let root = tempfile::tempdir().unwrap();
+    let mut app = App::new(root.path().into(), Settings::default());
+    settle(&mut app);
+    // The filesystem effect may be visible before the UI receives completion.
+    app.start_operation(Operation::Create {
+        parent: root.path().into(),
+        name: "previous.txt".into(),
+        directory: false,
+    });
+    let end = Instant::now() + Duration::from_secs(5);
+    while !root.path().join("previous.txt").exists() {
+        assert!(Instant::now() < end);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(app.busy);
+    for kind in [
+        EditKind::File,
+        EditKind::Folder,
+        EditKind::Rename(root.path().join("source")),
+    ] {
+        app.dialog = Some(Dialog::Edit {
+            kind,
+            text: "entered-name".into(),
+            error: None,
+        });
+        app.confirm_dialog();
+        assert!(matches!(app.dialog,Some(Dialog::Edit { ref text, .. }) if text == "entered-name"));
+        assert!(app.notice_error);
+        assert_eq!(app.operation_count, 0);
+    }
+    app.dialog = Some(Dialog::Trash(vec![root.path().join("source")]));
+    app.confirm_dialog();
+    assert!(matches!(app.dialog, Some(Dialog::Trash(_))));
+    app.dialog = None;
+    settle(&mut app);
+    app.dialog = Some(Dialog::Edit {
+        kind: EditKind::File,
+        text: "entered-name".into(),
+        error: None,
+    });
+    app.confirm_dialog();
+    settle(&mut app);
+    assert!(root.path().join("entered-name").exists());
+}
 fn render(app: &mut App, width: u16, height: u16) -> ratatui::buffer::Buffer {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal.draw(|frame| ui::render(app, frame)).unwrap();

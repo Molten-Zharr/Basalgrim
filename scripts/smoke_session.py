@@ -68,7 +68,8 @@ def main():
             assert first['active']==1 and [p['active'] for p in first['panes']]==[1,1]
             assert [p['tabs'] for p in first['panes']]==[[str(dirs[0]),str(dirs[1])],[str(dirs[2]),str(dirs[3])]]
             launch()
-            assert str(dirs[1]) in text() and str(dirs[3]) in text()
+            trail=lambda path:' › '.join(path.parts)
+            assert trail(dirs[1]) in text() and trail(dirs[3]) in text()
             send(b'\x03'); navigate(dirs[0]); send(b'\x16')
             wait_for(lambda:'Совпадение имён' in text(),'restored active pane and focused entry')
             send(b'\r')
