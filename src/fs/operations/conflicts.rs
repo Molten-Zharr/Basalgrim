@@ -73,6 +73,10 @@ impl Replacement {
         let parent = destination.parent().context("Нет родителя цели")?;
         let dir = tempfile::Builder::new()
             .prefix(".basalgrim-replaced-")
+            .permissions({
+                use std::os::unix::fs::PermissionsExt;
+                fs::Permissions::from_mode(0o700)
+            })
             .tempdir_in(parent)?
             .keep();
         let backup = dir.join(destination.file_name().context("Нельзя заменить корень")?);

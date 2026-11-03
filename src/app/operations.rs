@@ -211,6 +211,10 @@ impl App {
     pub(super) fn operations_key(&mut self, press: crate::input::KeyPress) {
         use crate::input::Key;
         match self.settings.action_for(press) {
+            Some(Action::HistoryStorage) => {
+                self.open_history_storage();
+                return;
+            }
             Some(Action::Undo) => {
                 self.replay_operation(false);
                 return;

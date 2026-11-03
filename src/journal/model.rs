@@ -87,6 +87,7 @@ pub struct Spec {
 }
 pub fn specs(operation: &Operation) -> Vec<Spec> {
     match operation {
+        Operation::CleanupHistory { .. } => Vec::new(),
         Operation::DeleteTrash { targets, .. } => targets
             .iter()
             .map(|target| Spec {

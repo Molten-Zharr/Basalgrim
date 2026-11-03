@@ -326,7 +326,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
                             palette.accent(),
                         ));
                     }
-                } else {
+                } else if !journal.history.disposed {
                     for retained in &item.recovery_paths {
                         lines.push(Line::styled(
                             format!(
@@ -424,6 +424,16 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Target::Cancel,
         palette,
     );
+    if !app.busy && app.journal_enabled && footer.width > 14 {
+        button(
+            app,
+            frame,
+            Rect::new(footer.x + 12, y, footer.width - 12, 1),
+            " Хранилище undo/redo ".into(),
+            Target::Action(Action::HistoryStorage),
+            palette,
+        );
+    }
     if app.busy && footer.width > 15 {
         button(
             app,

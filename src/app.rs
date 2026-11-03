@@ -6,6 +6,8 @@ mod directories;
 pub use commands::{CommandItem, CommandMenu, MenuContext};
 mod events;
 mod journal;
+mod storage;
+pub use storage::StorageView;
 mod operations;
 mod path;
 pub use path::{PathMenu, PathOwner};
@@ -54,6 +56,9 @@ pub enum Target {
         start: usize,
     },
     JournalRefresh,
+    StorageRefresh,
+    StoragePolicy,
+    StorageClear,
     ConflictChoice(crate::conflicts::Choice),
     ConflictRemaining,
     Command(usize),
@@ -113,6 +118,8 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    HistoryStorage,
+    CleanupHistory(crate::journal::storage::Selection),
     DeleteTrash {
         targets: Vec<crate::trash::Deletion>,
         empty: bool,
@@ -167,6 +174,7 @@ pub struct App {
     pub journal_enabled: bool,
     pub journal_loading: bool,
     pub journal_error: Option<String>,
+    pub history_storage: StorageView,
     pub dialog: Option<Dialog>,
     pub clipboard: Option<Clipboard>,
     text_copy: Option<crate::clipboard::TextCopy>,
@@ -264,6 +272,7 @@ impl App {
             journal_enabled: false,
             journal_loading: false,
             journal_error: None,
+            history_storage: StorageView::default(),
             dialog: None,
             clipboard: None,
             text_copy: None,
@@ -361,6 +370,7 @@ impl App {
         self.panes.iter().flat_map(|p| &p.tabs).any(|t| t.loading)
             || self.preview_loading
             || self.busy
+            || self.history_storage.loading
             || self.trash.as_ref().is_some_and(|t| t.loading)
     }
     pub fn text_active(&self) -> bool {
@@ -423,6 +433,9 @@ impl App {
             match event {
                 Event::Trash { token, result } => self.accept_trash(token, result),
                 Event::Journal { token, result } => self.accept_journal(token, result),
+                Event::HistoryStorage { token, result } => {
+                    self.accept_history_storage(token, result)
+                }
                 Event::Conflict {
                     token,
                     request,

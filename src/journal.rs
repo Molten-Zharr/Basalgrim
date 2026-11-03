@@ -3,6 +3,7 @@ mod lineage;
 mod model;
 mod recorder;
 pub(crate) mod snapshot;
+pub mod storage;
 pub(crate) mod trash;
 mod undo;
 use anyhow::{Context, Result, ensure};
@@ -256,7 +257,7 @@ impl Database {
         for row in rows {
             let (index, kind, source, target, before, after, state, inverse, issue) = row?;
             let recovery_paths = if matches!(state.as_str(), "uncertain" | "partial" | "failed") {
-                let mut stmt=self.connection.prepare("SELECT destination FROM steps WHERE operation_id=?1 AND item=?2 AND destination IS NOT NULL AND kind IN ('claim_source','replace_claim','staging','publish','replay_restore','delete_claim') ORDER BY id DESC LIMIT 20")?;
+                let mut stmt=self.connection.prepare("SELECT CASE WHEN kind='history_delete' THEN source ELSE destination END FROM steps WHERE operation_id=?1 AND item=?2 AND (destination IS NOT NULL OR kind='history_delete') AND kind IN ('claim_source','replace_claim','staging','publish','replay_restore','delete_claim','history_delete') ORDER BY id DESC LIMIT 20")?;
                 stmt.query_map(params![id, index], |r| r.get(0))?
                     .collect::<rusqlite::Result<_>>()?
             } else {
@@ -338,5 +339,6 @@ fn recover(connection: &mut Connection, locks: &Path) -> Result<()> {
         }
     }
     connection.execute("UPDATE undo_items SET state='uncertain',issue='Прерванная отмена/повтор: требуется проверка сохранённых путей' WHERE state='busy' AND last_run IN (SELECT id FROM operations WHERE state!='running')", [])?;
+    connection.execute("UPDATE undo_items SET state='discard_failed',issue='Прерванная очистка: проверьте сохранённые пути; автоматическое удаление отключено' WHERE state='discarding' AND last_run IN (SELECT id FROM operations WHERE state!='running')", [])?;
     Ok(())
 }

@@ -123,6 +123,7 @@ pub enum Input {
 pub enum Action {
     Commands,
     Operations,
+    HistoryStorage,
     CancelOperation,
     Undo,
     Redo,
@@ -206,6 +207,7 @@ impl Action {
         Self::FontLarger,
         Self::FontSmaller,
         Self::Operations,
+        Self::HistoryStorage,
         Self::CancelOperation,
         Self::Undo,
         Self::Redo,
@@ -220,6 +222,7 @@ impl Action {
         match self {
             Self::Commands => "Меню действий",
             Self::Operations => "Операции",
+            Self::HistoryStorage => "Хранилище undo/redo",
             Self::CancelOperation => "Отменить текущую операцию",
             Self::Undo => "Отменить завершённую операцию",
             Self::Redo => "Повторить отменённую операцию",
@@ -351,6 +354,14 @@ pub fn default_bindings() -> Vec<Binding> {
     result.push(Binding {
         action: Operations,
         key: KeyPress::plain(Key::F(6)),
+    });
+    result.push(Binding {
+        action: HistoryStorage,
+        key: KeyPress {
+            ctrl: true,
+            shift: true,
+            ..KeyPress::plain(Key::F(6))
+        },
     });
     result.push(Binding {
         action: CancelOperation,

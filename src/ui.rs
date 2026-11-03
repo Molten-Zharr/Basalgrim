@@ -6,6 +6,7 @@ mod operations;
 mod path;
 mod selection;
 mod settings;
+mod storage;
 pub mod theme;
 mod trash;
 
@@ -90,6 +91,14 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     }
     if matches!(app.dialog, Some(crate::app::Dialog::Operations)) {
         operations::render(app, frame, palette);
+        return;
+    }
+    if matches!(
+        app.dialog,
+        Some(crate::app::Dialog::HistoryStorage | crate::app::Dialog::CleanupHistory(_))
+    ) {
+        storage::render(app, frame, palette);
+        dialogs::render(app, frame, palette);
         return;
     }
     if matches!(

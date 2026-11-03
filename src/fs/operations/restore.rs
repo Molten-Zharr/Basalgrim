@@ -12,6 +12,10 @@ pub(super) fn run(
     let target = entry.target(destination)?;
     let holding = tempfile::Builder::new()
         .prefix(".basalgrim-restore-")
+        .permissions({
+            use std::os::unix::fs::PermissionsExt;
+            fs::Permissions::from_mode(0o700)
+        })
         .tempdir_in(&entry.root.directory)?
         .keep();
     let parked = holding.join("info");

@@ -35,7 +35,10 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         super::settings::capture(app, frame, palette, *index, error.clone());
         return;
     }
-    if matches!(app.dialog, Some(Dialog::Settings | Dialog::Operations)) {
+    if matches!(
+        app.dialog,
+        Some(Dialog::Settings | Dialog::Operations | Dialog::HistoryStorage)
+    ) {
         return;
     }
     let Some(dialog) = &app.dialog else {
@@ -77,9 +80,11 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Dialog::DeleteTrash { empty: true, .. } => "Очистить всю корзину?",
         Dialog::DeleteTrash { .. } => "Удалить безвозвратно?",
         Dialog::Help => "Управление · basalgrim",
+        Dialog::CleanupHistory(_) => "Очистить данные undo/redo?",
         Dialog::Settings
         | Dialog::CaptureBinding { .. }
         | Dialog::Operations
+        | Dialog::HistoryStorage
         | Dialog::Conflict(_)
         | Dialog::Commands(_) => unreachable!(),
         Dialog::Paths(_) => unreachable!(),
@@ -92,9 +97,23 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Dialog::Settings
         | Dialog::CaptureBinding { .. }
         | Dialog::Operations
+        | Dialog::HistoryStorage
         | Dialog::Conflict(_)
         | Dialog::Commands(_) => unreachable!(),
         Dialog::Paths(_) => unreachable!(),
+        Dialog::CleanupHistory(selection) => {
+            lines = vec![
+                Line::raw(format!(
+                    " Записей: {} · {}",
+                    selection.entries.len(),
+                    fs::size(selection.bytes)
+                )),
+                Line::raw(" Сохранённые файлы будут удалены."),
+                Line::raw(" Отмена и повтор этих записей"),
+                Line::raw(" станут недоступны."),
+                Line::raw(" Журнал операций сохранится."),
+            ];
+        }
         Dialog::Edit {
             kind,
             text: value,
@@ -271,7 +290,10 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     frame.render_widget(
         Paragraph::new(if matches!(app.dialog, Some(Dialog::Trash(_))) {
             " Enter  В корзину "
-        } else if matches!(app.dialog, Some(Dialog::DeleteTrash { empty: true, .. })) {
+        } else if matches!(
+            app.dialog,
+            Some(Dialog::DeleteTrash { empty: true, .. } | Dialog::CleanupHistory(_))
+        ) {
             " Enter  Очистить "
         } else if matches!(app.dialog, Some(Dialog::DeleteTrash { .. })) {
             " Enter  Удалить "

@@ -1,4 +1,5 @@
 mod operations;
+pub(crate) use operations::RetainedRemoval;
 pub(crate) use operations::operation_cancelled;
 pub(crate) use operations::operation_checkpoint;
 pub(crate) use operations::relocate_recorded;

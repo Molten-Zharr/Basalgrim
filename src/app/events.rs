@@ -202,6 +202,26 @@ impl App {
                             index.min(self.operations.len().saturating_sub(1));
                         self.operations_detail_offset = 0;
                     }
+                    Some(Target::Action(Action::HistoryStorage))
+                        if matches!(self.dialog, Some(Dialog::Operations)) =>
+                    {
+                        self.open_history_storage()
+                    }
+                    Some(Target::StorageRefresh)
+                        if matches!(self.dialog, Some(Dialog::HistoryStorage)) =>
+                    {
+                        self.refresh_history_storage()
+                    }
+                    Some(Target::StoragePolicy)
+                        if matches!(self.dialog, Some(Dialog::HistoryStorage)) =>
+                    {
+                        self.cycle_storage_policy()
+                    }
+                    Some(Target::StorageClear)
+                        if matches!(self.dialog, Some(Dialog::HistoryStorage)) =>
+                    {
+                        self.confirm_history_cleanup()
+                    }
                     Some(Target::Action(Action::CancelOperation))
                         if matches!(self.dialog, Some(Dialog::Operations)) =>
                     {
@@ -306,6 +326,13 @@ impl App {
             }
             Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::Paths(_))) => {
                 self.scroll_paths(delta as isize * 3)
+            }
+            Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::HistoryStorage)) => {
+                self.history_storage.offset = self
+                    .history_storage
+                    .offset
+                    .saturating_add_signed(delta as isize)
+                    .min(self.history_storage.maximum);
             }
             Input::Scroll { x, y, delta } if matches!(self.dialog, Some(Dialog::Operations)) => {
                 if self.operations_details_area.contains(Position::new(x, y)) {
@@ -490,6 +517,10 @@ impl App {
         }
         if matches!(self.dialog, Some(Dialog::Operations)) {
             self.operations_key(press);
+            return;
+        }
+        if matches!(self.dialog, Some(Dialog::HistoryStorage)) {
+            self.storage_key(press);
             return;
         }
         let KeyPress {

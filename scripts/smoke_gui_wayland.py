@@ -134,6 +134,30 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            import sqlite3
+            storage_files=base/"history-storage";storage_files.mkdir();(storage_files/"a.txt").write_text("keep Wayland source")
+            storage_db=base/"state/molten-zharr/basalgrim/operations.sqlite3"
+            def storage_rows(sql):
+                if not storage_db.exists():return []
+                with sqlite3.connect(storage_db) as connection:return connection.execute(sql).fetchall()
+            process=launch(storage_files);duplicate=storage_files/"a (1).txt"
+            key("F5","ctrl");wait_for(duplicate.exists,"Wayland duplicate for storage");time.sleep(.3)
+            key("z","ctrl");wait_for(lambda:not duplicate.exists(),"Wayland retained undo data");time.sleep(.3)
+            key("F6");time.sleep(.2);click(22,51);time.sleep(.3)
+            click(5,3);wait_for(lambda:json.loads(settings.read_text()).get("history_retention")=="days7","Wayland mouse retention policy")
+            for _ in range(3):click(5,3)
+            wait_for(lambda:json.loads(settings.read_text()).get("history_retention")=="all","Wayland all-record retention")
+            run("grim","-g","0,0 1360x860",str(out/"native-wayland-history-storage.png"))
+            click(5,50);key("Escape");assert storage_rows("SELECT state FROM undo_items")==[("undone",)]
+            click(5,50);key("Return");wait_for(lambda:storage_rows("SELECT state FROM undo_items")==[("expired",)],"Wayland confirmed storage cleanup")
+            assert (storage_files/"a.txt").read_text()=="keep Wayland source" and not duplicate.exists()
+            key("q","ctrl");process.wait(timeout=5);process=launch(storage_files)
+            key("y","ctrl");time.sleep(.2);assert not duplicate.exists(),"Wayland redo survived cleanup"
+            key("F6","ctrl","shift");time.sleep(.3)
+            run("grim","-g","0,0 1360x860",str(out/"native-wayland-history-storage-restart.png"))
+            key("Escape");key("q","ctrl");process.wait(timeout=5);process=None
+            print("Native Wayland history storage: mouse policy, confirmation, cleanup, shortcut and restart passed",flush=True)
+            if '--history-storage-only' in sys.argv[2:]:return
             files = base / "files"
             source, destination = files / "source", files / "destination"
             source.mkdir(parents=True); destination.mkdir()

@@ -17,6 +17,7 @@ pub struct Settings {
     pub dual: bool,
     pub hidden: bool,
     pub restore_session: bool,
+    pub history_retention: crate::journal::storage::Retention,
     #[serde(flatten)]
     pub appearance: Appearance,
     pub bindings: Vec<Binding>,
@@ -29,6 +30,7 @@ impl Default for Settings {
             dual: false,
             hidden: false,
             restore_session: true,
+            history_retention: Default::default(),
             appearance: Appearance::default(),
             bindings: input::default_bindings(),
         }
@@ -81,6 +83,7 @@ impl Settings {
         // including keys that were free before the commands were introduced.
         for action in [
             Action::Operations,
+            Action::HistoryStorage,
             Action::CancelOperation,
             Action::Commands,
             Action::CopyToOtherPane,

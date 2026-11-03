@@ -45,6 +45,7 @@ impl App {
                 Sort,
                 Refresh,
                 Operations,
+                HistoryStorage,
             ],
             MenuContext::Entries => &[
                 Open,
@@ -75,6 +76,7 @@ impl App {
                 MoveToOtherPane,
                 Duplicate,
                 Operations,
+                HistoryStorage,
                 Undo,
                 Redo,
                 CancelOperation,
@@ -145,6 +147,7 @@ impl App {
                     CancelOperation => self.busy,
                     Undo => self.replay_candidate(false).is_some(),
                     Redo => self.replay_candidate(true).is_some(),
+                    HistoryStorage => self.journal_enabled,
                     CloseTab | NextTab => self.panes[self.active].tabs.len() > 1,
                     NextPane => self.settings.dual,
                     Back => !self.tab().back.is_empty(),

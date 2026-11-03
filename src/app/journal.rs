@@ -5,6 +5,7 @@ impl App {
         self.configure_journal(Some(path));
     }
     pub fn configure_journal(&mut self, path: Option<PathBuf>) {
+        self.history_storage.cancel_request();
         self.journal_enabled = true;
         self.journal_path = path.clone();
         self.request_journal(path, true);

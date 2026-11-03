@@ -2,6 +2,12 @@ use super::*;
 
 impl App {
     pub fn action(&mut self, action: Action) {
+        if action == Action::HistoryStorage
+            && matches!(self.dialog, None | Some(Dialog::Operations))
+        {
+            self.open_history_storage();
+            return;
+        }
         if self.in_trash() && self.dialog.is_none() && self.trash_action(action) {
             return;
         }
@@ -297,6 +303,7 @@ impl App {
             }
             Action::Quit
             | Action::Operations
+            | Action::HistoryStorage
             | Action::CancelOperation
             | Action::Commands
             | Action::Undo
@@ -307,6 +314,15 @@ impl App {
         self.update_preview();
     }
     pub fn cancel_dialog(&mut self) {
+        if matches!(self.dialog, Some(Dialog::CleanupHistory(_))) {
+            self.dialog = Some(Dialog::HistoryStorage);
+            return;
+        }
+        if matches!(self.dialog, Some(Dialog::HistoryStorage)) {
+            self.history_storage.cancel_request();
+            self.dialog = Some(Dialog::Operations);
+            return;
+        }
         if matches!(self.dialog, Some(Dialog::Conflict(_))) {
             self.choose_conflict(crate::conflicts::Choice::Cancel);
             return;
@@ -356,6 +372,7 @@ impl App {
                 self.dialog,
                 Some(
                     Dialog::Trash(_)
+                        | Dialog::CleanupHistory(_)
                         | Dialog::DeleteTrash { .. }
                         | Dialog::RestoreTrash { .. }
                         | Dialog::Edit {
@@ -381,6 +398,12 @@ impl App {
             return;
         };
         match dialog {
+            Dialog::HistoryStorage => self.dialog = Some(Dialog::HistoryStorage),
+            Dialog::CleanupHistory(selection) => {
+                self.start_operation(Operation::CleanupHistory { selection });
+                self.history_storage.catalog = None;
+                self.dialog = Some(Dialog::Operations);
+            }
             Dialog::DeleteTrash { targets, empty } => {
                 self.start_operation(Operation::DeleteTrash { targets, empty })
             }

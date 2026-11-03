@@ -115,7 +115,7 @@ impl<'a> Recorder<'a> {
             "UPDATE items SET state='running',before=?3 WHERE operation_id=?1 AND sequence=?2",
             params![self.id, index as i64, serde_json::to_vec(&before)?],
         )?;
-        let irreversible = spec.kind == "delete_trash";
+        let irreversible = matches!(spec.kind, "delete_trash" | "cleanup_history");
         self.current = Some(Current {
             index,
             target: spec.target.clone(),

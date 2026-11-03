@@ -12,6 +12,7 @@ mod conflicts;
 #[cfg(target_os = "linux")]
 mod cross_device;
 mod delete_trash;
+pub(crate) use delete_trash::RetainedRemoval;
 mod restore;
 
 #[derive(Debug, Clone)]
@@ -24,6 +25,9 @@ pub struct RetainedCopy {
 
 #[derive(Debug, Clone)]
 pub enum Operation {
+    CleanupHistory {
+        selection: crate::journal::storage::Selection,
+    },
     Create {
         parent: PathBuf,
         name: String,
@@ -62,6 +66,7 @@ pub enum Operation {
 impl Operation {
     pub fn title(&self) -> &'static str {
         match self {
+            Self::CleanupHistory { .. } => "Очистка undo/redo",
             Self::Create {
                 directory: true, ..
             } => "Создание папки",
@@ -80,6 +85,7 @@ impl Operation {
     }
     pub fn total(&self) -> usize {
         match self {
+            Self::CleanupHistory { selection } => selection.entries.len(),
             Self::Transfer { sources, .. }
             | Self::Duplicate { sources, .. }
             | Self::Trash { sources } => sources.len(),
@@ -91,6 +97,7 @@ impl Operation {
     }
     pub fn destination(&self) -> Option<PathBuf> {
         match self {
+            Self::CleanupHistory { .. } => None,
             Self::Transfer { destination, .. } | Self::Duplicate { destination, .. } => {
                 Some(destination.clone())
             }
@@ -717,7 +724,9 @@ fn operate_inner(
                     control.conclude_item(outcome, completed, skipped)?;
                 }
             }
-            Operation::Replay { .. } => bail!("Для отмены/повтора требуется устойчивый журнал"),
+            Operation::Replay { .. } | Operation::CleanupHistory { .. } => {
+                bail!("Требуется устойчивый журнал")
+            }
             Operation::Create {
                 parent,
                 name,

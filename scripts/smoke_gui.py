@@ -208,6 +208,42 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        # A separate private journal keeps permanent storage disposal independent
+        # of the other GUI scenarios and of all host/user files.
+        import sqlite3
+        storage_files=base/'history-storage';storage_files.mkdir();(storage_files/'a.txt').write_text('keep source')
+        storage_config=base/'history-storage-home/config';storage_settings=storage_config/'molten-zharr/basalgrim/settings.json'
+        storage_settings.parent.mkdir(parents=True);storage_settings.write_text(settings.read_text())
+        storage_db=storage_config.parent/'state/molten-zharr/basalgrim/operations.sqlite3'
+        def storage_rows(sql):
+            if not storage_db.exists():return []
+            with sqlite3.connect(storage_db) as connection:return connection.execute(sql).fetchall()
+        process,window,log=launch(storage_files,storage_config)
+        try:
+            duplicate=storage_files/'a (1).txt'
+            chord('F5','Control_L');wait_for(duplicate.exists,'GUI duplicate for storage');time.sleep(.3)
+            chord('z','Control_L');wait_for(lambda:not duplicate.exists(),'GUI retained undo data');time.sleep(.3)
+            key('F6');time.sleep(.3);click(window,22,51);time.sleep(.4)
+            x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.3)
+            click(window,5,3)
+            wait_for(lambda:json.loads(storage_settings.read_text()).get('history_retention')=='days7','GUI mouse retention policy')
+            for _ in range(3):click(window,5,3)
+            wait_for(lambda:json.loads(storage_settings.read_text()).get('history_retention')=='all','GUI all-record retention')
+            screenshot(window,'native-history-storage-compact.png')
+            click(window,5,19);key('Escape');assert storage_rows("SELECT state FROM undo_items")==[('undone',)]
+            click(window,5,19);screenshot(window,'native-history-storage-confirm.png');key('Return')
+            wait_for(lambda:storage_rows("SELECT state FROM undo_items")==[('expired',)],'GUI confirmed storage cleanup')
+            assert (storage_files/'a.txt').read_text()=='keep source' and not duplicate.exists()
+            quit_when_ready(process)
+        finally:stop(process,log)
+        process,window,log=launch(storage_files,storage_config)
+        try:
+            chord('y','Control_L');time.sleep(.25);assert not duplicate.exists(),'GUI redo survived cleanup'
+            chord('F6','Control_L','Shift_L');time.sleep(.3);screenshot(window,'native-history-storage.png')
+            key('Escape');quit_when_ready(process)
+        finally:stop(process,log)
+        print('Native GUI history storage: compact mouse, policy persistence, confirmation, cleanup and restart passed',flush=True)
+        if '--history-storage-only' in sys.argv[2:]:sys.exit(0)
         clipboard_atom=x.XInternAtom(d,b'CLIPBOARD',0)
         assert x.XGetSelectionOwner(d,clipboard_atom)==0, 'Clipboard must start empty'
         process,window,log=launch(source,config)

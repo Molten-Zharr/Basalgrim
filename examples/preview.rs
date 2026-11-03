@@ -378,8 +378,12 @@ fn main() -> Result<()> {
         directory: false,
     });
     settle(&mut history)?;
+    fs::write(
+        demo.path().join("Operations/retained-notes.txt"),
+        "Notes retained for redo.\n".repeat(4096),
+    )?;
     history.start_operation(basalgrim::fs::Operation::Duplicate {
-        sources: vec![demo.path().join("Operations/history-note.txt")],
+        sources: vec![demo.path().join("Operations/retained-notes.txt")],
         destination: demo.path().join("Operations"),
     });
     settle(&mut history)?;
@@ -407,6 +411,14 @@ fn main() -> Result<()> {
     settle(&mut history)?;
     render(&mut history, &out, "undo", 120, 36)?;
     render(&mut history, &out, "undo-compact", 34, 14)?;
+    history.action(Action::HistoryStorage);
+    settle(&mut history)?;
+    render(&mut history, &out, "history-storage", 100, 28)?;
+    render(&mut history, &out, "history-storage-compact", 34, 14)?;
+    history.confirm_history_cleanup();
+    render(&mut history, &out, "history-storage-confirm", 68, 18)?;
+    history.cancel_dialog();
+    history.cancel_dialog();
     fs::write(
         demo.path().join("landscape.svg"),
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">

@@ -17,6 +17,10 @@ mod watch;
 pub type DirectoryResult = Result<(PathBuf, Vec<Entry>), String>;
 
 pub enum Event {
+    HistoryStorage {
+        token: u64,
+        result: Result<crate::journal::storage::Catalog, String>,
+    },
     Trash {
         token: u64,
         result: Result<crate::trash::Catalog, String>,
@@ -46,6 +50,10 @@ pub enum Event {
     Open(Result<(), String>),
 }
 enum Task {
+    HistoryStorage {
+        token: u64,
+        cancellation: Cancellation,
+    },
     Journal {
         token: u64,
         path: Option<PathBuf>,
@@ -191,6 +199,21 @@ impl Worker {
             let mut journal_path: Option<PathBuf> = None;
             for task in rx {
                 let event = match task {
+                    Task::HistoryStorage {
+                        token,
+                        cancellation,
+                    } => {
+                        if cancellation.is_cancelled() {
+                            continue;
+                        }
+                        let result = match &mut journal {
+                            Some(Ok(database)) => database
+                                .storage_catalog(&cancellation)
+                                .map_err(|e| format!("{e:#}")),
+                            _ => Err("Журнал недоступен".into()),
+                        };
+                        Event::HistoryStorage { token, result }
+                    }
                     Task::Journal {
                         token,
                         path,
@@ -296,6 +319,13 @@ impl Worker {
                                     ..Default::default()
                                 },
                                 Some(Ok(database)) => match operation {
+                                    Operation::CleanupHistory { selection } => database
+                                        .cleanup_history(
+                                            selection,
+                                            token,
+                                            &cancellation,
+                                            &mut notify,
+                                        ),
                                     Operation::Replay { original, redo, .. } => database.replay(
                                         original,
                                         redo,
@@ -362,6 +392,16 @@ impl Worker {
                 token,
                 path,
                 configure,
+            })
+            .is_ok()
+    }
+    pub fn history_storage(&self, token: u64, cancellation: Cancellation) -> bool {
+        self.tasks
+            .as_ref()
+            .unwrap()
+            .send(Task::HistoryStorage {
+                token,
+                cancellation,
             })
             .is_ok()
     }

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default)]
 pub struct HistoryState {
+    pub disposed: bool,
     pub undo: usize,
     pub redo: usize,
     pub blocked: Option<String>,
@@ -55,6 +56,7 @@ pub(super) fn parking(path: &Path, database: &Database) -> Result<PathBuf> {
     );
     let directory = tempfile::Builder::new()
         .prefix(".basalgrim-undo-")
+        .permissions(fs::Permissions::from_mode(0o700))
         .tempdir_in(parent)?
         .keep();
     Ok(directory.join("item"))
@@ -102,6 +104,10 @@ impl Database {
                 state.blocked = Some(issue);
             }
             match status.as_str() {
+                "expired" => {
+                    state.disposed = true;
+                    state.blocked = Some("Данные undo/redo очищены пользователем".into());
+                }
                 "applied" => state.undo += count as usize,
                 "undone" => state.redo += count as usize,
                 _ => {
