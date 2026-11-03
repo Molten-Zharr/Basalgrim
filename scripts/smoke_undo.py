@@ -16,6 +16,8 @@ import time
 sys.dont_write_bytecode = True
 from smoke_watch import screen_text
 
+from pty_helpers import quit_when_ready
+
 
 def main():
     binary=Path(sys.argv[1] if len(sys.argv)>1 else 'target/debug/basalgrim-tui').resolve()
@@ -50,7 +52,7 @@ def main():
             child=subprocess.Popen([str(binary),'--no-session',str(path)],env=env,stdin=slave,stdout=slave,stderr=slave)
             wait(lambda:'BASALGRIM' in screen_text(output,170,40) and bool(rows('SELECT id FROM owners')),'startup')
         def stop():
-            send(b'\x11');child.wait(timeout=5);assert child.returncode==0;os.close(master);os.close(slave)
+            quit_when_ready(child, send);os.close(master);os.close(slave)
         def click(x,y):send(f'\x1b[<0;{x};{y}M\x1b[<0;{x};{y}m'.encode())
         def resize(width,height):
             fcntl.ioctl(slave,termios_size,struct.pack('HHHH',height,width,0,0));child.send_signal(signal.SIGWINCH);pump(.25)

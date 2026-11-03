@@ -42,6 +42,10 @@ def screen_text(output, width=170, height=53):
                 col += 2 if unicodedata.east_asian_width(char) in "WF" else 1
     return "\n".join("".join(line) for line in cells)
 
+sys.dont_write_bytecode = True
+
+from pty_helpers import quit_when_ready
+
 
 def main():
     binary = Path(sys.argv[1] if len(sys.argv) > 1 else "target/debug/basalgrim-tui").resolve()
@@ -106,7 +110,7 @@ def main():
                 clicked = base / "clicked"; clicked.mkdir(); navigate(clicked); send(b"\x16")
                 expected = f"file-{8 if grid else 9:03}.txt"
                 wait_for(lambda: (clicked / expected).exists(), "inserting before the viewport must preserve its first visible file")
-                send(b"\x11"); child.wait(timeout=5); assert child.returncode == 0
+                quit_when_ready(child, send)
                 print(f"Watch PTY passed: {'grid' if grid else 'list'}, external create/write/rename/delete, preserved group and viewport")
             except BaseException:
                 Path("target/preview").mkdir(parents=True, exist_ok=True)

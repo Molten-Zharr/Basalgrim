@@ -16,6 +16,8 @@ import time
 sys.dont_write_bytecode = True
 from smoke_watch import screen_text
 
+from pty_helpers import quit_when_ready
+
 
 def main():
     binary = Path(sys.argv[1] if len(sys.argv) > 1 else "target/debug/basalgrim-tui").resolve()
@@ -79,7 +81,7 @@ def main():
             wait_for(lambda: "Копия создана; перенос не завершён" in screen_text(output, 170, 40), "partial move must be explicit in operations")
             assert (locked / "data").read_text() == (copied_locked / "data").read_text() == "keep original"
             assert locked.stat().st_mode & 0o777 == 0o555
-            send(b"\x11"); child.wait(timeout=5); assert child.returncode == 0
+            quit_when_ready(child, send)
             for parent in (base, destination):
                 assert not list(parent.rglob(".basalgrim-*")), "Temporary move data survived"
             print("Cross-device PTY passed: file/tree/symlink, reverse move, collision, exact cut clipboard and retained-copy report")

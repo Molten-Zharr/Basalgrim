@@ -12,6 +12,10 @@ import tempfile
 import termios
 import time
 
+sys.dont_write_bytecode = True
+
+from pty_helpers import quit_when_ready
+
 
 def main():
     binary = Path(sys.argv[1] if len(sys.argv) > 1 else "target/debug/basalgrim-tui").resolve()
@@ -81,9 +85,7 @@ def main():
             assert (destination / "small.txt").read_text() == "after cancellation"
             send(b"\x1b[17~")
             wait_for(lambda: "Завершено".encode() in output, "completed history")
-            send(b"\x11")
-            child.wait(timeout=5)
-            assert child.returncode == 0
+            quit_when_ready(child, send)
             restored = termios.tcgetattr(slave)
             assert (restored[3] & (termios.ECHO | termios.ICANON)) == (original[3] & (termios.ECHO | termios.ICANON))
             print("Operations PTY passed: byte copy, cancel, staging cleanup, source preservation, history, next copy, terminal restore")

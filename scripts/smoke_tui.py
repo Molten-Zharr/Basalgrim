@@ -16,6 +16,8 @@ import time
 sys.dont_write_bytecode = True
 from smoke_watch import screen_text
 
+from pty_helpers import quit_when_ready
+
 
 def main():
     binary = Path(sys.argv[1] if len(sys.argv) > 1 else "target/debug/basalgrim-tui").resolve()
@@ -155,9 +157,7 @@ def main():
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 18, 50, 0, 0))
             child.send_signal(signal.SIGWINCH)
             pump()
-            send(b"\x11")  # Ctrl+Q
-            child.wait(timeout=5)
-            assert child.returncode == 0
+            quit_when_ready(child, send)
             restored = termios.tcgetattr(slave)
             assert (restored[3] & (termios.ECHO | termios.ICANON)) == (original[3] & (termios.ECHO | termios.ICANON))
             child = subprocess.Popen([str(binary), str(folder)], stdin=slave, stdout=slave, stderr=slave, env=env)
@@ -166,9 +166,7 @@ def main():
             send(b"\x1bOS")  # Persisted F4 opens help after restart
             assert "Управление".encode() in output
             send(b"\x1b")
-            send(b"\x11")
-            child.wait(timeout=5)
-            assert child.returncode == 0
+            quit_when_ready(child, send)
             print("TUI PTY smoke passed: hover/focus loss, files, isolated trash, settings, restart, resize, terminal restore")
         except BaseException:
             import re

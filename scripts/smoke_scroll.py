@@ -13,6 +13,10 @@ import tempfile
 import termios
 import time
 
+sys.dont_write_bytecode = True
+
+from pty_helpers import quit_when_ready
+
 
 def main():
     binary=Path(sys.argv[1] if len(sys.argv)>1 else "target/debug/basalgrim-tui").resolve()
@@ -58,7 +62,7 @@ def main():
                 expected=f"file-{8 if grid else 1:03}.txt"
                 keyboard=base/"keyboard"; keyboard.mkdir(); navigate(keyboard); send(b"\x16")
                 wait_for(lambda:(keyboard/expected).exists(),"keyboard navigation must use original focus")
-                send(b"\x11"); child.wait(timeout=5); assert child.returncode==0
+                quit_when_ready(child, send)
                 print(f"Scroll PTY passed: {'grid' if grid else 'list'}, preserved group, correct visible click and keyboard recovery")
             finally:
                 if child.poll() is None: child.terminate(); child.wait(timeout=5)

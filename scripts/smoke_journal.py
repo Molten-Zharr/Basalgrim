@@ -16,6 +16,8 @@ import time
 sys.dont_write_bytecode = True
 from smoke_watch import screen_text
 
+from pty_helpers import quit_when_ready
+
 
 def main():
     binary=Path(sys.argv[1] if len(sys.argv)>1 else 'target/debug/basalgrim-tui').resolve()
@@ -52,7 +54,7 @@ def main():
             wait_for(lambda:'seed.txt' in text() and bool(rows('SELECT id FROM owners')),'startup journal')
         def stop():
             wait_for(lambda:'Стоп' not in text().splitlines()[-1],'UI worker completion before quit')
-            send(b'\x11');child.wait(timeout=5);assert child.returncode==0
+            quit_when_ready(child, send)
             os.close(master);os.close(slave)
         def navigate(path):send(b'\x0c\x15');send(str(path));send(b'\r')
         def search(name):send(b'/\x15');send(name);send(b'\r')

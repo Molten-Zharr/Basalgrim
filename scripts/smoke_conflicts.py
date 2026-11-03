@@ -16,6 +16,8 @@ import time
 sys.dont_write_bytecode = True
 from smoke_watch import screen_text
 
+from pty_helpers import quit_when_ready
+
 
 def main():
     binary=Path(sys.argv[1] if len(sys.argv)>1 else "target/debug/basalgrim-tui").resolve()
@@ -70,7 +72,7 @@ def main():
             assert sorted(p.read_text() for p in retained)==["existing a.txt","existing b.txt"],"replacement undo data was not retained exactly"
             for prefix in (".basalgrim-copy-*",".basalgrim-move-*",".basalgrim-undo-*"):
                 assert not list(base.rglob(prefix)),"unfinished staging data survived"
-            send(b"\x11");child.wait(timeout=5);assert child.returncode==0
+            quit_when_ready(child, send)
             print("Conflict PTY passed: mouse/keyboard decisions, batch scope, keep-both, replace, skip, Esc/Stop, rename and compact disabled controls")
         except BaseException:
             print(text(),file=sys.stderr);raise

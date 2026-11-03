@@ -19,6 +19,8 @@ import time
 sys.dont_write_bytecode = True
 from smoke_watch import screen_text
 
+from pty_helpers import quit_when_ready
+
 
 def main():
     binary = Path(sys.argv[1] if len(sys.argv) > 1 else "target/debug/basalgrim-tui").resolve()
@@ -86,7 +88,7 @@ def main():
             send(b"\x1b[H");pump(.1)
             click_label(" / ",lambda row:row.startswith("│ / ") and "›" not in row)
             pump(.2);copy(Path("/"))
-            send(b"\x11");child.wait(timeout=5);assert child.returncode==0
+            quit_when_ready(child, send)
             print("Paths PTY: breadcrumbs, history, Unicode clipboard, editor, file clipboard and compact parents passed")
             width,height=170,40
             fcntl.ioctl(slave,termios.TIOCSWINSZ,struct.pack("HHHH",height,width,0,0))
@@ -100,13 +102,13 @@ def main():
             wait(lambda:captured.exists() and captured.read_text()==str(folder),"bounded local helper")
             wait(lambda:"Путь скопирован" in text(),"local-helper acknowledgement")
             assert b"\x1b]52;c;" not in output,"local clipboard success also sent OSC 52"
-            send(b"\x11");child.wait(timeout=5);assert child.returncode==0
+            quit_when_ready(child, send)
             output.clear()
             child=subprocess.Popen([str(binary),"--no-session",str(folder)],stdin=slave,stdout=slave,stderr=slave,env=dict(env,TERM="linux"))
             wait(lambda:"a.txt" in text(),"console startup");click_label("Коп.",lambda row:"Коп." in row)
             wait(lambda:"Не удалось скопировать путь" in text(),"unsupported clipboard error")
             assert b"\x1b]52;c;" not in output,"Linux console received unsupported clipboard controls"
-            send(b"\x11");child.wait(timeout=5);assert child.returncode==0
+            quit_when_ready(child, send)
             print("Paths PTY: local clipboard helper and unsupported console passed")
         except BaseException:
             print(text(),file=sys.stderr);raise

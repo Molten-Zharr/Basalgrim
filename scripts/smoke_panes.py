@@ -16,6 +16,8 @@ import time
 sys.dont_write_bytecode = True
 from smoke_watch import screen_text
 
+from pty_helpers import quit_when_ready
+
 
 def main():
     binary = Path(sys.argv[1] if len(sys.argv) > 1 else "target/debug/basalgrim-tui").resolve()
@@ -100,7 +102,7 @@ def main():
             wait_for(lambda: (clipboard_check / "untouched").exists(), "original clipboard preserved")
             assert sorted(p.name for p in clipboard_check.iterdir()) == ["untouched"]
             assert not list(base.rglob(".basalgrim-*"))
-            pump(.3); send(b"\x11"); child.wait(timeout=5); assert child.returncode == 0
+            pump(.3); quit_when_ready(child, send)
             print("Pane PTY passed: Shift+F5/F6, Ctrl+F5, group mouse commands, conflict scope, compact menu and original clipboard")
         except BaseException:
             print(text(), file=sys.stderr); raise
