@@ -8,6 +8,7 @@ pub(super) struct RunningOperation {
     id: u64,
     cancellation: Cancellation,
     cut: bool,
+    clipboard_generation: u64,
 }
 impl Drop for RunningOperation {
     fn drop(&mut self) {
@@ -17,7 +18,11 @@ impl Drop for RunningOperation {
 
 impl App {
     pub fn replay_candidate(&self, redo: bool) -> Option<(i64, usize)> {
-        if self.busy || !self.journal_enabled || self.journal_error.is_some() {
+        if self.busy
+            || self.clipboard_reads_pending()
+            || !self.journal_enabled
+            || self.journal_error.is_some()
+        {
             return None;
         }
         let available = |record: &OperationRecord| {
@@ -72,7 +77,7 @@ impl App {
         self.operations.iter().find(|record| record.id == id)
     }
     pub fn start_operation(&mut self, operation: Operation) {
-        if self.busy {
+        if self.busy || self.clipboard_reads_pending() {
             self.message("Дождитесь завершения или отмените текущую операцию", true);
             return;
         }
@@ -90,6 +95,7 @@ impl App {
             id,
             cancellation: cancellation.clone(),
             cut,
+            clipboard_generation: self.file_exchange.generation,
         });
         self.busy = true;
         self.conflict_sequence = 0;
@@ -106,6 +112,9 @@ impl App {
         }
     }
     pub fn cancel_operation(&mut self) {
+        if self.cancel_clipboard_read() {
+            return;
+        }
         let Some(running) = &self.running_operation else {
             return;
         };
@@ -145,6 +154,7 @@ impl App {
         self.busy = false;
         self.operation_count += 1;
         if running.cut
+            && running.clipboard_generation == self.file_exchange.generation
             && let Some(clip) = &mut self.clipboard
             && clip.cut
         {
@@ -161,6 +171,7 @@ impl App {
                     *path = recovery.clone();
                 }
             }
+            self.clipboard_pruned();
         }
         let mut summary = format!(
             "{} · готово {}/{}",
@@ -288,6 +299,7 @@ mod tests {
             id: 42,
             cancellation: cancellation.clone(),
             cut: true,
+            clipboard_generation: app.file_exchange.generation,
         });
         app.operations
             .push_front(OperationRecord::new(42, "Перемещение".into(), 2));

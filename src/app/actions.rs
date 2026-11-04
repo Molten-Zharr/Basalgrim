@@ -46,6 +46,7 @@ impl App {
             if self.busy {
                 self.message("Перед выходом дождитесь завершения файловой операции", true);
             } else {
+                self.cancel_clipboard_read();
                 self.quit = true;
             }
             return;
@@ -159,23 +160,13 @@ impl App {
                         ),
                         false,
                     );
-                    self.clipboard = Some(Clipboard {
+                    self.files_copied(Clipboard {
                         paths,
                         cut: action == Action::Cut,
                     });
                 }
             }
-            Action::Paste => {
-                if let Some(clip) = &self.clipboard
-                    && !clip.paths.is_empty()
-                {
-                    self.start_operation(Operation::Transfer {
-                        sources: clip.paths.clone(),
-                        destination: self.tab().cwd.clone(),
-                        cut: clip.cut,
-                    });
-                }
-            }
+            Action::Paste => self.paste_files(),
             Action::CopyToOtherPane | Action::MoveToOtherPane => {
                 let Some(destination) = self.other_destination().map(Path::to_path_buf) else {
                     self.message(
@@ -367,7 +358,7 @@ impl App {
         // A prior worker may have published its filesystem result without yet
         // delivering completion. Keep entered data until a new operation can
         // actually start, rather than closing a dialog and losing the command.
-        if self.busy
+        if (self.busy || self.clipboard_reads_pending())
             && matches!(
                 self.dialog,
                 Some(

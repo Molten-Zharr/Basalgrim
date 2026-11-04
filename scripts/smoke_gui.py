@@ -248,7 +248,14 @@ try:
         assert x.XGetSelectionOwner(d,clipboard_atom)==0, 'Clipboard must start empty'
         process,window,log=launch(source,config)
         try:
-            chord('c','Control_L'); navigate(destination); chord('v','Control_L')
+            chord('c','Control_L')
+            def clipboard_data(mime):
+                return subprocess.check_output([xclip,'-selection','clipboard','-out','-target',mime],timeout=4)
+            wait_for(lambda:x.XGetSelectionOwner(d,clipboard_atom)!=0,'native file clipboard owner')
+            assert clipboard_data('x-special/gnome-copied-files')==('copy\n'+(source/'alpha.txt').as_uri()).encode()
+            assert clipboard_data('text/uri-list')==((source/'alpha.txt').as_uri()+'\r\n').encode()
+            assert clipboard_data('application/x-kde-cutselection')==b'0'
+            navigate(destination); chord('v','Control_L')
             wait_for(lambda:(destination/'alpha.txt').exists(),'Ctrl+C/V with empty OS clipboard')
             assert (source/'alpha.txt').read_text()==(destination/'alpha.txt').read_text()
             # Publication precedes the worker result and directory refresh.
@@ -258,7 +265,7 @@ try:
             chord('x','Control_L'); navigate(files); chord('v','Control_L')
             wait_for(lambda:(files/'alpha.txt').exists(),'Ctrl+X/V move')
             assert not (destination/'alpha.txt').exists()
-            assert x.XGetSelectionOwner(d,clipboard_atom)==0, 'File commands unexpectedly wrote system text clipboard'
+            assert x.XGetSelectionOwner(d,clipboard_atom)!=0, 'Native clipboard owner disappeared'
             search('alpha.txt'); chord('c','Control_L'); navigate(destination); chord('v','Control_L')
             wait_for(lambda:(destination/'alpha.txt').exists(),'Slash search then copy')
             screenshot(window,'native-keyboard-fixed.png')
@@ -268,12 +275,34 @@ try:
             owner.stdin.write(b'native-pasted.txt'); owner.stdin.close()
             wait_for(lambda:x.XGetSelectionOwner(d,clipboard_atom)!=0,'text clipboard owner')
             try:
+                chord('v','Control_L');time.sleep(.2);assert not (destination/'alpha (1).txt').exists(),'External text reused a stale file clipboard'
                 chord('n','Control_L'); chord('v','Control_L'); key('Return')
                 wait_for(lambda:(destination/'native-pasted.txt').exists(),'OS text paste into New File editor')
                 search('native-pasted.txt'); chord('c','Control_L'); navigate(files); chord('v','Control_L')
                 wait_for(lambda:(files/'native-pasted.txt').exists(),'file paste with nonempty text clipboard')
             finally:
                 owner.terminate(); owner.wait(timeout=5)
+            # Copying an address exports text but keeps this instance's file clipboard usable.
+            search('native-pasted.txt');chord('c','Control_L');click(window,165,8)
+            assert clipboard_data('UTF8_STRING')==str(files).encode()
+            navigate(source);chord('v','Control_L')
+            wait_for(lambda:(source/'native-pasted.txt').exists(),'file clipboard survives copying address text')
+            time.sleep(.2);navigate(files)
+            # Import an external file offer with the mouse, then a cut offer with Ctrl+V.
+            external=base/'external';external.mkdir()
+            for cut in (False,True):
+                name='external-cut.txt' if cut else 'Картинка #1.txt'
+                item=external/name;item.write_text('external clipboard')
+                owner=subprocess.Popen([xclip,'-selection','clipboard','-target','x-special/gnome-copied-files','-quiet'],stdin=subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                owner.stdin.write((('cut' if cut else 'copy')+'\n'+item.as_uri()).encode());owner.stdin.close();time.sleep(.15)
+                try:
+                    if cut:chord('v','Control_L')
+                    else:click(window,34,22,3);click(window,36,25)
+                    wait_for(lambda:(files/name).exists(),'external file clipboard import')
+                    assert item.exists()!=cut
+                    time.sleep(.2)
+                finally:owner.terminate();owner.wait(timeout=5)
+            screenshot(window,'native-file-clipboard.png')
             # Capture a clipboard-shaped combination before command dispatch.
             key('F10'); key('Down'); key('Right'); key('Down'); key('Return')
             chord('v','Control_L','Alt_L','Shift_L')
@@ -284,6 +313,13 @@ try:
         except Exception:
             screenshot(window,'native-keyboard-failure.png'); raise
         finally: stop(process,log)
+        if '--clipboard-only' in sys.argv[2:]:
+            isolated=dict(os.environ,BASALGRIM_CLIPBOARD_TEST_ISOLATED='1')
+            isolated.pop('WAYLAND_DISPLAY',None);isolated.pop('WAYLAND_SOCKET',None)
+            subprocess.run([sys.executable,'scripts/smoke_file_clipboard_pty.py',str(binary.with_name('basalgrim-tui'))],env=isolated,check=True,timeout=45)
+            peer=os.environ.get('BASALGRIM_NATIVE_CLIPBOARD_TEST')
+            if peer:subprocess.run([peer,'--ignored','--nocapture'],env=isolated,check=True,timeout=30)
+            sys.exit(0)
         preferences=json.loads(settings.read_text())
         # Emulate settings from before CopyPath existed. Its migration must
         # preserve a user-owned Ctrl+Shift+C and assign the new command freely.

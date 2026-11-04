@@ -1,4 +1,5 @@
 mod actions;
+mod clipboard;
 mod commands;
 mod conflicts;
 pub use conflicts::ConflictDialog;
@@ -146,10 +147,7 @@ pub enum Dialog {
     },
 }
 
-pub struct Clipboard {
-    pub paths: Vec<PathBuf>,
-    pub cut: bool,
-}
+pub use crate::clipboard::files::FileList as Clipboard;
 pub struct Place {
     pub label: &'static str,
     pub path: PathBuf,
@@ -177,6 +175,7 @@ pub struct App {
     pub history_storage: StorageView,
     pub dialog: Option<Dialog>,
     pub clipboard: Option<Clipboard>,
+    file_exchange: clipboard::Exchange,
     text_copy: Option<crate::clipboard::TextCopy>,
     text_copy_token: u64,
     pub path_text_selected: bool,
@@ -275,6 +274,7 @@ impl App {
             history_storage: StorageView::default(),
             dialog: None,
             clipboard: None,
+            file_exchange: Default::default(),
             text_copy: None,
             text_copy_token: 0,
             path_text_selected: false,
@@ -370,6 +370,7 @@ impl App {
         self.panes.iter().flat_map(|p| &p.tabs).any(|t| t.loading)
             || self.preview_loading
             || self.busy
+            || self.clipboard_reads_pending()
             || self.history_storage.loading
             || self.trash.as_ref().is_some_and(|t| t.loading)
     }

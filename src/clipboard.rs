@@ -1,4 +1,8 @@
 //! Text clipboard requests are separate from the file copy/cut clipboard.
+pub mod files;
+#[cfg(feature = "file-clipboard")]
+pub mod native;
+pub mod service;
 #[cfg(feature = "tui")]
 pub mod terminal;
 

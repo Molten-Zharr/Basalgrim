@@ -75,9 +75,14 @@ fn run() -> Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     let mut previous_click: Option<((u16, u16), Instant)> = None;
     let clipboard = basalgrim::clipboard::terminal::TerminalClipboard::new();
+    let files = basalgrim::clipboard::native::Runtime::terminal();
+    app.clipboard_connecting();
     while !app.quit {
+        app.pump_clipboard(&files);
         app.tick();
-        if let Some(copy) = app.take_text_copy() {
+        if !app.native_text_clipboard()
+            && let Some(copy) = app.take_text_copy()
+        {
             let id = copy.id;
             match clipboard.submit(copy) {
                 Ok(()) => {}

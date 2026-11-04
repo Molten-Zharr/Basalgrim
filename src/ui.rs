@@ -235,7 +235,17 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     } else {
         " · "
     };
-    if app.busy && app.current_operation().is_some() {
+    if app.clipboard_reads_pending() {
+        let area = zones[4];
+        let width = 8.min(area.width);
+        frame.render_widget(
+            Paragraph::new("Чтение буфера…").style(palette.muted()),
+            area,
+        );
+        let cancel = Rect::new(area.right() - width, area.y, width, area.height);
+        frame.render_widget(Paragraph::new(" Стоп ").style(palette.accent()), cancel);
+        hit(app, cancel, Target::Action(Action::CancelOperation));
+    } else if app.busy && app.current_operation().is_some() {
         operations::status(app, frame, zones[4], palette);
     } else {
         frame.render_widget(

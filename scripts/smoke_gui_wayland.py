@@ -164,7 +164,11 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             (source / "alpha.txt").write_text("native Wayland keyboard")
             assert run("wl-paste", "--list-types", check=False).returncode != 0
             process = launch(source)
-            key("c", "ctrl"); navigate(destination); key("v", "ctrl")
+            key("c", "ctrl")
+            wait_for(lambda:run("wl-paste","--list-types",check=False).returncode==0,"Wayland file clipboard owner")
+            assert run("wl-paste","--no-newline","--type","x-special/gnome-copied-files").stdout=='copy\n'+(source/'alpha.txt').as_uri()
+            assert run("wl-paste","--no-newline","--type","application/x-kde-cutselection").stdout=='0'
+            navigate(destination); key("v", "ctrl")
             run("grim", "-g", "0,0 1360x860", str(out / "native-wayland-before-check.png"))
             wait_for(lambda: (destination / "alpha.txt").exists(), "Wayland Ctrl+C/V with empty OS clipboard")
             key("x", "ctrl"); navigate(files); key("v", "ctrl")
@@ -178,9 +182,34 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                 wait_for(lambda: (files / "pasted.txt").exists(), "Wayland system text paste")
             finally:
                 owner.terminate(); owner.wait(timeout=5)
+            # A native text copy must keep the internal file selection accessible through its marker.
+            key('f','ctrl');run('wtype','-s','100','pasted.txt','-s','100');key('Return');key('c','ctrl');click(165,8)
+            assert run('wl-paste','--no-newline').stdout==str(files)
+            navigate(source);key('v','ctrl')
+            wait_for(lambda:(source/'pasted.txt').exists(),'Wayland files survive copying address text')
+            time.sleep(.2);navigate(files)
+            external=base/'external';external.mkdir()
+            for cut in (False,True):
+                name='external-cut.txt' if cut else 'Картинка #1.txt'
+                item=external/name;item.write_text('external Wayland clipboard')
+                owner=subprocess.Popen([commands['wl-copy'],'--foreground','--type','x-special/gnome-copied-files',('cut' if cut else 'copy')+'\n'+item.as_uri()],env=env,stdout=subprocess.DEVNULL,stderr=app_log)
+                wait_for(lambda:'x-special/gnome-copied-files' in run('wl-paste','--list-types',check=False).stdout,'external file offer')
+                try:
+                    if cut:key('v','ctrl')
+                    else:click(34,22,3);click(36,25)
+                    wait_for(lambda:(files/name).exists(),'Wayland external file clipboard import')
+                    assert item.exists()!=cut
+                    time.sleep(.2)
+                finally:owner.terminate();owner.wait(timeout=5)
             run("grim", "-g", "0,0 1360x860", str(out / "native-wayland-keyboard.png"))
             key("q", "ctrl"); process.wait(timeout=5); assert process.returncode == 0
             print("Native Wayland: Ctrl+C/X/V, empty system clipboard and editor text paste passed", flush=True)
+            if "--clipboard-only" in sys.argv[2:]:
+                isolated=dict(env,BASALGRIM_CLIPBOARD_TEST_ISOLATED='1')
+                subprocess.run([sys.executable,'scripts/smoke_file_clipboard_pty.py',str(binary.with_name('basalgrim-tui'))],env=isolated,check=True,timeout=45)
+                peer=os.environ.get('BASALGRIM_NATIVE_CLIPBOARD_TEST')
+                if peer:subprocess.run([peer,'--ignored','--nocapture'],env=isolated,check=True,timeout=30)
+                return
             mouse = base / "mouse"
             (mouse / "destination").mkdir(parents=True); (mouse / "moved").mkdir()
             (mouse / "alpha.txt").write_text("native Wayland mouse")

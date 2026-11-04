@@ -136,15 +136,13 @@ impl App {
                     }
                     SelectAll => !self.tab().visible.is_empty(),
                     Open | Mark | Copy | Cut | Rename | Trash => selection,
-                    Paste => {
-                        !self.busy && self.clipboard.as_ref().is_some_and(|c| !c.paths.is_empty())
-                    }
+                    Paste => self.can_paste(),
                     NewFolder | NewFile => !self.busy,
                     CopyToOtherPane | MoveToOtherPane => {
                         selection && !self.busy && self.other_destination().is_some()
                     }
                     Duplicate => selection && !self.busy,
-                    CancelOperation => self.busy,
+                    CancelOperation => self.busy || self.clipboard_reads_pending(),
                     Undo => self.replay_candidate(false).is_some(),
                     Redo => self.replay_candidate(true).is_some(),
                     HistoryStorage => self.journal_enabled,

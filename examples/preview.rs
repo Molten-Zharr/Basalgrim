@@ -96,6 +96,16 @@ fn main() -> Result<()> {
     app.update_preview();
     settle(&mut app)?;
     render(&mut app, &out, "grid", 150, 44)?;
+    let notice = app.notice.clone();
+    app.accept_clipboard_event(basalgrim::clipboard::service::Event::Ready(Ok(())));
+    app.action(Action::Paste);
+    render(&mut app, &out, "file-clipboard", 100, 28)?;
+    app.cancel_operation();
+    app.accept_clipboard_event(basalgrim::clipboard::service::Event::Ready(Err(
+        "preview".into()
+    )));
+    app.message(notice, false);
+    render(&mut app, &out, "grid", 150, 44)?;
     let file = app
         .hits
         .iter()

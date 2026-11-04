@@ -54,8 +54,18 @@ fn run() -> Result<()> {
     let mut icons = basalgrim::icons::images::IconRasterizer::default();
     let mut previews = basalgrim::preview::images::PreviewRasterizer::default();
     let mut previous_click: Option<(egui::Pos2, Instant)> = None;
-    eframe::run_ui_native("Basalgrim · Molten-Zharr", options, move |root, _| {
+    let mut clipboard = None;
+    eframe::run_ui_native("Basalgrim · Molten-Zharr", options, move |root, frame| {
         let ctx = root.ctx().clone();
+        if clipboard.is_none()
+            && let Some(window) = frame.winit_window()
+        {
+            app.clipboard_connecting();
+            clipboard = Some(basalgrim::clipboard::native::Runtime::gui(window.clone()));
+        }
+        if let Some(clipboard) = &clipboard {
+            app.pump_clipboard(clipboard);
+        }
         if ctx.input(|i| i.viewport().close_requested()) && app.busy {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             app.message("Перед выходом дождитесь завершения файловой операции", true);
@@ -293,7 +303,12 @@ fn run() -> Result<()> {
                     }
                 }
             });
-        if let Some(copy) = app.take_text_copy() {
+        if let Some(clipboard) = &clipboard {
+            app.pump_clipboard(clipboard);
+        }
+        if !app.native_text_clipboard()
+            && let Some(copy) = app.take_text_copy()
+        {
             ctx.copy_text(copy.text);
             app.finish_text_copy(copy.id, Ok(basalgrim::clipboard::Destination::System));
         }
