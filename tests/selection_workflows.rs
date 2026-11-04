@@ -202,7 +202,7 @@ fn drag_is_clamped_to_its_pane_and_never_activates_controls_or_other_panes() {
     app.settings.dual = true;
     render(&mut app, 180);
     let area = app.file_areas[0];
-    start(&mut app, (area.x + 1, area.y + 1).into(), false);
+    start(&mut app, (area.x, area.y + 1).into(), false);
     drag(&mut app, Position::new(5000, 5000));
     assert_eq!(
         app.selection_area().unwrap().intersection(area),

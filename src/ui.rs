@@ -59,6 +59,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     let palette = Palette::new(&app.settings);
     render_content(app, frame, palette);
     app.validate_marquee();
+    app.validate_file_drag();
     // Use the same topmost hit region as clicking. Modal rendering has already
     // replaced background hits, so a covered control can never receive hover.
     if let Some(area) = app.hovered_area() {
@@ -72,6 +73,26 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         }
     }
     selection::render(app, frame, palette);
+    if let Some(feedback) = app.drag_feedback()
+        && let Some(area) = feedback.area
+    {
+        let area = area.intersection(frame.area());
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                let cell = &mut frame.buffer_mut()[(x, y)];
+                cell.bg = palette.hover_background(cell.bg);
+            }
+        }
+        if app.icon_backend != crate::icons::IconBackend::Gui && area.height >= 3 && area.width >= 3
+        {
+            frame.render_widget(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(palette.accent()),
+                area,
+            );
+        }
+    }
     for slot in &mut app.icon_slots {
         if let ratatui::style::Color::Rgb(r, g, b) =
             frame.buffer_mut()[(slot.area.x, slot.area.y)].bg
@@ -85,6 +106,7 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     app.preview_area = Rect::default();
     app.pane_areas = [Rect::default(); 2];
     app.file_areas = [Rect::default(); 2];
+    app.drop_regions.clear();
     if matches!(app.dialog, Some(crate::app::Dialog::Conflict(_))) {
         conflicts::render(app, frame, palette);
         return;
@@ -136,11 +158,35 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     let compact = area.height < 20;
     let commands = toolbar_commands(app, area.width);
     let toolbar_height = toolbar_rows(area.width, &commands) + 2;
+    let shortcuts = footer_commands(app, compact);
+    let footer_labels = shortcuts
+        .iter()
+        .map(|(label, action)| {
+            let key = app.settings.shortcut(*action);
+            (
+                if compact {
+                    if matches!(action, Action::RestoreTrash | Action::DeleteTrash) {
+                        label.to_string()
+                    } else {
+                        key
+                    }
+                } else {
+                    format!(" {key} {label} ")
+                },
+                *action,
+            )
+        })
+        .collect::<Vec<_>>();
+    let footer_height = if compact {
+        1
+    } else {
+        toolbar_rows(area.width, &footer_labels) + 2
+    };
     let zones = Layout::vertical([
         Constraint::Length(if compact { 1 } else { 2 }),
         Constraint::Length(toolbar_height),
         Constraint::Min(4),
-        Constraint::Length(if compact { 1 } else { 3 }),
+        Constraint::Length(footer_height),
         Constraint::Length(1),
     ])
     .split(area);
@@ -176,57 +222,45 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     if app.settings.dual && content[0].width >= 64 {
         let panes = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(content[0]);
-        files::render(app, frame, panes[0], 0, palette);
-        files::render(app, frame, panes[1], 1, palette);
+        files::render(app, frame, panes[0], 0, true, palette);
+        files::render(app, frame, panes[1], 1, true, palette);
     } else {
-        files::render(app, frame, content[0], app.active, palette);
+        files::render(app, frame, content[0], app.active, false, palette);
     }
     if show_preview {
         preview(app, frame, content[1], palette);
     }
-    let shortcuts = if app.in_trash() {
-        [
-            ("Восстановить", Action::RestoreTrash),
-            ("Удалить", Action::DeleteTrash),
-            ("Превью", Action::Preview),
-            ("Обновить", Action::Refresh),
-            ("Поиск", Action::Search),
-            ("Сортировка", Action::Sort),
-        ]
-    } else {
-        [
-            ("Имя", Action::Rename),
-            ("Превью", Action::Preview),
-            ("Обновить", Action::Refresh),
-            ("Папка", Action::NewFolder),
-            ("Корзина", Action::Trash),
-            ("Сортировка", Action::Sort),
-        ]
-    };
     let inner = if compact {
         zones[3]
     } else {
         frame.render_widget(panel(palette, " ДЕЙСТВИЯ ", false), zones[3]);
         panel(palette, "", false).inner(zones[3])
     };
-    let mut x = inner.x;
-    for (label, action) in shortcuts {
+    let (mut x, mut y) = (inner.x, inner.y);
+    for ((label, action), (value, _)) in shortcuts.into_iter().zip(footer_labels) {
         let key = app.settings.shortcut(action);
-        let value = format!(" {key} {label} ");
         let width = value.width() as u16;
-        if x + width > inner.right() {
+        if x + width > inner.right() && x > inner.x {
+            x = inner.x;
+            y += 1;
+        }
+        if y >= inner.bottom() {
             break;
         }
-        let rect = Rect::new(x, inner.y, width, 1);
+        let rect = Rect::new(x, y, width.min(inner.width), 1);
         frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(format!(" {key} "), palette.accent()),
-                Span::styled(format!("{label} "), palette.text()),
-            ])),
+            Paragraph::new(if compact {
+                Line::from(Span::styled(value, palette.accent()))
+            } else {
+                Line::from(vec![
+                    Span::styled(format!(" {key} "), palette.accent()),
+                    Span::styled(format!("{label} "), palette.text()),
+                ])
+            }),
             rect,
         );
         hit(app, rect, Target::Action(action));
-        x += width;
+        x += width + 1;
     }
     let prefix = if app.busy {
         " ◌ "
@@ -235,7 +269,31 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     } else {
         " · "
     };
-    if app.clipboard_reads_pending() {
+    if let Some(feedback) = app.drag_feedback() {
+        let text = if let Some(destination) = feedback.destination {
+            format!(
+                "{} {} → {} · Ctrl: копия · Esc: отмена",
+                if feedback.copy {
+                    "Копировать"
+                } else {
+                    "Переместить"
+                },
+                feedback.count,
+                fs::clean(&destination.to_string_lossy())
+            )
+        } else {
+            format!(
+                "{} {} · выберите другую папку · Esc: отмена",
+                if feedback.copy {
+                    "Копировать"
+                } else {
+                    "Переместить"
+                },
+                feedback.count
+            )
+        };
+        frame.render_widget(Paragraph::new(text).style(palette.accent()), zones[4]);
+    } else if app.clipboard_reads_pending() {
         let area = zones[4];
         let width = 8.min(area.width);
         frame.render_widget(
@@ -272,11 +330,6 @@ fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
                 Action::Search,
             ),
             (" Вид ".into(), Action::Grid),
-            (" Настр. ".into(), Action::Settings),
-            (
-                format!(" {} ", app.settings.shortcut(Action::Help)),
-                Action::Help,
-            ),
         ];
     }
     let mut commands = vec![
@@ -286,9 +339,6 @@ fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
         (" ↑ ".into(), Action::Parent),
         (" ⌂ ".into(), Action::Home),
         (" + Папка ".into(), Action::NewFolder),
-        (" Копия ".into(), Action::Copy),
-        (" Вырезать ".into(), Action::Cut),
-        (" Вставить ".into(), Action::Paste),
         (
             format!(" {} Поиск ", app.settings.shortcut(Action::Search)),
             Action::Search,
@@ -304,30 +354,9 @@ fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
             ),
             Action::Grid,
         ),
-        (
-            format!(" {}Панели ", if app.settings.dual { "● " } else { "" }),
-            Action::Dual,
-        ),
-        (
-            format!(" {} Операции ", app.settings.shortcut(Action::Operations)),
-            Action::Operations,
-        ),
-        (
-            format!(" {} Настройки ", app.settings.shortcut(Action::Settings)),
-            Action::Settings,
-        ),
-        (
-            format!(" {} Помощь ", app.settings.shortcut(Action::Help)),
-            Action::Help,
-        ),
     ];
     if app.in_trash() {
-        commands.retain(|(_, action)| {
-            !matches!(
-                action,
-                Action::NewFolder | Action::Copy | Action::Cut | Action::Paste
-            )
-        });
+        commands.retain(|(_, action)| !matches!(action, Action::NewFolder));
         commands.insert(5, (" Очистить корзину ".into(), Action::EmptyTrash));
     }
     commands
@@ -337,14 +366,49 @@ fn toolbar_rows(width: u16, commands: &[(String, Action)]) -> u16 {
     let mut rows = 1;
     let mut x = 0;
     for (label, _) in commands {
-        let w = label.width() as u16 + 1;
+        let w = label.width() as u16;
         if x + w > limit && x > 0 {
             rows += 1;
             x = 0;
         }
-        x += w;
+        x += w + 1;
     }
     rows
+}
+fn footer_commands(app: &App, compact: bool) -> Vec<(&'static str, Action)> {
+    use Action::*;
+    let mut commands = if app.in_trash() {
+        if compact {
+            vec![
+                ("Восстановить", RestoreTrash),
+                ("Удалить", DeleteTrash),
+                ("Операции", Operations),
+            ]
+        } else {
+            vec![
+                ("Восстановить", RestoreTrash),
+                ("Удалить", DeleteTrash),
+                ("Превью", Preview),
+                ("Обновить", Refresh),
+                ("Операции", Operations),
+                ("Поиск", Search),
+                ("Сортировка", Sort),
+            ]
+        }
+    } else {
+        vec![
+            ("Переименовать", Rename),
+            ("Превью", Preview),
+            ("Обновить", Refresh),
+            ("Операции", Operations),
+            ("Папка", NewFolder),
+            ("Корзина", Trash),
+            ("Сортировка", Sort),
+        ]
+    };
+    commands.insert(0, ("Помощь", Help));
+    commands.push(("Настройки", Settings));
+    commands
 }
 fn toolbar(
     app: &mut App,

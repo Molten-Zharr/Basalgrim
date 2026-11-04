@@ -302,7 +302,7 @@ fn modifier_matching_is_exact_and_reassigned_keys_update_help_and_command_bar() 
     key(&mut app, Key::F(4));
     key(&mut app, Key::Escape);
     let buffer = render(&mut app, 150, 40);
-    assert!(text(&buffer).contains("F4 Имя"));
+    assert!(text(&buffer).contains("F4 Переименовать"));
     app.action(Action::Help);
     let buffer = render(&mut app, 150, 60);
     let text = text(&buffer);

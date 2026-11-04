@@ -26,7 +26,7 @@ def main():
         config.parent.mkdir(parents=True); config.write_text(json.dumps({'dual':True,'preview':False,'grid':False}))
         state = base / 'state/molten-zharr/basalgrim/session.json'
         env = dict(os.environ, TERM='xterm-256color', XDG_CONFIG_HOME=str(base/'config'), XDG_STATE_HOME=str(base/'state'))
-        for name in ('TERM_PROGRAM','LC_TERMINAL','TMUX','WEZTERM_EXECUTABLE','KONSOLE_VERSION'):
+        for name in ('DISPLAY', 'WAYLAND_DISPLAY', 'WAYLAND_SOCKET', 'TERM_PROGRAM','LC_TERMINAL','TMUX','WEZTERM_EXECUTABLE','KONSOLE_VERSION'):
             env.pop(name, None)
         child = None; master = slave = None; output = bytearray()
 

@@ -57,6 +57,9 @@ fn run() -> Result<()> {
     let mut clipboard = None;
     eframe::run_ui_native("Basalgrim · Molten-Zharr", options, move |root, frame| {
         let ctx = root.ctx().clone();
+        app.handle(Input::DragModifiers {
+            copy: ctx.input(|i| i.modifiers.ctrl),
+        });
         if clipboard.is_none()
             && let Some(window) = frame.winit_window()
         {
@@ -124,7 +127,7 @@ fn run() -> Result<()> {
                     || uploaded_cursor != backend.soft_backend.rendered_cursor
                     || uploaded_icons != app.icon_slots
                     || uploaded_preview != app.preview_slot
-                    || uploaded_selection != app.selection_area()
+                    || uploaded_selection != app.gesture_area()
                 {
                     let rgb = raster::compose_frame(
                         &backend.soft_backend,
@@ -132,7 +135,7 @@ fn run() -> Result<()> {
                         &mut icons,
                         app.preview_slot.as_ref(),
                         &mut previews,
-                        app.selection_area(),
+                        app.gesture_area(),
                         app.settings.appearance.palette()["selection_accent"],
                     )
                     .unwrap_or_else(|error| {
@@ -164,7 +167,7 @@ fn run() -> Result<()> {
                     uploaded_cursor = backend.soft_backend.rendered_cursor;
                     uploaded_icons = app.icon_slots.clone();
                     uploaded_preview = app.preview_slot.clone();
-                    uploaded_selection = app.selection_area();
+                    uploaded_selection = app.gesture_area();
                 }
                 let image_size = egui::vec2(
                     backend.soft_backend.get_pixmap_width() as f32,
@@ -261,7 +264,7 @@ fn run() -> Result<()> {
                         {
                             if let Some((x, y)) = to_cell(pos) {
                                 app.handle(Input::Drag { x, y });
-                                if app.selection_area().is_some() {
+                                if app.selection_area().is_some() || app.dragging_files() {
                                     previous_click = None;
                                 }
                             }
@@ -270,11 +273,14 @@ fn run() -> Result<()> {
                             pos,
                             button: egui::PointerButton::Primary,
                             pressed: false,
-                            ..
+                            modifiers,
                         } => {
                             if let Some((x, y)) = to_cell(pos) {
+                                app.handle(Input::DragModifiers {
+                                    copy: modifiers.ctrl,
+                                });
                                 app.handle(Input::Drag { x, y });
-                                if app.selection_area().is_some() {
+                                if app.selection_area().is_some() || app.dragging_files() {
                                     previous_click = None;
                                 }
                                 app.handle(Input::PointerUp { x, y });
@@ -305,6 +311,15 @@ fn run() -> Result<()> {
             });
         if let Some(clipboard) = &clipboard {
             app.pump_clipboard(clipboard);
+        }
+        if let Some(feedback) = app.drag_feedback() {
+            ctx.set_cursor_icon(if feedback.destination.is_none() {
+                egui::CursorIcon::NotAllowed
+            } else if feedback.copy {
+                egui::CursorIcon::Copy
+            } else {
+                egui::CursorIcon::Grabbing
+            });
         }
         if !app.native_text_clipboard()
             && let Some(copy) = app.take_text_copy()

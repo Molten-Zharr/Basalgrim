@@ -28,7 +28,7 @@ def main():
             mode = "symbols" if protocol == "kitty-symbols" else "images"
             settings.write_text(json.dumps({"preview": False, "icon_mode": mode}))
             env = dict(os.environ, TERM="xterm-256color", XDG_STATE_HOME=str(config.parent / "state"), XDG_CONFIG_HOME=str(config))
-            for name in ("TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION", "NO_COLOR"):
+            for name in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION", "NO_COLOR"):
                 env.pop(name, None)
             if protocol == "iterm2":
                 env["TERM_PROGRAM"] = "iTerm.app"

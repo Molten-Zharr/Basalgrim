@@ -45,6 +45,7 @@ impl App {
     }
 
     pub(super) fn primary_down(&mut self, x: u16, y: u16, double: bool, toggle: bool) {
+        self.cancel_file_drag();
         self.finish_marquee(false);
         let point = Position::new(x, y);
         let target = self
@@ -52,13 +53,19 @@ impl App {
             .iter()
             .rev()
             .find(|(r, _)| r.contains(point))
-            .map(|(_, t)| t);
+            .map(|(_, t)| t.clone());
         let pane = self.file_areas.iter().position(|r| r.contains(point));
+        if self.dialog.is_none()
+            && let Some(Target::Entry { pane, index }) = target.clone()
+            && self.begin_file_drag(point, pane, index, toggle, double)
+        {
+            return;
+        }
         let candidate = pane
             .filter(|_| {
                 self.dialog.is_none()
                     && !double
-                    && matches!(target, None | Some(Target::Entry { .. }))
+                    && matches!(target, None | Some(Target::EntryBackground))
             })
             .map(|pane| {
                 let tab = self.file_tab(pane);
@@ -92,7 +99,7 @@ impl App {
                     dragging: false,
                 }
             });
-        let background = target.is_none();
+        let background = matches!(target, None | Some(Target::EntryBackground));
         self.handle(Input::Click {
             x,
             y,

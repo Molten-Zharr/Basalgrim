@@ -25,7 +25,7 @@ def main():
         config=base/'config/molten-zharr/basalgrim/settings.json';config.parent.mkdir(parents=True)
         config.write_text(json.dumps({'grid':False,'preview':False,'icon_mode':'symbols'}))
         env=dict(os.environ,HOME=str(base),XDG_CONFIG_HOME=str(base/'config'),XDG_STATE_HOME=str(base/'state'),XDG_DATA_HOME=str(base/'data'),GIO_USE_VFS='local',TERM='xterm-256color')
-        for name in ('TERM_PROGRAM','LC_TERMINAL','TMUX','WEZTERM_EXECUTABLE','KONSOLE_VERSION'):env.pop(name,None)
+        for name in ('DISPLAY', 'WAYLAND_DISPLAY', 'WAYLAND_SOCKET', 'TERM_PROGRAM','LC_TERMINAL','TMUX','WEZTERM_EXECUTABLE','KONSOLE_VERSION'):env.pop(name,None)
         alpha=files/'basalgrim-alpha.txt';beta=files/'basalgrim-кириллица.txt';tree=files/'basalgrim-tree'
         alpha.write_text('alpha content');beta.write_text('unicode content');tree.mkdir();(tree/'nested').write_text('tree content')
         subprocess.run(['gio','trash','--',str(alpha),str(beta),str(tree)],env=env,check=True)

@@ -35,7 +35,7 @@ def main():
         settings.write_text(json.dumps({"grid": False,"preview": False,"icon_mode": "symbols"}))
         env = dict(os.environ, TERM="xterm-256color", HOME=str(base), XDG_CONFIG_HOME=str(base/"config"), XDG_STATE_HOME=str(base/"state"), XDG_DATA_HOME=str(base/"data"))
         # Always exercise OSC 52 in a private PTY; never touch user clipboards.
-        for name in ("DISPLAY","WAYLAND_DISPLAY","TERM_PROGRAM","LC_TERMINAL","TMUX","WEZTERM_EXECUTABLE","KONSOLE_VERSION"):
+        for name in ("DISPLAY","WAYLAND_DISPLAY","WAYLAND_SOCKET","TERM_PROGRAM","LC_TERMINAL","TMUX","WEZTERM_EXECUTABLE","KONSOLE_VERSION"):
             env.pop(name,None)
         master, slave = pty.openpty(); width,height=170,40
         fcntl.ioctl(slave,termios.TIOCSWINSZ,struct.pack("HHHH",height,width,0,0))

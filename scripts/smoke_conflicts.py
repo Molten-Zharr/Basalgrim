@@ -27,7 +27,7 @@ def main():
             (source/name).write_text("incoming "+name);(dest/name).write_text("existing "+name)
         config=base/"config/molten-zharr/basalgrim/settings.json";config.parent.mkdir(parents=True);config.write_text(json.dumps({"grid":False,"preview":False}))
         env=dict(os.environ,TERM="xterm-256color",XDG_STATE_HOME=str(base/"state"),XDG_CONFIG_HOME=str(base/"config"))
-        for name in ("TERM_PROGRAM","LC_TERMINAL","TMUX","WEZTERM_EXECUTABLE","KONSOLE_VERSION"):env.pop(name,None)
+        for name in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "TERM_PROGRAM","LC_TERMINAL","TMUX","WEZTERM_EXECUTABLE","KONSOLE_VERSION"):env.pop(name,None)
         master,slave=pty.openpty(); width,height=170,40
         fcntl.ioctl(slave,termios.TIOCSWINSZ,struct.pack("HHHH",height,width,0,0))
         child=subprocess.Popen([str(binary),str(source)],env=env,stdin=slave,stdout=slave,stderr=slave);output=bytearray()

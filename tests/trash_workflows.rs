@@ -353,7 +353,7 @@ fn trash_keeps_chrome_tabs_other_pane_icons_and_shared_selection() {
     let first = hit(&app, |t| matches!(t, Target::Entry { pane: 0, index: 0 }));
     let second = hit(&app, |t| matches!(t, Target::Entry { pane: 0, index: 1 }));
     app.handle(Input::PointerDown {
-        x: first.x + 4,
+        x: first.x,
         y: first.y + 2,
         double: false,
         toggle: false,

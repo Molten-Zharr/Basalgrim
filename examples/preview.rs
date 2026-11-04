@@ -47,7 +47,7 @@ fn render(app: &mut App, out: &Path, name: &str, width: u16, height: u16) -> Res
         &mut Default::default(),
         app.preview_slot.as_ref(),
         &mut Default::default(),
-        app.selection_area(),
+        app.gesture_area(),
         app.settings.appearance.palette()["selection_accent"],
     )?)?;
     Ok(())
@@ -119,6 +119,53 @@ fn main() -> Result<()> {
     });
     render(&mut app, &out, "context-menu", 150, 44)?;
     app.cancel_dialog();
+    render(&mut app, &out, "grid", 150, 44)?;
+    // Capture a genuine shared file gesture; no filesystem operation is dispatched.
+    let source = app
+        .hits
+        .iter()
+        .find_map(|(r, t)| matches!(t,Target::Entry {pane:0,index:i} if *i==index).then_some(*r))
+        .unwrap();
+    let destination = app
+        .hits
+        .iter()
+        .find_map(|(r, t)| matches!(t, Target::Entry { pane: 0, index: 0 }).then_some(*r))
+        .unwrap();
+    app.handle(Input::PointerDown {
+        x: source.x + 4,
+        y: source.y + 2,
+        double: false,
+        toggle: false,
+    });
+    app.handle(Input::Drag {
+        x: destination.x + 4,
+        y: destination.y + 2,
+    });
+    render(&mut app, &out, "drag-drop", 150, 44)?;
+    app.handle(Input::CancelDrag);
+    app.handle(Input::Pointer(None));
+    render(&mut app, &out, "grid", 150, 44)?;
+    let parent = app
+        .hits
+        .iter()
+        .find_map(|(r, t)| {
+            matches!(t,Target::PathGo {path,..} if Some(path.as_path())==demo.path().parent())
+                .then_some(*r)
+        })
+        .unwrap();
+    app.handle(Input::PointerDown {
+        x: source.x + 4,
+        y: source.y + 2,
+        double: false,
+        toggle: false,
+    });
+    app.handle(Input::Drag {
+        x: parent.x,
+        y: parent.y,
+    });
+    render(&mut app, &out, "breadcrumb-drop", 150, 44)?;
+    app.handle(Input::CancelDrag);
+    app.handle(Input::Pointer(None));
     render(&mut app, &out, "grid", 150, 44)?;
     let first = app
         .hits

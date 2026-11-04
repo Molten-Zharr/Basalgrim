@@ -2,6 +2,7 @@ use super::*;
 
 impl App {
     pub fn action(&mut self, action: Action) {
+        self.cancel_file_drag();
         if action == Action::HistoryStorage
             && matches!(self.dialog, None | Some(Dialog::Operations))
         {

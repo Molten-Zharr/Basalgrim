@@ -158,6 +158,64 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             key("Escape");key("q","ctrl");process.wait(timeout=5);process=None
             print("Native Wayland history storage: mouse policy, confirmation, cleanup, shortcut and restart passed",flush=True)
             if '--history-storage-only' in sys.argv[2:]:return
+            if '--chrome-only' in sys.argv[2:]:
+                parent=base/'up';inside=parent/'one/inside';inside.mkdir(parents=True)
+                (inside/'ancestor.txt').write_text('ancestor move');(inside/'peer.txt').write_text('ancestor copy')
+                process=launch(inside);session=base/'state/molten-zharr/basalgrim/session.json'
+                def snapshot():return json.loads(session.read_text()) if session.exists() else None
+                parent_x=25+3+1+5+1+len(base.name)+2+1+1
+                click(34,11,10);click(parent_x,8,11)
+                run('grim','-g','0,0 1360x860',str(out/'native-wayland-breadcrumb-drop.png'));click(parent_x,8,12)
+                wait_for(lambda:(parent/'ancestor.txt').exists(),'Wayland breadcrumb move several levels up');assert not (inside/'ancestor.txt').exists()
+                held=subprocess.Popen([commands['wtype'],'-s','100','-M','ctrl','-s','2500','-m','ctrl'],env=env,stdout=app_log,stderr=app_log)
+                try:time.sleep(.3);click(34,11,10);click(parent_x,8,11);click(parent_x,8,12)
+                finally:held.wait(timeout=5)
+                wait_for(lambda:(parent/'peer.txt').exists(),'Wayland Ctrl breadcrumb copy');assert (inside/'peer.txt').exists()
+                wait_for(lambda:snapshot() and snapshot()['panes'][0]['tabs']==[str(inside)],'breadcrumb drop preserves view')
+                click(37,6);wait_for(lambda:len(snapshot()['panes'][0]['tabs'])==2,'Wayland left plus')
+                click(155,5);wait_for(lambda:json.loads(settings.read_text()).get('dual') is True,'Wayland second-pane header')
+                click(109,6);wait_for(lambda:len(snapshot()['panes'][1]['tabs'])==2,'Wayland inactive pane plus')
+                assert len(snapshot()['panes'][0]['tabs'])==2
+                click(167,5);wait_for(lambda:json.loads(settings.read_text()).get('dual') is False,'Wayland second-pane close')
+                click(155,5);wait_for(lambda:json.loads(settings.read_text()).get('dual') is True,'Wayland second-pane restore');assert len(snapshot()['panes'][1]['tabs'])==2
+                run('grim','-g','0,0 1360x860',str(out/'native-wayland-pane-tabs.png'))
+                key('q','ctrl');process.wait(timeout=5);process=None
+                print('Native Wayland chrome: breadcrumbs, pane-scoped plus, second-pane toggle and retained tabs passed',flush=True)
+                return
+            drag_root=base/'drag-native';drag_root.mkdir();(drag_root/'folder').mkdir()
+            for name in ('a.txt','b.txt','c.txt'):(drag_root/name).write_text(name)
+            process=launch(drag_root)
+            def control_mouse(callback):
+                held=subprocess.Popen([commands['wtype'],'-s','100','-M','ctrl','-s','2500','-m','ctrl'],env=env,stdout=app_log,stderr=app_log)
+                try:time.sleep(.3);callback()
+                finally:held.wait(timeout=5)
+            control_mouse(lambda:(click(34,12),click(34,13)))
+            click(34,13,10);click(34,11,11)
+            run('grim','-g','0,0 1360x860',str(out/'native-wayland-drag-group.png'));click(34,11,12)
+            wait_for(lambda:all((drag_root/'folder'/n).exists() for n in ('a.txt','b.txt')),'Wayland marked group drag')
+            assert not (drag_root/'a.txt').exists() and not (drag_root/'b.txt').exists();time.sleep(.25)
+            control_mouse(lambda:(click(34,12,10),click(34,11,11),click(34,11,12)))
+            wait_for(lambda:(drag_root/'folder/c.txt').exists(),'Wayland Ctrl drag copy');assert (drag_root/'c.txt').exists()
+            click(34,12,10);click(34,11,11);key('Escape');click(34,11,12);assert (drag_root/'c.txt').exists()
+            tab_dest=base/'drop-target';tab_dest.mkdir();key('t','ctrl');navigate(tab_dest);click(28,6)
+            click(34,12,10);click(43,6,11);click(43,6,12)
+            wait_for(lambda:(tab_dest/'c.txt').exists(),'Wayland inactive tab drop');assert not (drag_root/'c.txt').exists()
+            time.sleep(.25);key('z','ctrl');wait_for(lambda:(drag_root/'c.txt').exists(),'Wayland drag undo')
+            time.sleep(.25);key('y','ctrl');wait_for(lambda:not (drag_root/'c.txt').exists(),'Wayland drag redo')
+            (drag_root/'pane.txt').write_text('pane drag');time.sleep(.5);key('d','ctrl');click(110,25)
+            pane_dest=base/'drop-pane';pane_dest.mkdir();navigate(pane_dest)
+            click(34,12,10);click(110,25,11);click(110,25,12)
+            wait_for(lambda:(pane_dest/'pane.txt').exists(),'Wayland other pane drop')
+            key('q','ctrl');process.wait(timeout=5)
+            settings.write_text(json.dumps({'preview':False,'grid':True,'font_size':16,'theme':'light'}))
+            grid_drag=base/'drag-grid';grid_drag.mkdir();(grid_drag/'folder').mkdir();(grid_drag/'image.txt').write_text('grid drag')
+            process=launch(grid_drag);click(54,12,10);click(34,12,11)
+            run('grim','-g','0,0 1360x860',str(out/'native-wayland-drag-grid.png'));click(34,12,12)
+            wait_for(lambda:(grid_drag/'folder/image.txt').exists(),'Wayland grid drag')
+            key('q','ctrl');process.wait(timeout=5);process=None
+            print('Native Wayland drag/drop: group move, Ctrl copy, Escape, tabs, panes, undo/redo and grid passed',flush=True)
+            settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'light'}))
+            if '--drag-drop-only' in sys.argv[2:]:return
             files = base / "files"
             source, destination = files / "source", files / "destination"
             source.mkdir(parents=True); destination.mkdir()
@@ -228,7 +286,7 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             # Hold the primary button across motion events in the file list.
             key("l", "ctrl"); key("u", "ctrl"); run("wtype", "-s", "100", str(mouse), "-s", "100"); key("Return")
             # Folder rows 11/12, file row 13: a rectangle selects both folders.
-            click(75,12,10); click(26,11,11)
+            click(168,12,10); click(26,11,11)
             run("grim", "-g", "0,0 1360x860", str(out / "native-wayland-selection.png"))
             click(26,11,12)
             destination = base / "wayland-selection"; destination.mkdir()

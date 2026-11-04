@@ -218,7 +218,7 @@ fn rubber_band_after_scrolling_uses_current_entries_and_wheel_preserves_its_set(
     let index = first(&app, 0);
     let area = app.file_areas[0];
     app.handle(Input::PointerDown {
-        x: area.right() - 2,
+        x: area.right() - 1,
         y: area.y + 1,
         double: false,
         toggle: false,

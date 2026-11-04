@@ -253,7 +253,7 @@ fn background_results_wait_for_dialogs_and_marquee_without_blanking_the_files() 
     wait(&mut app, "dialog released update", |a| has(a, "gamma"));
     let area = app.file_areas[0];
     app.handle(Input::PointerDown {
-        x: area.right() - 2,
+        x: area.right() - 1,
         y: area.y + 1,
         double: false,
         toggle: false,

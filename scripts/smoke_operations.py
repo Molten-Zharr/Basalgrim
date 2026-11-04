@@ -30,7 +30,7 @@ def main():
         config = root / "config"
         config.mkdir()
         env = dict(os.environ, TERM="xterm-256color", XDG_STATE_HOME=str(config.parent / "state"), XDG_CONFIG_HOME=str(config))
-        for name in ("TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION", "NO_COLOR"):
+        for name in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION", "NO_COLOR"):
             env.pop(name, None)
         master, slave = pty.openpty()
         original = termios.tcgetattr(slave)

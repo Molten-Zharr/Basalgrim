@@ -20,88 +20,86 @@ fn image_slot(entry: &fs::Entry, area: Rect, palette: Palette) -> crate::icons::
     }
 }
 
-pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Palette) {
+pub fn render(
+    app: &mut App,
+    frame: &mut Frame,
+    area: Rect,
+    pane: usize,
+    split: bool,
+    palette: Palette,
+) {
     app.pane_areas[pane] = area;
     let focused = app.active == pane;
-    let block = panel(
-        palette,
+    let toggle = (!split || pane == 1).then(|| {
+        if split {
+            " × ".to_owned()
+        } else {
+            format!(
+                " {} {} ",
+                if app.settings.dual { "×" } else { "+" },
+                if area.width < 52 {
+                    "2-я панель"
+                } else {
+                    "Вторая панель"
+                }
+            )
+        }
+    });
+    let title = format!(
+        " {} · {} ",
+        if pane == 0 {
+            "ФАЙЛЫ"
+        } else {
+            "ВТОРАЯ ПАНЕЛЬ"
+        },
+        if focused {
+            "активна".into()
+        } else {
+            app.settings.shortcut(Action::NextPane)
+        }
+    );
+    let room = area
+        .width
+        .saturating_sub(toggle.as_ref().map_or(0, |s| s.width() as u16) + 3);
+    let title = if title.width() > usize::from(room) {
         format!(
-            " {} · {} ",
+            " {} ",
             if pane == 0 {
                 "ФАЙЛЫ"
             } else {
-                "ВТОРАЯ ПАНЕЛЬ"
-            },
-            if focused {
-                "активна".into()
-            } else {
-                app.settings.shortcut(Action::NextPane)
+                "ПАНЕЛЬ 2"
             }
-        ),
-        focused,
-    )
-    .border_style(palette.text().fg(palette.color(if focused {
-        "active"
+        )
     } else {
-        "inactive_file_border"
-    })));
+        title
+    };
+    let block =
+        panel(palette, title, focused).border_style(palette.text().fg(palette.color(if focused {
+            "active"
+        } else {
+            "inactive_file_border"
+        })));
     let inner = block.inner(area);
     frame.render_widget(block, area);
+    if let Some(label) = toggle {
+        let width = (label.width() as u16).min(area.width.saturating_sub(2));
+        let rect = Rect::new(area.right() - width - 1, area.y, width, 1);
+        frame.render_widget(Paragraph::new(label).style(palette.accent()), rect);
+        hit(app, rect, Target::Action(Action::Dual));
+    }
     if inner.height < 4 {
         return;
     }
     let compact = inner.height < 9;
     let parts = Layout::vertical([
-        Constraint::Length(if compact { 0 } else { 1 }),
+        Constraint::Length(1),
         Constraint::Length(if compact { 1 } else { 2 }),
         Constraint::Length(if compact { 0 } else { 1 }),
         Constraint::Min(1),
         Constraint::Length(1),
     ])
     .split(inner);
-    let mut x = parts[0].x;
-    for i in 0..if compact {
-        0
-    } else {
-        app.panes[pane].tabs.len()
-    } {
-        let tab = &app.panes[pane].tabs[i];
-        let label = format!(
-            " {}:{} ",
-            i + 1,
-            if app
-                .trash
-                .as_ref()
-                .is_some_and(|view| view.owner.pane == pane && view.owner.tab == i)
-            {
-                "Корзина".into()
-            } else {
-                fs::clean(
-                    &tab.cwd
-                        .file_name()
-                        .unwrap_or_else(|| std::ffi::OsStr::new("/"))
-                        .to_string_lossy(),
-                )
-            }
-        );
-        let width = (label.width() as u16)
-            .min(22)
-            .min(parts[0].right().saturating_sub(x));
-        if width == 0 {
-            break;
-        }
-        let rect = Rect::new(x, parts[0].y, width, 1);
-        frame.render_widget(
-            Paragraph::new(label).style(if app.panes[pane].active == i {
-                palette.selection()
-            } else {
-                palette.muted()
-            }),
-            rect,
-        );
-        hit(app, rect, Target::Tab { pane, index: i });
-        x += width + 1;
-    }
+    tabs(app, frame, parts[0], pane, palette);
     super::path::bar(
         app,
         frame,
@@ -165,6 +163,31 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette
         );
         list(app, frame, parts[3], pane, palette);
     }
+    let owner = app.panes[pane].active;
+    app.drop_region(
+        app.file_areas[pane],
+        pane,
+        owner,
+        Some(app.panes[pane].tab().cwd.clone()),
+        false,
+    );
+    let entries = app
+        .hits
+        .iter()
+        .filter_map(|(area, target)| match target {
+            Target::Entry { pane: p, index } if *p == pane => {
+                let entry = &app.file_tab(pane).entries[app.file_tab(pane).visible[*index]];
+                Some((*area, entry.directory.then(|| entry.path.clone())))
+            }
+            Target::EntryBackground if app.file_areas[pane].contains((area.x, area.y).into()) => {
+                Some((*area, Some(app.panes[pane].tab().cwd.clone())))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for (area, destination) in entries {
+        app.drop_region(area, pane, owner, destination, false);
+    }
     let tab = app.file_tab(pane);
     let total = tab.visible.iter().fold(0u64, |sum, &i| {
         sum.saturating_add(if tab.entries[i].directory {
@@ -195,6 +218,103 @@ pub fn render(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette
     };
     frame.render_widget(Paragraph::new(footer).style(palette.muted()), parts[4]);
 }
+fn tabs(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Palette) {
+    if row.is_empty() {
+        return;
+    }
+    let labels = app.panes[pane]
+        .tabs
+        .iter()
+        .enumerate()
+        .map(|(i, tab)| {
+            let name = if app
+                .trash
+                .as_ref()
+                .is_some_and(|v| v.owner.pane == pane && v.owner.tab == i)
+            {
+                "Корзина".into()
+            } else {
+                fs::clean(
+                    &tab.cwd
+                        .file_name()
+                        .unwrap_or_else(|| std::ffi::OsStr::new("/"))
+                        .to_string_lossy(),
+                )
+            };
+            format!(" {}:{} ", i + 1, name)
+        })
+        .collect::<Vec<_>>();
+    let available = row.width.saturating_sub(4);
+    let overflow =
+        labels.iter().map(|s| s.width().min(22) + 1).sum::<usize>() > usize::from(available);
+    let budget = available
+        .saturating_sub(if overflow { 8 } else { 0 })
+        .max(1);
+    let active = app.panes[pane].active;
+    let mut start = active;
+    let mut used = (labels[active].width().min(22) as u16).min(budget) + 1;
+    while start > 0 && used + (labels[start - 1].width().min(22) as u16) < budget {
+        start -= 1;
+        used += (labels[start].width().min(22) as u16) + 1;
+    }
+    let mut x = row.x;
+    if overflow {
+        if start > 0 {
+            let r = Rect::new(x, row.y, 3, 1);
+            frame.render_widget(Paragraph::new(" ‹ ").style(palette.accent()), r);
+            hit(
+                app,
+                r,
+                Target::Tab {
+                    pane,
+                    index: start - 1,
+                },
+            );
+        }
+        x += 4;
+    }
+    let end_x = x + budget;
+    let mut end = start;
+    while end < labels.len() && x < end_x {
+        let width = (labels[end].width().min(22) as u16).min(end_x - x);
+        let rect = Rect::new(x, row.y, width, 1);
+        frame.render_widget(
+            Paragraph::new(labels[end].clone()).style(if active == end {
+                palette.selection()
+            } else {
+                palette.muted()
+            }),
+            rect,
+        );
+        hit(app, rect, Target::Tab { pane, index: end });
+        app.drop_region(
+            rect,
+            pane,
+            end,
+            Some(app.panes[pane].tabs[end].cwd.clone()),
+            true,
+        );
+        x += width + 1;
+        end += 1;
+    }
+    if overflow {
+        if end < labels.len() {
+            let r = Rect::new(x.min(row.right() - 7), row.y, 3, 1);
+            frame.render_widget(Paragraph::new(" › ").style(palette.accent()), r);
+            hit(app, r, Target::Tab { pane, index: end });
+        }
+        x = x.min(row.right() - 7) + 4;
+    }
+    let plus = Rect::new(
+        x.min(row.right().saturating_sub(3)),
+        row.y,
+        3.min(row.width),
+        1,
+    );
+    frame.render_widget(Paragraph::new(" + ").style(palette.accent()), plus);
+    hit(app, plus, Target::NewTab { pane });
+}
+
 pub(super) fn shorten_name(name: &str, width: usize) -> String {
     if name.width() <= width {
         return name.into();
@@ -350,6 +470,25 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
         }
         app.icon_slots.extend(slot);
         hit(app, rect, Target::Entry { pane, index });
+        if rect.height > 1 && rect.width > 2 {
+            hit(
+                app,
+                Rect::new(rect.x, rect.y + 1, 1, rect.height - 1),
+                Target::EntryBackground,
+            );
+            hit(
+                app,
+                Rect::new(rect.right() - 1, rect.y + 1, 1, rect.height - 1),
+                Target::EntryBackground,
+            );
+        }
+        if rect.height == 5 {
+            hit(
+                app,
+                Rect::new(rect.x, rect.bottom() - 1, rect.width, 1),
+                Target::EntryBackground,
+            );
+        }
         let mark_area = Rect::new(rect.right().saturating_sub(3), rect.y, 3.min(rect.width), 1);
         frame.render_widget(
             Paragraph::new(if marked { "[●]" } else { "[ ]" }).style(base),
@@ -458,6 +597,13 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
             Rect::new(area.x, area.y + 1 + (index - start) as u16, area.width, 1),
             Target::Entry { pane, index },
         );
+        if area.width > 3 {
+            hit(
+                app,
+                Rect::new(area.right() - 1, area.y + 1 + (index - start) as u16, 1, 1),
+                Target::EntryBackground,
+            );
+        }
         hit(
             app,
             Rect::new(

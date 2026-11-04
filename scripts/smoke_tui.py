@@ -36,7 +36,7 @@ def main():
         # not XDG_DATA_HOME. CI can mount the runner home separately from /tmp.
         env = dict(os.environ, TERM="xterm-256color", HOME=str(home), GIO_USE_VFS="local", XDG_STATE_HOME=str(config.parent / "state"), XDG_CONFIG_HOME=str(config), XDG_DATA_HOME=str(data))
         env.pop("NO_COLOR", None)  # Exercise actual color updates in the isolated test terminal.
-        for name in ("TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION"):
+        for name in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION"):
             env.pop(name, None)
         master, slave = pty.openpty()
         original = termios.tcgetattr(slave)

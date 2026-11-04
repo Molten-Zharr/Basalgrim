@@ -21,7 +21,7 @@ impl App {
     }
 
     fn directory_updates_deferred(&self) -> bool {
-        self.dialog.is_some() || self.marquee.is_some() || self.busy
+        self.dialog.is_some() || self.marquee.is_some() || self.file_drag.is_some() || self.busy
     }
 
     pub(super) fn refresh_changed_directories(&mut self) {

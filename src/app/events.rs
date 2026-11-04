@@ -15,16 +15,29 @@ impl App {
                 return;
             }
             Input::Drag { x, y } => {
-                self.drag_selection(x, y);
+                if self.file_drag.is_some() {
+                    self.move_file_drag(x, y);
+                } else {
+                    self.drag_selection(x, y);
+                }
                 return;
             }
             Input::PointerUp { x, y } => {
+                if self.file_drag.is_some() {
+                    self.release_file_drag(x, y);
+                    return;
+                }
                 self.drag_selection(x, y);
                 self.finish_marquee(false);
                 return;
             }
             Input::CancelDrag => {
+                self.cancel_file_drag();
                 self.finish_marquee(true);
+                return;
+            }
+            Input::DragModifiers { copy } => {
+                self.set_drag_copy(copy);
                 return;
             }
             _ => {}
@@ -33,6 +46,19 @@ impl App {
             input,
             Input::Key(_) | Input::SecondaryClick { .. } | Input::Scroll { .. }
         ) {
+            if self.file_drag.is_some() && !matches!(input, Input::Scroll { .. }) {
+                let stop = matches!(
+                    input,
+                    Input::Key(KeyPress {
+                        key: Key::Escape,
+                        ..
+                    }) | Input::SecondaryClick { .. }
+                );
+                self.cancel_file_drag();
+                if stop {
+                    return;
+                }
+            }
             if self.marquee.is_some()
                 && matches!(
                     input,
@@ -296,9 +322,19 @@ impl App {
                         self.action(a);
                     }
                     Some(Target::Place(path)) => self.navigate(path, true),
-                    Some(Target::Tab { pane, index }) => {
+                    Some(Target::Tab { pane, index })
+                        if self.panes.get(pane).is_some_and(|p| index < p.tabs.len())
+                            && (self.settings.dual || pane == self.active) =>
+                    {
                         self.active = pane;
                         self.panes[pane].active = index;
+                    }
+                    Some(Target::NewTab { pane })
+                        if pane < self.panes.len()
+                            && (self.settings.dual || pane == self.active) =>
+                    {
+                        self.active = pane;
+                        self.action(Action::NewTab);
                     }
                     Some(Target::Entry { pane, index }) => {
                         self.active = pane;

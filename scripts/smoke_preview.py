@@ -41,7 +41,7 @@ def main():
             settings.write_text(json.dumps({"preview": True, "grid": False, "icon_mode": "symbols"}))
             env = dict(os.environ, TERM="xterm-256color", XDG_CONFIG_HOME=str(root / "config"),
                        XDG_STATE_HOME=str(root / "state"), XDG_DATA_HOME=str(root / "data"))
-            for name in ("TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION"):
+            for name in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION"):
                 env.pop(name, None)
             if protocol == "iterm2":
                 env["TERM_PROGRAM"] = "iTerm.app"

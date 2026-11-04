@@ -4,7 +4,9 @@ mod commands;
 mod conflicts;
 pub use conflicts::ConflictDialog;
 mod directories;
+mod drag_drop;
 pub use commands::{CommandItem, CommandMenu, MenuContext};
+pub use drag_drop::DragFeedback;
 mod events;
 mod journal;
 mod storage;
@@ -70,6 +72,7 @@ pub enum Target {
         pane: usize,
         index: usize,
     },
+    EntryBackground,
     Operation(usize),
     Action(Action),
     Place(PathBuf),
@@ -80,6 +83,9 @@ pub enum Target {
     Tab {
         pane: usize,
         index: usize,
+    },
+    NewTab {
+        pane: usize,
     },
     Confirm,
     Cancel,
@@ -198,6 +204,8 @@ pub struct App {
     pub pane_areas: [Rect; 2],
     pub file_areas: [Rect; 2],
     marquee: Option<selection::Marquee>,
+    file_drag: Option<drag_drop::FileDrag>,
+    pub(crate) drop_regions: Vec<drag_drop::DropRegion>,
     pub operation_count: usize,
     pub operations: std::collections::VecDeque<crate::operations::OperationRecord>,
     pub operations_selected: usize,
@@ -297,6 +305,8 @@ impl App {
             pane_areas: [Rect::default(); 2],
             file_areas: [Rect::default(); 2],
             marquee: None,
+            file_drag: None,
+            drop_regions: Vec::new(),
             operation_count: 0,
             operations: Default::default(),
             operations_selected: 0,
@@ -321,11 +331,7 @@ impl App {
         };
         app.reload(0, 0);
         app.reload(1, 0);
-        app.notice = format!(
-            "{} — справка  ·  {} — выход",
-            app.settings.shortcut(Action::Help),
-            app.settings.shortcut(Action::Quit)
-        );
+        app.notice = format!("{} — выход", app.settings.shortcut(Action::Quit));
         app
     }
     fn token(&mut self) -> u64 {
@@ -351,7 +357,7 @@ impl App {
     }
     /// Resolve against this frame's active hit regions, including modal overlays.
     pub fn hovered_area(&self) -> Option<Rect> {
-        if self.selection_area().is_some() {
+        if self.selection_area().is_some() || self.dragging_files() {
             return None;
         }
         let pointer = self.pointer?;
@@ -360,13 +366,20 @@ impl App {
             .rev()
             .find(|(area, _)| area.contains(pointer))
             .and_then(|(area, target)| {
-                (!matches!(target, Target::MenuBackground | Target::DismissMenu)).then_some(*area)
+                (!matches!(
+                    target,
+                    Target::MenuBackground | Target::DismissMenu | Target::EntryBackground
+                ))
+                .then_some(*area)
             })
     }
     pub fn tab_mut(&mut self) -> &mut Tab {
         self.file_tab_mut(self.active)
     }
     pub fn loading(&self) -> bool {
+        if self.dragging_files() {
+            return true;
+        }
         self.panes.iter().flat_map(|p| &p.tabs).any(|t| t.loading)
             || self.preview_loading
             || self.busy
@@ -397,6 +410,7 @@ impl App {
         self.reload(self.active, self.panes[self.active].active);
     }
     pub fn navigate(&mut self, path: PathBuf, history: bool) {
+        self.cancel_file_drag();
         self.finish_marquee(true);
         if self.in_trash() {
             self.close_trash();
@@ -419,6 +433,7 @@ impl App {
         self.update_preview();
     }
     pub fn tick(&mut self) {
+        self.tick_file_drag();
         self.tick_trash();
         if matches!(&self.dialog,Some(Dialog::Paths(menu)) if !menu.owner.valid(self)) {
             self.dialog = None;

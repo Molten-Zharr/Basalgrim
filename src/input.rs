@@ -102,6 +102,9 @@ pub enum Input {
         y: u16,
     },
     CancelDrag,
+    DragModifiers {
+        copy: bool,
+    },
     SecondaryClick {
         x: u16,
         y: u16,
@@ -240,7 +243,7 @@ impl Action {
             Self::Search => "Фильтр папки",
             Self::Path => "Перейти по пути",
             Self::Grid => "Сетка / список",
-            Self::Dual => "Две панели",
+            Self::Dual => "Вторая панель",
             Self::Preview => "Предпросмотр",
             Self::Hidden => "Скрытые файлы",
             Self::Sort => "Сортировка",

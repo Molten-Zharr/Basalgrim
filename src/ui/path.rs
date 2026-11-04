@@ -74,6 +74,7 @@ fn crumb(
             palette.muted()
         },
     );
+    app.drop_region(rect, owner.pane, owner.tab, Some(item.path.clone()), false);
     rect.width
 }
 fn separator(frame: &mut Frame, row: Rect, x: &mut u16, palette: Palette) {

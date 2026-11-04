@@ -152,6 +152,9 @@ fn run() -> Result<()> {
             Event::Mouse(mouse) => {
                 let (x, y) = (mouse.column, mouse.row);
                 app.handle(Input::Pointer(Some(ratatui::layout::Position::new(x, y))));
+                app.handle(Input::DragModifiers {
+                    copy: mouse.modifiers.contains(KeyModifiers::CONTROL),
+                });
                 match mouse.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
                         let double = previous_click.is_some_and(|(point, time)| {
@@ -171,13 +174,13 @@ fn run() -> Result<()> {
                     }
                     MouseEventKind::Drag(MouseButton::Left) => {
                         app.handle(Input::Drag { x, y });
-                        if app.selection_area().is_some() {
+                        if app.selection_area().is_some() || app.dragging_files() {
                             previous_click = None;
                         }
                     }
                     MouseEventKind::Up(MouseButton::Left) => {
                         app.handle(Input::Drag { x, y });
-                        if app.selection_area().is_some() {
+                        if app.selection_area().is_some() || app.dragging_files() {
                             previous_click = None;
                         }
                         app.handle(Input::PointerUp { x, y });

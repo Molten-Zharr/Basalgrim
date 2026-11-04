@@ -30,7 +30,7 @@ def main():
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({"dual": True, "grid": False, "preview": False}))
         env = dict(os.environ, TERM="xterm-256color", XDG_STATE_HOME=str(base / "state"), XDG_CONFIG_HOME=str(base / "config"))
-        for name in ("TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION"):
+        for name in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION"):
             env.pop(name, None)
         master, slave = pty.openpty(); width, height = 170, 40
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
