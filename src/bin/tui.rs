@@ -81,6 +81,12 @@ fn run() -> Result<()> {
     app.clipboard_connecting();
     while !app.quit {
         app.pump_clipboard(&files);
+        if let Some(id) = app.take_text_paste_fallback() {
+            app.finish_text_paste(
+                id,
+                Err("Вставьте текст сочетанием терминала, например Ctrl+Shift+V".into()),
+            );
+        }
         app.tick();
         dnd.tick();
         pump_dnd(&mut dnd, &mut app, &mut native_source);
@@ -157,6 +163,9 @@ fn run() -> Result<()> {
             Event::Paste(text) => app.handle(Input::Text(text)),
             Event::Mouse(mouse) => {
                 let (x, y) = (mouse.column, mouse.row);
+                app.handle(Input::TextSelectionModifier(
+                    mouse.modifiers.contains(KeyModifiers::SHIFT),
+                ));
                 app.handle(Input::Pointer(Some(ratatui::layout::Position::new(x, y))));
                 app.handle(Input::DragModifiers {
                     copy: mouse.modifiers.contains(KeyModifiers::CONTROL),

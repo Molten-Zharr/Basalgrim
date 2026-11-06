@@ -9,6 +9,12 @@ pub(super) struct RunningOperation {
     cancellation: Cancellation,
     cut: bool,
     clipboard_generation: u64,
+    rename: Option<RenameView>,
+}
+struct RenameView {
+    source: PathBuf,
+    name: String,
+    requests: Vec<u64>,
 }
 impl Drop for RunningOperation {
     fn drop(&mut self) {
@@ -17,6 +23,20 @@ impl Drop for RunningOperation {
 }
 
 impl App {
+    pub(crate) fn entry_name<'a>(&'a self, pane: usize, entry: &'a fs::Entry) -> &'a str {
+        if let Some(rename) = self
+            .running_operation
+            .as_ref()
+            .and_then(|r| r.rename.as_ref())
+            && entry.path == rename.source
+            && rename.requests.contains(&self.file_tab(pane).request)
+        {
+            &rename.name
+        } else {
+            &entry.name
+        }
+    }
+
     pub fn replay_candidate(&self, redo: bool) -> Option<(i64, usize)> {
         if self.busy
             || self.clipboard_reads_pending()
@@ -84,6 +104,21 @@ impl App {
         let id = self.token();
         let cancellation = Cancellation::default();
         let cut = matches!(operation, Operation::Transfer { cut: true, .. });
+        let rename = if let Operation::Rename { source, name } = &operation {
+            Some(RenameView {
+                source: source.clone(),
+                name: name.clone(),
+                requests: self
+                    .panes
+                    .iter()
+                    .flat_map(|p| &p.tabs)
+                    .filter(|t| t.entries.iter().any(|e| e.path == *source))
+                    .map(|t| t.request)
+                    .collect(),
+            })
+        } else {
+            None
+        };
         let mut record = OperationRecord::new(id, operation.title().into(), operation.total());
         record.destination = operation.destination();
         self.operations.push_front(record);
@@ -96,6 +131,7 @@ impl App {
             cancellation: cancellation.clone(),
             cut,
             clipboard_generation: self.file_exchange.generation,
+            rename,
         });
         self.busy = true;
         self.conflict_sequence = 0;
@@ -158,6 +194,38 @@ impl App {
         self.finish_conflict(token);
         self.busy = false;
         self.operation_count += 1;
+        // Publish the confirmed name into the existing snapshot before removing
+        // its pending label. A later scan can sort once while retaining focus.
+        // Only touch snapshots captured at dispatch, never a newly navigated tab.
+        if let Some(rename) = &running.rename
+            && let Some((source, destination)) = &report.renamed
+            && source == &rename.source
+        {
+            for tab in self.panes.iter_mut().flat_map(|p| &mut p.tabs) {
+                if rename.requests.contains(&tab.request)
+                    && let Some(entry) = tab.entries.iter_mut().find(|e| e.path == *source)
+                {
+                    entry.path = destination.clone();
+                    entry.name = fs::clean(&destination.file_name().unwrap().to_string_lossy());
+                    entry.hidden = destination
+                        .file_name()
+                        .unwrap()
+                        .as_encoded_bytes()
+                        .starts_with(b".");
+                    if tab.marked.remove(source) {
+                        tab.marked.insert(destination.clone());
+                    }
+                }
+            }
+            if self.preview_path.as_ref() == Some(source)
+                && self.tab().entry().is_some_and(|e| e.path == *destination)
+            {
+                self.preview_cancel.cancel();
+                self.preview_token = self.token();
+                self.preview_loading = false;
+                self.preview_path = Some(destination.clone());
+            }
+        }
         if running.cut
             && running.clipboard_generation == self.file_exchange.generation
             && let Some(clip) = &mut self.clipboard
@@ -215,10 +283,9 @@ impl App {
         }
         for pane in 0..2 {
             for tab in 0..self.panes[pane].tabs.len() {
-                self.reload(pane, tab);
+                self.refresh_tab(pane, tab);
             }
         }
-        self.preview_path = None;
         if self.trash.is_some() {
             self.refresh_trash();
         }
@@ -305,11 +372,158 @@ mod tests {
             cancellation: cancellation.clone(),
             cut: true,
             clipboard_generation: app.file_exchange.generation,
+            rename: None,
         });
         app.operations
             .push_front(OperationRecord::new(42, "Перемещение".into(), 2));
         app.busy = true;
         (app, cancellation)
+    }
+
+    #[test]
+    fn rename_completion_keeps_file_panes_visible_while_the_new_snapshot_loads() {
+        use ratatui::{Terminal, backend::TestBackend};
+        use std::time::{Duration, Instant};
+
+        for grid in [false, true] {
+            for (width, height) in [(34, 14), (160, 44)] {
+                let root = tempfile::tempdir().unwrap();
+                for index in 0..80 {
+                    std::fs::create_dir(root.path().join(format!("dir-{index:03}"))).unwrap();
+                }
+                let (mut app, _) = running(root.path());
+                app.settings.grid = grid;
+                app.settings.dual = true;
+                app.settings.preview = false;
+                let deadline = Instant::now() + Duration::from_secs(5);
+                while app.panes.iter().flat_map(|p| &p.tabs).any(|t| t.loading) {
+                    app.tick();
+                    assert!(Instant::now() < deadline);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                for pane in &mut app.panes {
+                    let tab = pane.tab_mut();
+                    tab.selected = 12;
+                    tab.offset = 10;
+                    tab.follow_selection = false;
+                    tab.marked.insert(root.path().join("dir-015"));
+                }
+                let source = root.path().join("dir-012");
+                let destination = root.path().join("dir-012-renamed");
+                app.running_operation.as_mut().unwrap().rename = Some(RenameView {
+                    source: source.clone(),
+                    name: "dir-012-renamed".into(),
+                    requests: app
+                        .panes
+                        .iter()
+                        .flat_map(|p| &p.tabs)
+                        .map(|t| t.request)
+                        .collect(),
+                });
+                let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+                terminal.draw(|f| crate::ui::render(&mut app, f)).unwrap();
+                let before = terminal.backend().buffer().clone();
+                let areas = app.file_areas;
+                let offsets = app.panes.each_ref().map(|p| p.tab().offset);
+                assert_eq!(app.tab().entry().unwrap().path, source);
+                std::fs::rename(&source, &destination).unwrap();
+                // Stop exactly between completion and directory result handling,
+                // even when the worker can scan this small fixture immediately.
+                app.finish_operation(
+                    42,
+                    Report {
+                        total: 1,
+                        renamed: Some((source.clone(), destination.clone())),
+                        completed: vec![source],
+                        ..Default::default()
+                    },
+                );
+                assert_eq!(app.tab().entry().unwrap().path, destination);
+                terminal.draw(|f| crate::ui::render(&mut app, f)).unwrap();
+                assert_eq!(app.file_areas, areas, "refresh collapsed file viewports");
+                for area in areas {
+                    for y in area.y..area.bottom() {
+                        for x in area.x..area.right() {
+                            assert_eq!(
+                                terminal.backend().buffer()[(x, y)],
+                                before[(x, y)],
+                                "refresh blanked or moved file content at {x},{y}"
+                            );
+                        }
+                    }
+                }
+                while app.loading() {
+                    app.tick();
+                    terminal.draw(|f| crate::ui::render(&mut app, f)).unwrap();
+                    assert_eq!(app.file_areas, areas);
+                    assert!(Instant::now() < deadline);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                assert_eq!(app.panes.each_ref().map(|p| p.tab().offset), offsets);
+                for pane in &app.panes {
+                    assert!(pane.tab().entries.iter().any(|e| e.path == destination));
+                    assert!(pane.tab().marked.contains(&root.path().join("dir-015")));
+                    assert!(!pane.tab().follow_selection);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn operation_refresh_keeps_preview_but_does_not_reuse_a_previous_directory() {
+        use std::time::{Duration, Instant};
+
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("read.txt"), "preview content\n".repeat(80)).unwrap();
+        let (mut app, _) = running(root.path());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while app.panes.iter().flat_map(|p| &p.tabs).any(|t| t.loading) || app.preview_loading {
+            app.tick();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(app.preview.is_some());
+        app.preview_offset = 7;
+        app.dialog = Some(Dialog::Help);
+        let arrival = root.path().join("zzz-new");
+        std::fs::write(&arrival, "external change").unwrap();
+        app.finish_operation(
+            42,
+            Report {
+                total: 1,
+                error: Some("Destination exists".into()),
+                ..Default::default()
+            },
+        );
+        app.update_preview();
+        assert!(app.preview.is_some(), "refresh blanked the current preview");
+        assert_eq!(app.preview_offset, 7);
+        while app.loading() {
+            app.tick();
+            assert!(Instant::now() < deadline, "finished scans must become idle");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(matches!(app.dialog, Some(Dialog::Help)));
+        assert!(!app.tab().entries.iter().any(|e| e.path == arrival));
+        app.cancel_dialog();
+        app.tick();
+        assert!(app.tab().entries.iter().any(|e| e.path == arrival));
+        let other = root.path().join("other");
+        std::fs::create_dir(&other).unwrap();
+        app.navigate(other, true);
+        app.refresh_tab(0, 0);
+        assert!(app.tab().loading && !app.tab().refreshing);
+        assert!(app.tab().entries.is_empty());
+        assert!(app.preview.is_none());
+        while app.tab().loading {
+            app.tick();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        // A loaded empty directory is also a real snapshot: do not flash a
+        // loading screen when an operation refreshes it.
+        app.refresh_tab(0, 0);
+        assert!(app.tab().refreshing);
     }
 
     #[test]

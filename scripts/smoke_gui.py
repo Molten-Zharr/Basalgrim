@@ -94,7 +94,7 @@ def key(name, down=None):
     x.XFlush(d)
     time.sleep(.025)
 
-def screenshot(win, name):
+def screenshot(win, name=None):
     rr, px, py = W(), C.c_int(), C.c_int()
     width, height, border, depth = C.c_uint(), C.c_uint(), C.c_uint(), C.c_uint()
     assert x.XGetGeometry(d, win, C.byref(rr), C.byref(px), C.byref(py), C.byref(width), C.byref(height), C.byref(border), C.byref(depth))
@@ -104,7 +104,8 @@ def screenshot(win, name):
     data = C.string_at(info.data, info.bytes_per_line * info.height)
     image = Image.frombytes('RGB', (info.width, info.height), data, 'raw', 'BGRX', info.bytes_per_line)
     x.XDestroyImage(raw)
-    image.save(Path('target/preview') / name)
+    if name is not None:
+        image.save(Path('target/preview') / name)
     return image
 
 x.XResizeWindow.argtypes = [D, W, C.c_uint, C.c_uint]
@@ -211,6 +212,35 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--text-edit-only' in sys.argv[2:] or '--rename-refresh-only' in sys.argv[2:]:
+            import text_edit_fixture
+            editor=base/'editor';editor.mkdir();(editor/'alpha.txt').write_text('editor data')
+            paste_target=base/'paste-target';paste_target.mkdir()
+            process,window,log=launch(editor,config)
+            def editor_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L'}[m] for m in mods])
+            def put_text(value):
+                subprocess.run([xclip,'-selection','clipboard','-in'],input=value.encode(),check=True)
+            def get_text():
+                return subprocess.check_output([xclip,'-selection','clipboard','-out'],timeout=3).decode()
+            def text_drag(sx,sy,ex,ey):
+                move(window,sx,sy);xt.XTestFakeButtonEvent(d,1,1,0);x.XFlush(d);time.sleep(.1)
+                move(window,ex,ey);time.sleep(.15);xt.XTestFakeButtonEvent(d,1,0,0);x.XFlush(d);time.sleep(.15)
+            try:
+                if '--rename-refresh-only' in sys.argv[2:]:
+                    folder=base/'rename-refresh';folder.mkdir()
+                    move(window,0,0);time.sleep(.1)
+                    text_edit_fixture.exercise_rename_refresh(folder,editor_key,type_text,
+                        lambda name:screenshot(window,'native-x11-'+name+'.png' if name else None),wait_for,
+                        config.parent/'state/molten-zharr/basalgrim/operations.sqlite3')
+                else:
+                    text_edit_fixture.exercise(editor,paste_target,editor_key,type_text,put_text,get_text,
+                        lambda cx,cy,button=1:click(window,cx,cy,button),text_drag,
+                        lambda name:screenshot(window,'native-x11-'+name+'.png'),wait_for)
+                quit_when_ready(process)
+            finally:stop(process,log)
+            print('Native X11 rename refresh passed' if '--rename-refresh-only' in sys.argv[2:] else
+                  'Native X11 text editing: inline rename, mouse range/cut/paste, Unicode, path selection and retained file clipboard passed',flush=True)
+            sys.exit(0)
         # A separate private journal keeps permanent storage disposal independent
         # of the other GUI scenarios and of all host/user files.
         import sqlite3

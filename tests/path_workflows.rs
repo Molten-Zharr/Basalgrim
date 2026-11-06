@@ -197,7 +197,14 @@ fn path_editor_selects_replaces_and_copies_with_mouse_and_keyboard() {
         render(&mut app, width, height);
         let edit = hit(&app, |t| matches!(t, Target::PathEdit(_)));
         click(&mut app, edit);
-        assert!(app.path_text_selected);
+        assert!(
+            !app.editor
+                .selection(match &app.dialog {
+                    Some(Dialog::Edit { text, .. }) => text,
+                    _ => panic!(),
+                })
+                .is_empty()
+        );
         key(&mut app, KeyPress::ctrl('c'));
         assert_eq!(
             app.take_text_copy().unwrap().text,
@@ -330,7 +337,7 @@ fn clicking_current_component_edits_in_place_without_hidden_buttons() {
     );
     click(&mut app, current);
     let editing = render(&mut app, 150, 44);
-    let field = hit(&app, |t| matches!(t, Target::PathTextSelect { .. }));
+    let field = hit(&app, |t| matches!(t, Target::TextSelect { .. }));
     assert_eq!(field.y, current.y);
     for y in 0..current.y {
         for x in 0..150 {
@@ -360,7 +367,7 @@ fn inline_path_cursor_edits_unicode_and_outside_click_dismisses_without_navigati
     assert!(
         text_row(
             &buffer,
-            hit(&app, |t| matches!(t, Target::PathTextSelect { .. })).y
+            hit(&app, |t| matches!(t, Target::TextSelect { .. })).y
         )
         .contains("/tmp/ёя")
     );
@@ -381,9 +388,7 @@ fn mouse_positions_caret_and_unicode_arrows_use_the_rendered_graphemes() {
     app.action(Action::Path);
     app.handle(Input::Text("/tmp/文件 e\u{301}x".into()));
     render(&mut app, 150, 44);
-    let field = hit(&app, |target| {
-        matches!(target, Target::PathTextSelect { .. })
-    });
+    let field = hit(&app, |target| matches!(target, Target::TextSelect { .. }));
     click(&mut app, Rect::new(field.x + 7, field.y, 1, 1)); // after the first wide character
     app.handle(Input::Text("Z".into()));
     assert!(matches!(app.dialog,Some(Dialog::Edit{ref text,..}) if text=="/tmp/文Z件 e\u{301}x"));

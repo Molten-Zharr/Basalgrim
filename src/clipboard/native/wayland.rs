@@ -1,5 +1,5 @@
 use super::Backend;
-use crate::clipboard::files::{self, Formats, MAX_BYTES};
+use crate::clipboard::files::{Formats, MAX_BYTES};
 use anyhow::{Context, Result, ensure};
 use std::{
     collections::HashMap,
@@ -380,7 +380,7 @@ impl Backend for Wayland {
         self.sync()?;
         Ok(())
     }
-    fn read(&mut self) -> Result<Formats> {
+    fn read(&mut self, requested: &[&str]) -> Result<Formats> {
         if self.state.borrowed {
             ensure!(
                 self.state.focused,
@@ -399,7 +399,7 @@ impl Backend for Wayland {
             .unwrap_or_default();
         let deadline = Instant::now() + TIMEOUT;
         let mut result = Formats::new();
-        for mime in files::READ_FORMATS {
+        for &mime in requested {
             if !types.iter().any(|m| m == mime) {
                 continue;
             }

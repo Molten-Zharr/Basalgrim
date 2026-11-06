@@ -217,6 +217,19 @@ pub fn render(
         )
     };
     frame.render_widget(Paragraph::new(footer).style(palette.muted()), parts[4]);
+    if matches!(
+        app.dialog,
+        Some(crate::app::Dialog::Edit {
+            kind: crate::app::EditKind::Rename(_),
+            ..
+        })
+    ) && app
+        .edit_owner
+        .as_ref()
+        .is_some_and(|o| o.pane == pane && o.valid(app))
+    {
+        super::text_edit::rename_controls(app, frame, parts[4], palette);
+    }
 }
 fn tabs(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Palette) {
     if row.is_empty() {
@@ -398,6 +411,7 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
             5.min(area.height.saturating_sub((row * 5) as u16)),
         );
         let entry = &app.file_tab(pane).entries[app.file_tab(pane).visible[index]];
+        let renaming = app.renaming(pane, &entry.path);
         let selected =
             app.file_tab(pane).selected == index && !app.file_tab(pane).explicit_selection;
         let marked = app.file_tab(pane).marked.contains(&entry.path);
@@ -417,8 +431,14 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
         } else {
             "folder_path"
         }));
-        let icon_area = Rect::new(rect.x, rect.y, rect.width, 2.min(rect.height));
-        let slot = if app.icon_backend.supports_images()
+        let icon_area = Rect::new(
+            rect.x,
+            rect.y,
+            rect.width,
+            2.min(rect.height.saturating_sub(1)),
+        );
+        let slot = if !icon_area.is_empty()
+            && app.icon_backend.supports_images()
             && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images
         {
             let width = icon_area.width.min(6);
@@ -441,19 +461,49 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
             );
             None
         };
-        if rect.height > 2 && rect.width > 2 {
+        let mut rename_area = None;
+        if rect.height > 0 && rect.width > 2 {
             let prefix = if marked { "● " } else { "" };
             let suffix = if entry.symlink { " ↗" } else { "" };
             let label_width = rect.width - 2;
             let name_width =
                 usize::from(label_width).saturating_sub(prefix.width() + suffix.width());
-            let label = format!("{prefix}{}{suffix}", shorten_name(&entry.name, name_width));
-            frame.render_widget(
-                Paragraph::new(label)
-                    .alignment(Alignment::Center)
-                    .style(base),
-                Rect::new(rect.x + 1, rect.y + 2, label_width, 1),
-            );
+            let row = Rect::new(rect.x + 1, rect.y + 2.min(rect.height - 1), label_width, 1);
+            if renaming && let Some(crate::app::Dialog::Edit { text, .. }) = &app.dialog {
+                // Use the same centered origin as the ordinary label. Reserve
+                // a cell for the caret, and retain the mark/link decorations.
+                let width = crate::text_edit::width(text);
+                let padding = name_width.saturating_sub(width) / 2;
+                let x = row.x + padding as u16;
+                frame.render_widget(
+                    Paragraph::new(prefix).style(base),
+                    Rect::new(x, row.y, prefix.width() as u16, 1),
+                );
+                let field = Rect::new(
+                    x + prefix.width() as u16,
+                    row.y,
+                    (width + 1).min(name_width.saturating_sub(padding)) as u16,
+                    1,
+                );
+                let suffix_x = (field.x + width.min(name_width) as u16)
+                    .min(row.right().saturating_sub(suffix.width() as u16));
+                frame.render_widget(
+                    Paragraph::new(suffix).style(base),
+                    Rect::new(suffix_x, row.y, suffix.width() as u16, 1),
+                );
+                rename_area = Some(field);
+            } else {
+                let label = format!(
+                    "{prefix}{}{suffix}",
+                    shorten_name(app.entry_name(pane, entry), name_width)
+                );
+                frame.render_widget(
+                    Paragraph::new(label)
+                        .alignment(Alignment::Center)
+                        .style(base),
+                    row,
+                );
+            }
         }
         if rect.height > 3 {
             let detail = if entry.directory {
@@ -467,6 +517,9 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
                     .style(base.fg(palette.color("folder_path"))),
                 Rect::new(rect.x, rect.y + 3, rect.width, 1),
             );
+        }
+        if rename_area.is_some() {
+            app.rename_area = rename_area;
         }
         app.icon_slots.extend(slot);
         hit(app, rect, Target::Entry { pane, index });
@@ -519,6 +572,7 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
     }
     tab.offset = tab.offset.min(tab.visible.len().saturating_sub(rows));
     let start = tab.offset;
+    let tab = app.file_tab(pane);
     let mut rendered = vec![];
     for index in start..(start + rows).min(tab.visible.len()) {
         let entry = &tab.entries[tab.visible[index]];
@@ -537,7 +591,7 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
         let name = format!(
             " {mark} {}{}{}",
             if images { "   " } else { "" },
-            entry.name,
+            app.entry_name(pane, entry),
             if entry.symlink { " ↗" } else { "" }
         );
         if images {
@@ -592,6 +646,21 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
     let len = tab.visible.len();
     app.icon_slots.extend(icon_slots);
     for index in start..(start + rows).min(len) {
+        if app.renaming(
+            pane,
+            &app.file_tab(pane).entries[app.file_tab(pane).visible[index]].path,
+        ) {
+            let prefix = if images { 6 } else { 3 };
+            let name_width = area.width.saturating_sub(
+                13 + if area.width > 65 { 12 } else { 0 } + if area.width > 85 { 15 } else { 0 },
+            );
+            app.rename_area = Some(Rect::new(
+                area.x + prefix,
+                area.y + 1 + (index - start) as u16,
+                name_width.saturating_sub(prefix),
+                1,
+            ));
+        }
         hit(
             app,
             Rect::new(area.x, area.y + 1 + (index - start) as u16, area.width, 1),

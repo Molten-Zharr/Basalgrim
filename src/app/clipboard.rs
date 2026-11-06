@@ -24,6 +24,15 @@ impl App {
     pub fn native_text_clipboard(&self) -> bool {
         self.file_exchange.enabled || self.file_exchange.connecting
     }
+    pub fn native_text_paste(&self) -> bool {
+        self.file_exchange.enabled
+    }
+    pub(super) fn queue_text_read(&mut self, id: u64) {
+        self.file_exchange
+            .queue
+            .retain(|r| !matches!(r, Request::ReadText { .. }));
+        self.file_exchange.queue.push_back(Request::ReadText { id });
+    }
     pub(super) fn can_paste(&self) -> bool {
         if self.busy || self.clipboard_reads_pending() {
             return false;
@@ -136,6 +145,12 @@ impl App {
                         self.export_files(None);
                     }
                 } else {
+                    if let Some((id, _)) = self.text_paste {
+                        self.finish_text_paste(
+                            id,
+                            Err("Системный текстовый буфер недоступен".into()),
+                        );
+                    }
                     self.cancel_clipboard_read();
                     let text_ids = self
                         .file_exchange
@@ -152,6 +167,7 @@ impl App {
                 }
             }
             ClipboardEvent::Offer(offer) => self.file_exchange.offer = Some(offer),
+            ClipboardEvent::Text { id, result } => self.finish_text_paste(id, result),
             ClipboardEvent::Written { id, result } => {
                 let Some((generation, text)) = self.file_exchange.writes.remove(&id) else {
                     return;
@@ -218,7 +234,9 @@ impl App {
                 .queue
                 .iter()
                 .position(|request| {
-                    let (Request::Write { id, .. } | Request::Read { id }) = request;
+                    let (Request::Write { id, .. }
+                    | Request::Read { id }
+                    | Request::ReadText { id }) = request;
                     *id > copy.id
                 })
                 .unwrap_or(self.file_exchange.queue.len());
@@ -237,6 +255,9 @@ impl App {
     pub fn pump_clipboard(&mut self, runtime: &crate::clipboard::native::Runtime) {
         if !self.clipboard_reads_pending() {
             runtime.cancel_reads();
+        }
+        if !self.text_paste_pending() {
+            runtime.cancel_text_reads();
         }
         while let Ok(event) = runtime.events.try_recv() {
             self.accept_clipboard_event(event);

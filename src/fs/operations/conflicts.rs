@@ -335,6 +335,7 @@ pub(super) fn run(
     if resolve.is_none() && policy.is_none() {
         if rename {
             control.publish(source, destination)?;
+            control.rename_destination = Some(destination.to_path_buf());
         } else {
             transfer(source, destination, cut, control)?;
         }
@@ -421,7 +422,12 @@ pub(super) fn run(
             transfer(source, &target, cut, control)
         };
         match result {
-            Ok(()) => return Ok(true),
+            Ok(()) => {
+                if rename {
+                    control.rename_destination = Some(target);
+                }
+                return Ok(true);
+            }
             Err(error) => {
                 let retry = error.is::<Changed>()
                     || error.is::<TargetExists>()
@@ -505,6 +511,7 @@ mod tests {
             recoveries: Vec::new(),
             journal: None,
             restore_guard: None,
+            rename_destination: None,
         };
         assert!(finish(&mut control).is_err());
         assert_eq!(control.recoveries[0].backup, backup);

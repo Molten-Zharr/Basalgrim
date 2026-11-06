@@ -434,14 +434,14 @@ impl Backend for X11 {
         self.changed(self.window);
         Ok(())
     }
-    fn read(&mut self) -> Result<Formats> {
+    fn read(&mut self, requested: &[&str]) -> Result<Formats> {
         let (version, types, ours) = self.offer()?;
         if ours {
             return Ok(self.formats.clone());
         }
         let mut result = Formats::new();
         let deadline = Instant::now() + TIMEOUT;
-        for mime in files::READ_FORMATS {
+        for &mime in requested {
             if !types.iter().any(|s| s == mime) {
                 continue;
             }

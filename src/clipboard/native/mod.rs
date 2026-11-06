@@ -23,7 +23,7 @@ trait Backend {
     fn write(&mut self, formats: Formats) -> Result<()>;
     // Revise data without claiming ownership again, even if another app wins a race.
     fn update(&mut self, formats: Formats);
-    fn read(&mut self) -> Result<Formats>;
+    fn read(&mut self, formats: &[&str]) -> Result<Formats>;
 }
 pub struct Runtime {
     tx: Option<mpsc::SyncSender<Request>>,
@@ -31,6 +31,7 @@ pub struct Runtime {
     worker: Option<thread::JoinHandle<()>>,
     stop: Arc<AtomicBool>,
     latest_read: Arc<AtomicU64>,
+    latest_text_read: Arc<AtomicU64>,
 }
 impl Runtime {
     fn spawn(make: impl FnOnce() -> Result<Box<dyn Backend>> + Send + 'static) -> Self {
@@ -40,6 +41,8 @@ impl Runtime {
         let worker_stop = stop.clone();
         let latest_read = Arc::new(AtomicU64::new(0));
         let worker_read = latest_read.clone();
+        let latest_text_read = Arc::new(AtomicU64::new(0));
+        let worker_text_read = latest_text_read.clone();
         let worker = thread::spawn(move || {
             let mut backend = match make() {
                 Ok(v) => v,
@@ -148,7 +151,7 @@ impl Runtime {
                             if ours && let Some((generation, _)) = owned {
                                 return Ok(Incoming::Local(generation));
                             }
-                            let formats = backend.read()?;
+                            let formats = backend.read(&files::READ_FORMATS)?;
                             anyhow::ensure!(
                                 backend.offer()?.0 == version,
                                 "Буфер изменился во время чтения; повторите вставку"
@@ -170,6 +173,36 @@ impl Runtime {
                         .map_err(|e| e.to_string());
                         Event::Read { id, result }
                     }
+                    Request::ReadText { id } => {
+                        let result = (|| -> Result<String> {
+                            anyhow::ensure!(
+                                worker_text_read.load(Ordering::Relaxed) == id,
+                                "Чтение текста отменено"
+                            );
+                            backend.synchronize()?;
+                            let (version, types, _) = backend.offer()?;
+                            let mime = [files::TEXT, "UTF8_STRING", "text/plain"]
+                                .into_iter()
+                                .find(|mime| types.iter().any(|s| s == mime))
+                                .ok_or_else(|| anyhow::anyhow!("В буфере нет текста"))?;
+                            let formats = backend.read(&[mime])?;
+                            anyhow::ensure!(
+                                worker_text_read.load(Ordering::Relaxed) == id
+                                    && backend.offer()?.0 == version,
+                                "Буфер или редактор изменились во время чтения"
+                            );
+                            let bytes = formats
+                                .get(mime)
+                                .ok_or_else(|| anyhow::anyhow!("В буфере нет текста"))?;
+                            anyhow::ensure!(
+                                bytes.len() <= 64 * 1024,
+                                "Текст буфера превышает 64 KiB"
+                            );
+                            Ok(std::str::from_utf8(bytes)?.to_owned())
+                        })()
+                        .map_err(|e| e.to_string());
+                        Event::Text { id, result }
+                    }
                 };
                 if events.send(event).is_err() {
                     break;
@@ -182,6 +215,7 @@ impl Runtime {
             worker: Some(worker),
             stop,
             latest_read,
+            latest_text_read,
         }
     }
     pub fn terminal() -> Self {
@@ -226,10 +260,16 @@ impl Runtime {
         if let Request::Read { id } = &request {
             self.latest_read.store(*id, Ordering::Relaxed);
         }
+        if let Request::ReadText { id } = &request {
+            self.latest_text_read.store(*id, Ordering::Relaxed);
+        }
         self.tx.as_ref().unwrap().try_send(request)
     }
     pub fn cancel_reads(&self) {
         self.latest_read.store(0, Ordering::Relaxed);
+    }
+    pub fn cancel_text_reads(&self) {
+        self.latest_text_read.store(0, Ordering::Relaxed);
     }
 }
 impl Drop for Runtime {

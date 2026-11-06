@@ -174,11 +174,10 @@ fn keyboard_and_mouse_share_selection_and_modal_hit_regions() {
     assert_eq!(app.tab().marked.len(), 1);
     app.action(Action::Rename);
     render(&mut app, 130, 35);
-    assert!(
-        app.hits
-            .iter()
-            .all(|(_, t)| matches!(t, Target::Confirm | Target::Cancel))
-    );
+    assert!(app.hits.iter().all(|(_, t)| matches!(
+        t,
+        Target::Confirm | Target::Cancel | Target::TextSelect { .. } | Target::DismissMenu
+    )));
 }
 
 #[test]

@@ -63,6 +63,9 @@ fn run() -> Result<()> {
         app.handle(Input::DragModifiers {
             copy: ctx.input(|i| i.modifiers.ctrl),
         });
+        app.handle(Input::TextSelectionModifier(
+            ctx.input(|i| i.modifiers.shift),
+        ));
         if clipboard.is_none()
             && let Some(window) = frame.winit_window()
         {
@@ -240,15 +243,19 @@ fn run() -> Result<()> {
                         egui::Event::Text(text) if app.text_active() && !suppress_text => {
                             app.handle(Input::Text(text))
                         }
-                        egui::Event::Paste(text) if app.text_active() && paste_into_text => {
-                            app.handle(Input::Text(text))
+                        egui::Event::Paste(text)
+                            if app.text_active() && paste_into_text && !app.native_text_paste() =>
+                        {
+                            app.gui_pasted_text(text)
                         }
                         egui::Event::PointerButton {
                             pos,
                             button: egui::PointerButton::Secondary,
                             pressed: true,
+                            modifiers,
                             ..
                         } => {
+                            app.handle(Input::TextSelectionModifier(modifiers.shift));
                             previous_click = None;
                             if let Some((x, y)) = to_cell(pos) {
                                 app.handle(Input::SecondaryClick { x, y });
@@ -260,6 +267,7 @@ fn run() -> Result<()> {
                             pressed: true,
                             modifiers,
                         } => {
+                            app.handle(Input::TextSelectionModifier(modifiers.shift));
                             if let Some((x, y)) = to_cell(pos) {
                                 let double = previous_click.is_some_and(|(p, t)| {
                                     p.distance(pos) < 5.0
@@ -376,6 +384,9 @@ fn run() -> Result<()> {
         {
             ctx.copy_text(copy.text);
             app.finish_text_copy(copy.id, Ok(basalgrim::clipboard::Destination::System));
+        }
+        if app.take_text_paste_fallback().is_some() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
         app.persist_preferences(settings_path.as_deref());
         if app.quit {

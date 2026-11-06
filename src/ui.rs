@@ -7,6 +7,7 @@ mod path;
 mod selection;
 mod settings;
 mod storage;
+mod text_edit;
 pub mod theme;
 mod trash;
 
@@ -54,6 +55,8 @@ pub fn hit(app: &mut App, rect: Rect, target: Target) {
     }
 }
 pub fn render(app: &mut App, frame: &mut Frame) {
+    app.validate_editor();
+    app.rename_area = None;
     app.icon_slots.clear();
     app.preview_slot = None;
     let palette = Palette::new(&app.settings);

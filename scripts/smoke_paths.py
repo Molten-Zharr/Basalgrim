@@ -100,13 +100,13 @@ def main():
             child=subprocess.Popen([str(binary),"--no-session",str(folder)],stdin=slave,stdout=slave,stderr=slave,env=local)
             wait(lambda:"a.txt" in text(),"local-helper startup");click_label("Коп.",lambda row:"Коп." in row)
             wait(lambda:captured.exists() and captured.read_text()==str(folder),"bounded local helper")
-            wait(lambda:"Путь скопирован" in text(),"local-helper acknowledgement")
+            wait(lambda:"Текст скопирован" in text(),"local-helper acknowledgement")
             assert b"\x1b]52;c;" not in output,"local clipboard success also sent OSC 52"
             quit_when_ready(child, send)
             output.clear()
             child=subprocess.Popen([str(binary),"--no-session",str(folder)],stdin=slave,stdout=slave,stderr=slave,env=dict(env,TERM="linux"))
             wait(lambda:"a.txt" in text(),"console startup");click_label("Коп.",lambda row:"Коп." in row)
-            wait(lambda:"Не удалось скопировать путь" in text(),"unsupported clipboard error")
+            wait(lambda:"Не удалось скопировать текст" in text(),"unsupported clipboard error")
             assert b"\x1b]52;c;" not in output,"Linux console received unsupported clipboard controls"
             quit_when_ready(child, send)
             print("Paths PTY: local clipboard helper and unsupported console passed")

@@ -349,13 +349,14 @@ impl App {
             }
             Action::Search => {
                 let original = self.tab().filter.clone();
-                self.dialog = Some(Dialog::Edit {
-                    kind: EditKind::TrashSearch {
+                let len = original.len();
+                self.begin_edit(
+                    EditKind::TrashSearch {
                         original: original.clone(),
                     },
-                    text: original,
-                    error: None,
-                });
+                    original,
+                    0..len,
+                );
             }
             Action::Back | Action::Parent => self.close_trash(),
             Action::Copy

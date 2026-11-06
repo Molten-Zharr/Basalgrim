@@ -17,6 +17,13 @@ impl App {
             self.finish_marquee(true);
             return;
         }
+        if let Input::TextSelectionModifier(extend) = input {
+            self.editor_extend = extend;
+            return;
+        }
+        if self.editor_pointer(&input) {
+            return;
+        }
         match input {
             Input::PointerDown {
                 x,
@@ -114,6 +121,19 @@ impl App {
             {
                 self.dialog = None;
             }
+            Input::SecondaryClick { x, y } if self.text_active() => {
+                let point = Position::new(x, y);
+                if self
+                    .hits
+                    .iter()
+                    .rev()
+                    .find(|(r, _)| r.contains(point))
+                    .is_some_and(|(_, t)| matches!(t, Target::TextSelect { .. }))
+                {
+                    self.editor_drag = None;
+                    self.editor_menu = Some((point, 0));
+                }
+            }
             Input::SecondaryClick { x, y } if self.dialog.is_none() => {
                 let point = Position::new(x, y);
                 let target = self
@@ -202,28 +222,21 @@ impl App {
                         self.edit_menu_path()
                     }
                     Some(Target::PathTextCopy) => self.copy_path_text(),
-                    Some(Target::PathTextSelect { area, start })
-                        if matches!(
-                            self.dialog,
-                            Some(Dialog::Edit {
-                                kind: EditKind::Path(_),
-                                ..
-                            })
-                        ) =>
-                    {
-                        self.position_path_cursor(start, x.saturating_sub(area.x), double)
+                    Some(Target::TextSelect { area, start }) if self.text_active() => self
+                        .position_text_cursor(
+                            start,
+                            x.saturating_sub(area.x),
+                            double,
+                            self.editor_extend,
+                        ),
+                    Some(Target::TextCommand(command)) if self.text_active() => {
+                        self.editor_command(command)
                     }
+                    Some(Target::TextMenuDismiss) => self.editor_menu = None,
                     Some(Target::DismissMenu)
                         if matches!(
                             self.dialog,
-                            Some(
-                                Dialog::Commands(_)
-                                    | Dialog::Paths(_)
-                                    | Dialog::Edit {
-                                        kind: EditKind::Path(_),
-                                        ..
-                                    }
-                            )
+                            Some(Dialog::Commands(_) | Dialog::Paths(_) | Dialog::Edit { .. })
                         ) =>
                     {
                         self.cancel_dialog()
@@ -455,39 +468,17 @@ impl App {
         }
         self.update_preview();
     }
-    fn insert_text(&mut self, text: &str) {
+    pub(super) fn insert_text(&mut self, text: &str) {
         if let Some(Dialog::Edit {
-            kind,
-            text: value,
-            error,
-            ..
+            text: value, error, ..
         }) = &mut self.dialog
         {
-            if matches!(kind, EditKind::Path(_)) && self.path_text_selected {
-                value.clear();
-                self.path_text_selected = false;
-            }
-            let remaining = 4096usize.saturating_sub(value.chars().count());
-            let inserted: String = text
-                .chars()
-                .filter(|c| !c.is_control())
-                .take(remaining)
-                .collect();
-            if matches!(kind, EditKind::Path(_)) {
-                if self.path_text_selected {
-                    value.clear();
-                }
-                let cursor = self.path_cursor.min(value.len());
-                value.insert_str(cursor, &inserted);
-                self.path_cursor = cursor + inserted.len();
-            } else {
-                value.push_str(&inserted);
-            }
+            self.editor.replace(value, text);
             *error = None;
         }
         self.live_search();
     }
-    fn live_search(&mut self) {
+    pub(super) fn live_search(&mut self) {
         if let Some(Dialog::Edit {
             kind: EditKind::TrashSearch { .. },
             text,
@@ -537,7 +528,7 @@ impl App {
     }
     fn key(&mut self, press: KeyPress) {
         let press = press.normalized();
-        if self.path_editor_key(press) {
+        if self.editor_key(press) {
             return;
         }
         if matches!(self.dialog, Some(Dialog::Paths(_))) {
@@ -613,20 +604,6 @@ impl App {
             match key {
                 Key::Escape => self.cancel_dialog(),
                 Key::Enter => self.confirm_dialog(),
-                Key::Backspace => {
-                    if let Some(Dialog::Edit { text, error, .. }) = &mut self.dialog {
-                        text.pop();
-                        *error = None;
-                    }
-                    self.live_search();
-                }
-                Key::Char('u') if ctrl => {
-                    if let Some(Dialog::Edit { text, .. }) = &mut self.dialog {
-                        text.clear();
-                    }
-                    self.path_text_selected = false;
-                    self.live_search();
-                }
                 _ => {}
             }
             return;

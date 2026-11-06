@@ -13,6 +13,7 @@ pub mod preferences;
 pub mod preview;
 pub mod session;
 pub mod settings;
+pub mod text_edit;
 pub mod trash;
 pub mod ui;
 pub mod worker;

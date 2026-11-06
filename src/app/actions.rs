@@ -102,13 +102,15 @@ impl App {
                 self.refresh();
             }
             Action::Search => {
-                self.dialog = Some(Dialog::Edit {
-                    kind: EditKind::Search {
-                        original: self.tab().filter.clone(),
+                let text = self.tab().filter.clone();
+                let len = text.len();
+                self.begin_edit(
+                    EditKind::Search {
+                        original: text.clone(),
                     },
-                    text: self.tab().filter.clone(),
-                    error: None,
-                })
+                    text,
+                    0..len,
+                );
             }
             Action::Path => {
                 self.edit_path(PathOwner::current(self, self.active));
@@ -205,26 +207,32 @@ impl App {
                 if let Some(entry) = self.tab().entry() {
                     // A lossy display name must never silently replace a non-UTF-8 filename.
                     if let Some(name) = entry.path.file_name().and_then(|s| s.to_str()) {
-                        self.dialog = Some(Dialog::Edit {
-                            kind: EditKind::Rename(entry.path.clone()),
-                            text: name.into(),
-                            error: None,
-                        });
+                        let end = if entry.directory {
+                            name.len()
+                        } else {
+                            name.rfind('.')
+                                .filter(|&i| i > 0 && i + 1 < name.len())
+                                .unwrap_or(name.len())
+                        };
+                        let kind = EditKind::Rename(entry.path.clone());
+                        let text = name.into();
+                        self.tab_mut().follow_selection = true;
+                        self.begin_edit(kind, text, 0..end);
                     } else {
                         self.message("Переименование не-UTF-8 имён пока недоступно", true);
                     }
                 }
             }
             Action::NewFolder | Action::NewFile => {
-                self.dialog = Some(Dialog::Edit {
-                    kind: if action == Action::NewFolder {
+                self.begin_edit(
+                    if action == Action::NewFolder {
                         EditKind::Folder
                     } else {
                         EditKind::File
                     },
-                    text: String::new(),
-                    error: None,
-                })
+                    String::new(),
+                    0..0,
+                );
             }
             Action::Trash => {
                 let paths = self.tab().targets();
@@ -306,6 +314,10 @@ impl App {
         self.update_preview();
     }
     pub fn cancel_dialog(&mut self) {
+        self.editor_menu = None;
+        self.editor_drag = None;
+        self.text_paste = None;
+        self.text_paste_fallback = None;
         if matches!(self.dialog, Some(Dialog::CleanupHistory(_))) {
             self.dialog = Some(Dialog::HistoryStorage);
             return;
@@ -377,6 +389,7 @@ impl App {
             self.message("Дождитесь завершения или отмените текущую операцию", true);
             return;
         }
+        self.validate_editor();
         if let Some(Dialog::Conflict(current)) = &self.dialog {
             if current.selected == 4 {
                 self.toggle_conflict_remaining();
@@ -471,7 +484,9 @@ impl App {
                         directory: matches!(kind, EditKind::Folder),
                     }),
                     EditKind::Rename(source) => {
-                        self.start_operation(Operation::Rename { source, name: text })
+                        if source.file_name().and_then(|n| n.to_str()) != Some(text.as_str()) {
+                            self.start_operation(Operation::Rename { source, name: text })
+                        }
                     }
                 }
             }

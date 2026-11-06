@@ -1,6 +1,18 @@
 use super::*;
 
 impl App {
+    pub(super) fn refresh_tab(&mut self, pane: usize, index: usize) {
+        let tab = &self.panes[pane].tabs[index];
+        // Keep an existing snapshot, including an empty directory or an error.
+        // An initial scan or pending navigation has no snapshot to retain.
+        let refreshing = !tab.loading || tab.refreshing;
+        let error = tab.error.clone();
+        self.reload(pane, index);
+        let tab = &mut self.panes[pane].tabs[index];
+        tab.refreshing = refreshing;
+        tab.error = error;
+    }
+
     pub(super) fn observe_directories(&mut self) {
         let paths: BTreeSet<_> = self
             .panes
@@ -49,10 +61,7 @@ impl App {
             for pane in 0..self.panes.len() {
                 for index in 0..self.panes[pane].tabs.len() {
                     if self.panes[pane].tabs[index].cwd == path {
-                        let error = self.panes[pane].tabs[index].error.clone();
-                        self.reload(pane, index);
-                        self.panes[pane].tabs[index].refreshing = true;
-                        self.panes[pane].tabs[index].error = error;
+                        self.refresh_tab(pane, index);
                     }
                 }
             }

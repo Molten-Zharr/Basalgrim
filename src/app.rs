@@ -7,7 +7,9 @@ mod directories;
 mod drag_drop;
 pub use commands::{CommandItem, CommandMenu, MenuContext};
 pub use drag_drop::DragFeedback;
+mod editing;
 mod events;
+pub use editing::TextCommand;
 mod journal;
 mod storage;
 pub use storage::StorageView;
@@ -54,10 +56,13 @@ pub enum Target {
     PathMenuCopy,
     PathMenuEdit,
     PathTextCopy,
-    PathTextSelect {
+    TextSelect {
         area: Rect,
         start: usize,
     },
+    TextCommand(TextCommand),
+    TextMenuBackground,
+    TextMenuDismiss,
     JournalRefresh,
     StorageRefresh,
     StoragePolicy,
@@ -184,8 +189,14 @@ pub struct App {
     file_exchange: clipboard::Exchange,
     text_copy: Option<crate::clipboard::TextCopy>,
     text_copy_token: u64,
-    pub path_text_selected: bool,
-    pub path_cursor: usize,
+    pub editor: crate::text_edit::TextEdit,
+    pub(crate) edit_owner: Option<PathOwner>,
+    pub(crate) editor_menu: Option<(Position, usize)>,
+    editor_drag: Option<Rect>,
+    editor_extend: bool,
+    pub(crate) rename_area: Option<Rect>,
+    text_paste: Option<(u64, u64)>,
+    text_paste_fallback: Option<u64>,
     pub places: Vec<Place>,
     pub preview: Option<Preview>,
     pub preview_error: Option<String>,
@@ -286,8 +297,14 @@ impl App {
             file_exchange: Default::default(),
             text_copy: None,
             text_copy_token: 0,
-            path_text_selected: false,
-            path_cursor: 0,
+            editor: Default::default(),
+            edit_owner: None,
+            editor_menu: None,
+            editor_drag: None,
+            editor_extend: false,
+            rename_area: None,
+            text_paste: None,
+            text_paste_fallback: None,
             places,
             preview: None,
             preview_error: None,
@@ -370,7 +387,11 @@ impl App {
             .and_then(|(area, target)| {
                 (!matches!(
                     target,
-                    Target::MenuBackground | Target::DismissMenu | Target::EntryBackground
+                    Target::MenuBackground
+                        | Target::DismissMenu
+                        | Target::EntryBackground
+                        | Target::TextMenuBackground
+                        | Target::TextMenuDismiss
                 ))
                 .then_some(*area)
             })
@@ -382,8 +403,10 @@ impl App {
         if self.dragging_files() || self.external_drag_active() {
             return true;
         }
-        self.panes.iter().flat_map(|p| &p.tabs).any(|t| t.loading)
-            || self.preview_loading
+        // A completed snapshot held behind a dialog is idle, not pending I/O.
+        self.panes.iter().flat_map(|p| &p.tabs).any(|t| {
+            t.loading && !(t.refreshing && self.directory_results.contains_key(&t.request))
+        }) || self.preview_loading
             || self.busy
             || self.clipboard_reads_pending()
             || self.history_storage.loading

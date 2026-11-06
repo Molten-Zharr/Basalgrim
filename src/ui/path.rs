@@ -346,38 +346,8 @@ pub fn menu(app: &mut App, frame: &mut Frame, palette: Palette) {
 }
 
 fn editor(app: &mut App, frame: &mut Frame, row: Rect, palette: Palette) {
-    let Some(Dialog::Edit { text, .. }) = &app.dialog else {
-        return;
-    };
     let field = Rect::new(row.x, row.y, row.width.saturating_sub(17), 1);
-    let cursor = app.path_cursor.min(text.len());
-    let available = usize::from(field.width.saturating_sub(1));
-    let mut start = 0;
-    let span = Span::raw(text.as_str());
-    let mut offset = 0;
-    for grapheme in span.styled_graphemes(ratatui::style::Style::default()) {
-        if offset >= cursor || text[offset..cursor].width() <= available {
-            break;
-        }
-        offset += grapheme.symbol.len();
-        start = offset;
-    }
-    let visible = &text[start..];
-    frame.render_widget(
-        Paragraph::new(visible.to_owned()).style(if app.path_text_selected {
-            palette.selection()
-        } else {
-            palette.text()
-        }),
-        field,
-    );
-    if !app.path_text_selected && field.width > 0 {
-        frame.set_cursor_position((
-            field.x + (text[start..cursor].width() as u16).min(field.width - 1),
-            field.y,
-        ));
-    }
-    hit(app, field, Target::PathTextSelect { area: field, start });
+    super::text_edit::field(app, frame, field, palette);
     for (offset, width, label, target) in [
         (0, 7, " Коп. ", Target::PathTextCopy),
         (7, 7, " Ввод ", Target::Confirm),

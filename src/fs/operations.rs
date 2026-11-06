@@ -121,6 +121,8 @@ pub struct Report {
     pub retained_copies: Vec<RetainedCopy>,
     pub skipped: Vec<PathBuf>,
     pub destination_recoveries: Vec<crate::conflicts::DestinationRecovery>,
+    /// The actual published rename destination, including Keep Both naming.
+    pub renamed: Option<(PathBuf, PathBuf)>,
 }
 
 #[derive(Debug)]
@@ -156,6 +158,7 @@ struct Control<'a, 'db> {
     recoveries: Vec<crate::conflicts::DestinationRecovery>,
     journal: Option<&'a mut crate::journal::Recorder<'db>>,
     restore_guard: Option<(crate::trash::Entry, PathBuf)>,
+    rename_destination: Option<PathBuf>,
 }
 impl Control<'_, '_> {
     fn begin_item(&mut self, index: usize) -> Result<()> {
@@ -473,6 +476,7 @@ pub fn transfer_one(source: &Path, destination: &Path, cut: bool) -> Result<()> 
         recoveries: Vec::new(),
         journal: None,
         restore_guard: None,
+        rename_destination: None,
     };
     transfer(source, destination, cut, &mut control)
 }
@@ -621,6 +625,7 @@ fn operate_inner(
         recoveries: Vec::new(),
         journal,
         restore_guard: None,
+        rename_destination: None,
     };
     let mut policy = duplicate.then_some(crate::conflicts::Choice::KeepBoth);
     let mut report = Report {
@@ -780,6 +785,10 @@ fn operate_inner(
                     report.skipped.push(source);
                     control.progress.items_skipped = report.skipped.len();
                 } else if outcome.as_ref().is_ok_and(|done| *done) {
+                    report.renamed = control
+                        .rename_destination
+                        .take()
+                        .map(|target| (source.clone(), target));
                     control.entry_done(&source);
                     complete(source, &mut control);
                 }
@@ -891,6 +900,7 @@ pub(crate) fn relocate_recorded(
         recoveries: Vec::new(),
         journal: Some(journal),
         restore_guard: None,
+        rename_destination: None,
     };
     let result = control
         .current(source)

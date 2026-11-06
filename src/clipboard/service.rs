@@ -29,6 +29,9 @@ pub enum Request {
     Read {
         id: u64,
     },
+    ReadText {
+        id: u64,
+    },
 }
 #[derive(Debug)]
 pub enum Event {
@@ -41,5 +44,9 @@ pub enum Event {
     Read {
         id: u64,
         result: Result<Incoming, String>,
+    },
+    Text {
+        id: u64,
+        result: Result<String, String>,
     },
 }

@@ -97,6 +97,27 @@ fn main() -> Result<()> {
     settle(&mut app)?;
     render(&mut app, &out, "grid", 150, 44)?;
     let notice = app.notice.clone();
+    let saved_grid = app.settings.grid;
+    app.action(Action::Rename);
+    render(&mut app, &out, "inline-rename-grid", 150, 44)?;
+    app.settings.grid = false;
+    render(&mut app, &out, "inline-rename-list", 120, 36)?;
+    render(&mut app, &out, "inline-rename-compact", 34, 14)?;
+    render(&mut app, &out, "inline-rename-list", 120, 36)?;
+    let field = app
+        .hits
+        .iter()
+        .find_map(|(r, t)| matches!(t, Target::TextSelect { .. }).then_some(*r))
+        .unwrap();
+    app.handle(Input::SecondaryClick {
+        x: field.x,
+        y: field.y,
+    });
+    render(&mut app, &out, "text-edit-menu", 120, 36)?;
+    app.cancel_dialog();
+    app.settings.grid = saved_grid;
+    app.message(notice.clone(), false);
+    render(&mut app, &out, "grid", 150, 44)?;
     let destination = app
         .hits
         .iter()

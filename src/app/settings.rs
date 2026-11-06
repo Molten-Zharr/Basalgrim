@@ -312,23 +312,19 @@ impl App {
             }
             SettingControl::ResetBindings => self.settings.bindings = input::default_bindings(),
             SettingControl::FontSize => {
-                self.dialog = Some(Dialog::Edit {
-                    kind: EditKind::Setting(SettingsEdit::FontSize),
-                    text: appearance.font_size.to_string(),
-                    error: None,
-                });
+                let text = appearance.font_size.to_string();
+                let len = text.len();
+                self.begin_edit(EditKind::Setting(SettingsEdit::FontSize), text, 0..len);
                 return;
             }
             SettingControl::Color(token) => {
                 let text = preferences::color_hex(appearance.palette()[&token]);
-                self.dialog = Some(Dialog::Edit {
-                    kind: EditKind::Setting(SettingsEdit::Color {
-                        theme: appearance.theme,
-                        token,
-                    }),
-                    text,
-                    error: None,
+                let kind = EditKind::Setting(SettingsEdit::Color {
+                    theme: appearance.theme,
+                    token,
                 });
+                let len = text.len();
+                self.begin_edit(kind, text, 0..len);
                 return;
             }
             SettingControl::Binding(index) => {

@@ -83,6 +83,7 @@ impl KeyPress {
 }
 
 pub enum Input {
+    TextSelectionModifier(bool),
     /// Hover position only; never changes keyboard focus or selection. None clears it.
     Pointer(Option<ratatui::layout::Position>),
     Key(KeyPress),

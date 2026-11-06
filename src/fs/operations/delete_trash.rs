@@ -92,6 +92,7 @@ impl RetainedRemoval {
             recoveries: Vec::new(),
             journal: None,
             restore_guard: None,
+            rename_destination: None,
         };
         let node = Node::capture(&directory, &name, mount, &mut 0, 0, &mut control)?;
         let actual =
@@ -123,6 +124,7 @@ impl RetainedRemoval {
             recoveries: Vec::new(),
             journal: None,
             restore_guard: None,
+            rename_destination: None,
         };
         let result = self.node.remove_guarded(
             &self.directory,

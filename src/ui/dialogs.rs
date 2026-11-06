@@ -14,13 +14,28 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         app.hits.retain(|(_, target)| {
             matches!(
                 target,
-                Target::PathTextSelect { .. }
-                    | Target::PathTextCopy
-                    | Target::Confirm
-                    | Target::Cancel
+                Target::TextSelect { .. } | Target::PathTextCopy | Target::Confirm | Target::Cancel
             )
         });
         app.hits.insert(0, (frame.area(), Target::DismissMenu));
+        super::text_edit::menu(app, frame, palette);
+        return;
+    }
+    if matches!(
+        app.dialog,
+        Some(Dialog::Edit {
+            kind: crate::app::EditKind::Rename(_),
+            ..
+        })
+    ) && let Some(field) = app.rename_area
+    {
+        app.hits
+            .retain(|(_, target)| matches!(target, Target::Confirm | Target::Cancel));
+        app.hits.insert(0, (frame.area(), Target::DismissMenu));
+        app.icon_slots
+            .retain(|slot| slot.area.intersection(field).is_empty());
+        super::text_edit::field(app, frame, field, palette);
+        super::text_edit::menu(app, frame, palette);
         return;
     }
     if matches!(app.dialog, Some(Dialog::Paths(_))) {
@@ -114,34 +129,12 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
                 Line::raw(" Журнал операций сохранится."),
             ];
         }
-        Dialog::Edit {
-            kind,
-            text: value,
-            error,
-            ..
-        } => {
-            lines.push(Line::styled(
-                format!(
-                    " {}▏",
-                    tail(
-                        &fs::clean(value),
-                        usize::from(inner.width.saturating_sub(3))
-                    )
-                ),
-                if matches!(kind, crate::app::EditKind::Path(_)) && !app.path_text_selected {
-                    palette.text()
-                } else {
-                    palette.selection()
-                },
-            ));
+        Dialog::Edit { error, .. } => {
+            lines.push(Line::raw(""));
             lines.push(Line::raw(""));
             lines.push(Line::styled(
                 error.clone().unwrap_or_else(|| {
-                    if matches!(kind, crate::app::EditKind::Path(_)) {
-                        " Ctrl+A — выделить · Ctrl+C — копировать · Ctrl+U — очистить".into()
-                    } else {
-                        " Ctrl+U — очистить · Backspace — удалить символ".into()
-                    }
+                    " Shift+стрелки — выделить · ПКМ — буфер · Ctrl+U — очистить".into()
                 }),
                 palette.muted(),
             ));
@@ -275,6 +268,14 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     }
     // Only modal hit regions remain interactive while a dialog is open.
     app.hits.clear();
+    if matches!(app.dialog, Some(Dialog::Edit { .. })) {
+        super::text_edit::field(
+            app,
+            frame,
+            Rect::new(inner.x + 1, inner.y + 1, inner.width.saturating_sub(2), 1),
+            palette,
+        );
+    }
     if rect.width >= 4 && rect.height > 0 {
         let close = Rect::new(rect.right() - 4, rect.y, 3, 1);
         frame.render_widget(Paragraph::new(" × ").style(palette.accent()), close);
@@ -325,17 +326,5 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         );
         hit(app, cancel, Target::Cancel);
     }
-}
-fn tail(value: &str, limit: usize) -> String {
-    let mut width = 0;
-    let mut result = Vec::new();
-    for c in value.chars().rev() {
-        let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
-        if width + w > limit {
-            break;
-        }
-        result.push(c);
-        width += w;
-    }
-    result.into_iter().rev().collect()
+    super::text_edit::menu(app, frame, palette);
 }

@@ -60,6 +60,7 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
         process = None
         pointer = None
         keyboard = None
+        text_owners = []
         app_log = open(out / "native-wayland.log", "w")
 
         def wait_for(predicate, description, seconds=8):
@@ -134,6 +135,25 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--text-edit-only' in sys.argv[2:]:
+                import text_edit_fixture
+                folder=base/'editor';folder.mkdir();(folder/'alpha.txt').write_text('editor data')
+                paste_target=base/'paste-target';paste_target.mkdir()
+                process=launch(folder)
+                def text_drag(sx,sy,ex,ey):
+                    click(sx,sy,10);click(ex,ey,11);click(ex,ey,12)
+                def put_text(value):
+                    owner=subprocess.Popen([commands['wl-copy'],'--foreground','--type','text/plain;charset=utf-8',value],env=env,stdout=subprocess.DEVNULL,stderr=app_log)
+                    text_owners.append(owner)
+                    wait_for(lambda:run('wl-paste','--no-newline',check=False).stdout==value,'private text clipboard owner')
+                text_edit_fixture.exercise(folder,paste_target,key,
+                    lambda value:run('wtype','-s','100',value,'-s','100'),
+                    put_text,
+                    lambda:run('wl-paste','--no-newline',check=False).stdout,
+                    click,text_drag,lambda name:run('grim','-g','0,0 1360x860',str(out/('native-wayland-'+name+'.png'))),wait_for)
+                key('q','ctrl');process.wait(timeout=5);process=None
+                print('Native Wayland text editing: inline rename, mouse range/cut/paste, Unicode, path selection and retained file clipboard passed',flush=True)
+                return
             import sqlite3
             storage_files=base/"history-storage";storage_files.mkdir();(storage_files/"a.txt").write_text("keep Wayland source")
             storage_db=base/"state/molten-zharr/basalgrim/operations.sqlite3"
@@ -567,6 +587,8 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                 (out / "native-wayland-tree.json").write_text(run("swaymsg", "-t", "get_tree").stdout)
             raise
         finally:
+            for owner in text_owners:
+                if owner.poll() is None:owner.terminate();owner.wait(timeout=5)
             if process and process.poll() is None:
                 process.terminate(); process.wait(timeout=5)
             if pointer:
