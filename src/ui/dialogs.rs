@@ -307,7 +307,11 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         .style(
             palette
                 .text()
-                .fg(palette.color("background"))
+                .fg(palette.color(if palette.light() {
+                    "button_text"
+                } else {
+                    "background"
+                }))
                 .bg(palette.color("confirm_background")),
         ),
         confirm,

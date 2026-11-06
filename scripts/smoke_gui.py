@@ -321,7 +321,7 @@ try:
             # Publication precedes the worker result and directory refresh.
             # Wait for the selected list row in our fixed Light palette before
             # issuing Cut; an empty/loading pane has no file to cut yet.
-            wait_for(lambda:screenshot(window,'native-keyboard-ready.png').getpixel((800,177))==(212,225,239),'file list ready after copy')
+            wait_for(lambda:screenshot(window,'native-keyboard-ready.png').getpixel((800,177))==(215,226,236),'file list ready after copy')
             chord('x','Control_L'); navigate(files); chord('v','Control_L')
             wait_for(lambda:(files/'alpha.txt').exists(),'Ctrl+X/V move')
             assert not (destination/'alpha.txt').exists()

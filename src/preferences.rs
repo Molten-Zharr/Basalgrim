@@ -204,14 +204,24 @@ pub fn base_colors(theme: Theme) -> BTreeMap<String, [u8; 3]> {
         colors.insert("active".into(), [188, 125, 228]);
     }
     if theme == Theme::Light {
+        // Define every role so the light preset never inherits vivid brand accents.
         for (role, rgb) in [
             ("background", [239, 242, 246]),
-            ("text", [31, 39, 49]),
-            ("active", [152, 78, 0]),
-            ("folder_path", [85, 99, 116]),
-            ("selected_file_background", [212, 225, 239]),
-            ("error", [174, 37, 57]),
-            ("button_text", [31, 39, 49]),
+            ("text", [48, 59, 72]),
+            ("button_text", [48, 59, 72]),
+            ("active", [76, 100, 126]),
+            ("sidebar_title", [79, 95, 112]),
+            ("error", [164, 64, 74]),
+            ("inactive_file_border", [157, 169, 181]),
+            ("inactive_panel_border", [170, 180, 191]),
+            ("gradient_dark", [98, 117, 138]),
+            ("folder_icon", [78, 101, 125]),
+            ("selection_accent", [110, 94, 123]),
+            ("confirm_background", [213, 225, 233]),
+            ("help_heading", [72, 106, 99]),
+            ("folder_path", [87, 101, 115]),
+            ("separator", [96, 108, 122]),
+            ("selected_file_background", [215, 226, 236]),
         ] {
             colors.insert(role.into(), rgb);
         }
