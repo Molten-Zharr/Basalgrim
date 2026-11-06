@@ -76,10 +76,15 @@ fn run() -> Result<()> {
     let mut previous_click: Option<((u16, u16), Instant)> = None;
     let clipboard = basalgrim::clipboard::terminal::TerminalClipboard::new();
     let files = basalgrim::clipboard::native::Runtime::terminal();
+    let mut dnd = basalgrim::dnd::terminal::TerminalDnd::new();
+    let mut native_source = None;
     app.clipboard_connecting();
     while !app.quit {
         app.pump_clipboard(&files);
         app.tick();
+        dnd.tick();
+        pump_dnd(&mut dnd, &mut app, &mut native_source);
+        dnd.flush(&mut stdout().lock())?;
         if !app.native_text_clipboard()
             && let Some(copy) = app.take_text_copy()
         {
@@ -127,6 +132,7 @@ fn run() -> Result<()> {
             continue;
         }
         match event::read()? {
+            Event::Osc(bytes) => dnd.input(&bytes),
             Event::Key(key) if key.kind != KeyEventKind::Release => {
                 let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
                 let alt = key.modifiers.contains(KeyModifiers::ALT);
@@ -195,7 +201,9 @@ fn run() -> Result<()> {
                 }
             }
             Event::FocusLost => {
-                app.handle(Input::CancelDrag);
+                if app.outgoing_drag_id().is_none() {
+                    app.handle(Input::CancelDrag);
+                }
                 app.handle(Input::Pointer(None));
             }
             Event::Resize(_, _) => {
@@ -214,6 +222,71 @@ fn run() -> Result<()> {
         }
     }
     Ok(())
+}
+fn pump_dnd(
+    dnd: &mut basalgrim::dnd::terminal::TerminalDnd,
+    app: &mut App,
+    source: &mut Option<u64>,
+) {
+    use basalgrim::dnd::{Event, Request};
+    for event in dnd.events() {
+        match event {
+            Event::Ready(_) => {}
+            Event::Hover {
+                id,
+                x,
+                y,
+                allowed,
+                preferred,
+                ..
+            } => {
+                let point = Some(ratatui::layout::Position::new(x as u16, y as u16));
+                let action = app.hover_external_drop(id, point, allowed, preferred);
+                dnd.request(Request::Accept { id, action });
+            }
+            Event::Leave { id } => app.leave_external_drop(id),
+            Event::Drop { id } => dnd.request(if app.capture_external_drop(id) {
+                Request::Read { id }
+            } else {
+                Request::Finish { id, action: None }
+            }),
+            Event::Data { id, result } => {
+                if app.receive_external_drop(id, result) {
+                    *source = None;
+                } else {
+                    dnd.request(Request::Finish { id, action: None });
+                }
+            }
+            Event::Sent { id, result } => {
+                app.finish_export(id, result);
+                if *source == Some(id) {
+                    *source = None;
+                }
+            }
+        }
+    }
+    if let Some(point) = dnd.take_gesture()
+        && let Some(offer) = app.export_file_drag_at(point)
+    {
+        *source = Some(offer.id);
+        dnd.request(Request::Start {
+            id: offer.id,
+            paths: offer.paths,
+            copy: offer.copy,
+        });
+    }
+    if let Some(id) = *source
+        && app.outgoing_drag_id() != Some(id)
+    {
+        dnd.request(Request::Cancel { id });
+        *source = None;
+    }
+    for id in app.take_drop_cancellations() {
+        dnd.request(Request::Cancel { id });
+    }
+    if let Some((id, action)) = app.external_drop_result() {
+        dnd.request(Request::Finish { id, action });
+    }
 }
 fn convert_key(code: KeyCode) -> Option<Key> {
     Some(match code {

@@ -20,7 +20,8 @@ def screen_text(output, width=170, height=53):
     """Reconstruct Crossterm's changed cells, including unchanged name prefixes."""
     cells = [[" "] * width for _ in range(height)]
     row = col = 0
-    for token in re.findall(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b[^\[]|[^\x1b]+", output.decode(errors="replace")):
+    decoded = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", "", output.decode(errors="replace"))
+    for token in re.findall(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b[^\[]|[^\x1b]+", decoded):
         if token.startswith("\x1b["):
             command = token[-1]
             params = token[2:-1]

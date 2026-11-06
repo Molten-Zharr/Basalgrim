@@ -158,6 +158,73 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             key("Escape");key("q","ctrl");process.wait(timeout=5);process=None
             print("Native Wayland history storage: mouse policy, confirmation, cleanup, shortcut and restart passed",flush=True)
             if '--history-storage-only' in sys.argv[2:]:return
+            if '--external-dnd-only' in sys.argv[2:]:
+                source=base/'external-source';target=base/'external-target';source.mkdir();target.mkdir();(source/'folder').mkdir()
+                for name in ('a.txt','b.txt','copy.txt','keep.txt'):(source/name).write_text(name)
+                left=launch(source);right=None
+                def focus(child):run('swaymsg',f'[pid={child.pid}] focus');time.sleep(.12)
+                def arrange(child,x):run('swaymsg',f'[pid={child.pid}] resize set 800 px 860 px, move absolute position {x} px 0 px');time.sleep(.25)
+                def hold_ctrl(callback):
+                    held=subprocess.Popen([commands['wtype'],'-s','100','-M','ctrl','-s','4000','-m','ctrl'],env=env,stdout=app_log,stderr=app_log)
+                    try:time.sleep(.3);callback()
+                    finally:held.wait(timeout=6)
+                def replay(name,predicate,label):
+                    # A path appears before the completion event/history reload reaches the UI.
+                    # Retrying while no journal intent exists is safe; once one exists, wait for it.
+                    before=storage_rows('SELECT COALESCE(MAX(id),0) FROM operations')[0][0]
+                    deadline=time.monotonic()+8
+                    while storage_rows('SELECT COALESCE(MAX(id),0) FROM operations')[0][0]==before:
+                        key(name,'ctrl')
+                        if predicate():break
+                        assert time.monotonic()<deadline,label
+                    wait_for(predicate,label)
+                    wait_for(lambda:not storage_rows("SELECT id FROM operations WHERE state='running'"),'durable replay completion')
+                try:
+                    arrange(left,0);right=launch(target);arrange(right,800)
+                    focus(left);click(34,15);key('c','ctrl')
+                    before=run('wl-paste','--no-newline','--type','text/plain;charset=utf-8').stdout
+                    click(34,11);hold_ctrl(lambda:(click(34,12),click(34,13)))
+                    click(34,13,10);click(145,25,11)
+                    run('grim',str(out/'native-wayland-external-dnd.png'));click(145,25,12)
+                    wait_for(lambda:all((target/n).exists() for n in ('a.txt','b.txt')),'Wayland native group drop into another window')
+                    assert not (source/'a.txt').exists() and not (source/'b.txt').exists()
+                    assert run('wl-paste','--no-newline','--type','text/plain;charset=utf-8').stdout==before,'Wayland DnD replaced clipboard'
+                    focus(left);hold_ctrl(lambda:(click(34,12,10),click(145,25,11),click(145,25,12)))
+                    wait_for(lambda:(target/'copy.txt').exists(),'Wayland external Ctrl-copy');assert (source/'copy.txt').exists()
+                    focus(left);click(34,13,10);click(145,25,11);key('Escape');click(105,25,11);click(105,25,12);time.sleep(.3)
+                    assert (source/'keep.txt').exists() and not (target/'keep.txt').exists(),'Wayland rejected drop moved a file'
+                    focus(right);replay('z',lambda:not (target/'copy.txt').exists(),'Wayland external copy undo')
+                    replay('z',lambda:(source/'a.txt').exists() and (source/'b.txt').exists(),'Wayland external move undo')
+                    replay('y',lambda:(target/'a.txt').exists() and not (source/'a.txt').exists(),'Wayland external redo')
+                    print('Native Wayland external DnD: two windows, group move, Ctrl-copy, rejected drop, unchanged clipboard and undo/redo passed',flush=True)
+                    focus(left);key('q','ctrl');left.wait(timeout=5)
+                    gtk_source=base/'gtk-source';gtk_target=base/'gtk-target';gtk_source.mkdir();gtk_target.mkdir();(gtk_source/'gtk-input.txt').write_text('GTK Wayland interoperability')
+                    peer_env=dict(env,GDK_BACKEND='wayland',GSETTINGS_BACKEND='memory');peer_env.pop('DBUS_SESSION_BUS_ADDRESS',None)
+                    peer=subprocess.Popen([sys.executable,str(Path(__file__).with_name('dnd_peer.py')),str(gtk_source),str(gtk_target)],env=peer_env,stdout=app_log,stderr=app_log)
+                    try:
+                        def peer_rect():
+                            node=find(json.loads(run('swaymsg','-t','get_tree').stdout),peer.pid)
+                            return node.get('rect') if node else None
+                        # Wait for the initial for_window rule before overriding it; GTK maps asynchronously.
+                        wait_for(lambda:peer_rect()=={'x':0,'y':0,'width':1360,'height':860},'Wayland GTK initial compositor geometry')
+                        arrange(peer,0)
+                        wait_for(lambda:peer_rect()=={'x':0,'y':0,'width':800,'height':860},'Wayland GTK test geometry')
+                        run('grim',str(out/'native-wayland-gtk-before.png'))
+                        (out/'native-wayland-gtk-tree.json').write_text(run('swaymsg','-t','get_tree').stdout)
+                        focus(peer);click(50,25,10);click(60,25,11);click(145,25,11)
+                        run('grim',str(out/'native-wayland-gtk-drag.png'));click(145,25,12)
+                        wait_for(lambda:(target/'gtk-input.txt').exists(),'Wayland GTK -> Basalgrim drop');assert (gtk_source/'gtk-input.txt').exists()
+                        wait_for(lambda:'DRAG_FINISHED' in (out/'native-wayland.log').read_text(),'GTK native completion acknowledgement')
+                        focus(right);click(134,13,10);click(50,25,11);click(50,25,12)
+                        wait_for(lambda:(gtk_target/'gtk-input.txt').exists(),'Wayland Basalgrim -> GTK drop');assert (target/'gtk-input.txt').exists()
+                        run('grim',str(out/'native-wayland-external-dnd-gtk.png'))
+                        print('Native Wayland GTK4 interoperability: incoming and outgoing file-list Copy passed',flush=True)
+                    finally:peer.terminate();peer.wait(timeout=5)
+                    focus(right);key('q','ctrl');right.wait(timeout=5)
+                finally:
+                    for child in (left,right):
+                        if child is not None and child.poll() is None:child.terminate();child.wait(timeout=5)
+                return
             if '--chrome-only' in sys.argv[2:]:
                 parent=base/'up';inside=parent/'one/inside';inside.mkdir(parents=True)
                 (inside/'ancestor.txt').write_text('ancestor move');(inside/'peer.txt').write_text('ancestor copy')

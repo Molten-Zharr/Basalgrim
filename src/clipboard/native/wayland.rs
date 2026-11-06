@@ -110,6 +110,7 @@ struct State {
     content: Option<Content>,
     offers: HashMap<ObjectId, (Offer, Vec<String>)>,
     selection: Option<Offer>,
+    ignored_drag: Option<(ObjectId, bool)>,
     sends: Vec<Sending>,
     version: u64,
     focused: bool,
@@ -124,7 +125,11 @@ impl State {
         self.selection = offer;
         let selected = self.selection.as_ref().map(Offer::id);
         self.offers.retain(|id, (offer, _)| {
-            let keep = Some(id) == selected.as_ref();
+            let keep = Some(id) == selected.as_ref()
+                || self
+                    .ignored_drag
+                    .as_ref()
+                    .is_some_and(|(drag, _)| drag == id);
             if !keep {
                 offer.destroy();
             }
@@ -652,6 +657,34 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for State {
         match event {
             wl_data_device::Event::DataOffer { id } => state.offered(Offer::Core(id)),
             wl_data_device::Event::Selection { id } => state.selection(id.map(Offer::Core)),
+            // Duplicate core devices receive the same drag. Keep this unused offer alive;
+            // destroying it during enter can cancel the compositor's drag before the GUI accepts.
+            wl_data_device::Event::Enter {
+                id: Some(offer), ..
+            } => {
+                if let Some((old, _)) = state.ignored_drag.take()
+                    && let Some((offer, _)) = state.offers.remove(&old)
+                {
+                    offer.destroy();
+                }
+                state.ignored_drag = Some((offer.id(), false));
+            }
+            wl_data_device::Event::Drop => {
+                if let Some((_, dropped)) = &mut state.ignored_drag {
+                    *dropped = true;
+                }
+            }
+            wl_data_device::Event::Leave => {
+                if state
+                    .ignored_drag
+                    .as_ref()
+                    .is_some_and(|(_, dropped)| !*dropped)
+                    && let Some((id, _)) = state.ignored_drag.take()
+                    && let Some((offer, _)) = state.offers.remove(&id)
+                {
+                    offer.destroy();
+                }
+            }
             _ => {}
         }
     }

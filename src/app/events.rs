@@ -4,6 +4,19 @@ use ratatui::layout::Position;
 
 impl App {
     pub fn handle(&mut self, input: Input) {
+        if matches!(
+            input,
+            Input::Key(KeyPress {
+                key: Key::Escape,
+                ..
+            })
+        ) && self.external_drag_active()
+        {
+            self.cancel_external_drop();
+            self.cancel_file_drag();
+            self.finish_marquee(true);
+            return;
+        }
         match input {
             Input::PointerDown {
                 x,

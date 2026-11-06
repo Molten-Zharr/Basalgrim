@@ -97,6 +97,21 @@ fn main() -> Result<()> {
     settle(&mut app)?;
     render(&mut app, &out, "grid", 150, 44)?;
     let notice = app.notice.clone();
+    let destination = app
+        .hits
+        .iter()
+        .find_map(|(area, target)| {
+            matches!(target, Target::Entry { pane: 0, index: 0 })
+                .then_some(ratatui::layout::Position::new(area.x, area.y))
+        })
+        .unwrap();
+    app.hover_external_drop(3, Some(destination), 3, basalgrim::dnd::DropAction::Move);
+    render(&mut app, &out, "external-drop", 150, 44)?;
+    app.capture_external_drop(3);
+    render(&mut app, &out, "external-drop-read", 100, 28)?;
+    app.cancel_external_drop();
+    app.take_drop_cancellations();
+    render(&mut app, &out, "grid", 150, 44)?;
     app.accept_clipboard_event(basalgrim::clipboard::service::Event::Ready(Ok(())));
     app.action(Action::Paste);
     render(&mut app, &out, "file-clipboard", 100, 28)?;

@@ -158,6 +158,25 @@ cargo run --release --no-default-features --features tui --bin basalgrim-tui -- 
 
 ![Basalgrim: перенос на родительскую папку в адресной строке](../assets/screenshots/breadcrumb-drop.png)
 
+### Перетаскивание между приложениями
+
+В GUI перетаскивайте файл или отмеченную группу за пределы окна в другое приложение. В обратную сторону доступны те же папки, свободное место, вкладки и части пути, что и для внутренних переносов. Буфер обмена сохраняется. Полученные файлы используют общие конфликты, прогресс, отмену и undo/redo; действие в другом приложении выполняет получатель.
+
+| Запуск | Внешнее перетаскивание |
+| --- | --- |
+| GUI X11 | [XDND](https://www.freedesktop.org/wiki/Specifications/XDND/), копирование/перемещение и пакетные URI через INCR |
+| GUI Wayland | [wl_data_device](https://wayland.freedesktop.org/docs/html/apa.html#protocol-spec-wl_data_device); действие согласуется с получателем и композитором |
+| Локальный TUI | [Kitty OSC 72](https://sw.kovidgoyal.net/kitty/dnd-protocol/) при положительном ответе терминала на запрос поддержки, независимо от режима иконок |
+| Остальные терминалы, неподдерживающие мультиплексоры и SSH | Внутреннее перетаскивание и файловые команды |
+
+Для копирования в Wayland зажмите Ctrl до выхода из окна: такая внешняя сессия предлагает только копирование. Без этого получатель и композитор выбирают доступное действие. Отменой нативной сессии управляет оконная система; не все Wayland-композиторы передают Escape приложениям во время drag. Сброс на область, не принимающую файлы, отменяет перенос. После сброса ожидание списка можно остановить мышью кнопкой **Стоп** или через Esc.
+
+Принимаются только локальные `file:` URI: не более 4096 путей и 4 MiB данных, с сохранением произвольных Unix-байтов в именах. Текстовая вставка не считается файловым сбросом. Назначение фиксируется до чтения списка; устаревшие ответы после смены вкладки, каталога, размеров или отмены не запускают операцию. Приложение-источник не удаляет файлы по одному лишь уведомлению об успешном завершении: локальный перенос выполняет получатель.
+
+![Basalgrim: приём файлов из другого приложения](../assets/screenshots/external-drop.png)
+
+![Basalgrim: отмена ожидания списка файлов](../assets/screenshots/external-drop-read.png)
+
 ### Системный файловый буфер
 
 **Ctrl+C**, **Ctrl+X**, **Ctrl+V** обмениваются файлами с другими Linux-менеджерами. Те же команды доступны через ПКМ: копирование/вырезание — у файла или группы, вставка — на свободном месте текущей папки. Переназначенные сочетания тоже работают.
@@ -314,15 +333,27 @@ GUI и TUI используют `$XDG_STATE_HOME/molten-zharr/basalgrim/operatio
 
 Проверки выполняются локально. GitHub Actions CI отключён; workflow удалён из репозитория.
 
+Для сборок и тестов используйте `python3 scripts/cargo_local.py` вместо `cargo`.
+Обёртка выполняет команды последовательно и проверяет фактический размер `target/`
+до, во время и после команды. Бюджет — 8 ГиБ: старый кэш очищается перед запуском;
+при превышении во время сборки команда останавливается, `target/` очищается, а
+обёртка возвращает ошибку 75. Проверка идёт каждые две секунды, это не квота
+файловой системы. Очистка удаляет всё содержимое `target/`, включая временные
+снимки и тестовые инструменты; исходники и `assets/screenshots/` остаются.
+Обычный запуск `cargo` использует компактные профили, но обходит контроль размера.
+В профилях dev/test отключены отладочные символы и incremental-кэш; проверки
+переполнений и debug assertions сохраняются. Текущий объём:
+`python3 scripts/cargo_local.py status`.
+
 ```sh
 cargo fmt --check
-cargo clippy --all-features --all-targets -- -D warnings
-cargo test --all-features --all-targets
-cargo test --no-default-features --features tui --all-targets
-cargo run --example preview
+python3 scripts/cargo_local.py clippy --all-features --all-targets -- -D warnings
+python3 scripts/cargo_local.py test --all-features --all-targets
+python3 scripts/cargo_local.py test --no-default-features --features tui --all-targets
+python3 scripts/cargo_local.py run --example preview
 
 # Проверка настоящего TUI в PTY с отдельной корзиной и настройками
-cargo build --no-default-features --features tui --bin basalgrim-tui
+python3 scripts/cargo_local.py build --no-default-features --features tui --bin basalgrim-tui
 python3 scripts/smoke_tui.py
 python3 scripts/smoke_icons.py
 python3 scripts/smoke_preview.py
@@ -342,7 +373,7 @@ python3 scripts/smoke_history_storage.py
 python3 scripts/smoke_trash.py
 
 # Настоящий GUI на отдельном X-сервере (нужны Xvfb, xclip, Python Pillow)
-cargo build --bin basalgrim
+python3 scripts/cargo_local.py build --bin basalgrim
 python3 scripts/smoke_gui.py target/debug/basalgrim
 
 # Отдельная headless Wayland-сессия (sway, wtype, wl-clipboard, grim,
@@ -350,7 +381,7 @@ python3 scripts/smoke_gui.py target/debug/basalgrim
 python3 scripts/smoke_gui_wayland.py target/release/basalgrim
 
 # Файловый буфер: изолированные GUI и PTY на каждом оконном бэкенде
-cargo build --all-features --bins
+python3 scripts/cargo_local.py build --all-features --bins
 python3 scripts/smoke_gui.py target/debug/basalgrim --clipboard-only
 python3 scripts/smoke_gui_wayland.py target/debug/basalgrim --clipboard-only
 
@@ -405,6 +436,10 @@ python3 scripts/smoke_gui_wayland.py target/debug/basalgrim --chrome-only
 
 Режим `--clipboard-only` обоих GUI-сценариев проверяет файловые MIME, внешний copy/cut, вставку мышью, сохранение файлового выбора при копировании адреса и запускает `smoke_file_clipboard_pty.py` в той же приватной сессии. Последний скрипт требует `BASALGRIM_CLIPBOARD_TEST_ISOLATED=1` и не предназначен для пользовательского дисплея. Игнорируемый тест `native_file_clipboard_multi_format_roundtrip_and_ownership` проверяет два независимых клиента и список из 2400 путей; для запуска внутри этих сессий передайте путь собранного тестового бинарника через `BASALGRIM_NATIVE_CLIPBOARD_TEST`.
 
+`smoke_external_dnd.py` эмулирует согласованный Kitty OSC 72 через настоящий PTY: дробление пакетов вплоть до ESC-префикса, исходящие URI, имена с произвольными Unix-байтами, undo/redo, устаревшие ответы, Esc и «Стоп», ошибки и ограничения размера. Режим `--external-dnd-only` обоих GUI-сценариев проверяет два окна и независимый GTK4-партнёр в обе стороны (нужен Python GI с Gtk 4): группы, Ctrl-копирование, отмену недоступным назначением, сохранение буфера и undo/redo. X11 также проверяет Escape; в headless Sway клавиатура во время native drag принадлежит композитору.
+
+Локальные поправки `vendor/winit` пересылают XDND в проверенный прокси приложения, в том числе для GTK 4.14, обходящего прокси после первого движения. `vendor/crossterm` добавляет ограниченный разбор OSC 72 без превращения данных протокола в клавиши; отдельные Escape и Alt+] сохраняются. При обновлении зависимостей нужно сверить эти поправки и повторить GUI/PTY-проверки.
+
 ## Следующие этапы
 
-Следующий этап — перетаскивание между приложениями через возможности GUI и поддерживаемые протоколы терминалов. Полный план достижения паритета с tfm-tui — в [roadmap](ROADMAP.md).
+Следующий этап — редактирование имён на месте и доработка курсора, выделения и вставки в полях имени и пути. Полный план достижения паритета с tfm-tui — в [roadmap](ROADMAP.md).

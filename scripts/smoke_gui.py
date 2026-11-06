@@ -78,7 +78,10 @@ def find_window(process):
         for parent in pending:
             for win in children(parent):
                 if pid(win) == process.pid:
-                    return win
+                    rr, px, py = W(), C.c_int(), C.c_int()
+                    width, height, border, depth = C.c_uint(), C.c_uint(), C.c_uint(), C.c_uint()
+                    if x.XGetGeometry(d,win,C.byref(rr),C.byref(px),C.byref(py),C.byref(width),C.byref(height),C.byref(border),C.byref(depth)) and width.value>=100 and height.value>=100:
+                        return win
                 next_level.append(win)
         pending = next_level
     return None
@@ -244,6 +247,58 @@ try:
         finally:stop(process,log)
         print('Native GUI history storage: compact mouse, policy persistence, confirmation, cleanup and restart passed',flush=True)
         if '--history-storage-only' in sys.argv[2:]:sys.exit(0)
+        if '--external-dnd-only' in sys.argv[2:]:
+            source=base/'external-source';target=base/'external-target';source.mkdir();target.mkdir();(source/'folder').mkdir()
+            for name in ('a.txt','b.txt','copy.txt','keep.txt'):(source/name).write_text(name)
+            left,lwin,llog=launch(source,config);right=rwin=rlog=None
+            x.XMoveResizeWindow.argtypes=[D,W,C.c_int,C.c_int,C.c_uint,C.c_uint]
+            def focus(win):x.XSetInputFocus(d,win,2,0);x.XFlush(d);time.sleep(.12)
+            try:
+                x.XMoveResizeWindow(d,lwin,0,0,800,860);x.XFlush(d);time.sleep(.25)
+                right,rwin,rlog=launch(target,config);x.XMoveResizeWindow(d,rwin,800,0,800,860);x.XFlush(d);time.sleep(.3)
+                focus(lwin);click(lwin,34,15);chord('c','Control_L');time.sleep(.25)
+                before=subprocess.check_output([xclip,'-selection','clipboard','-out'],timeout=3)
+                click(lwin,34,11);key('Control_L',True);click(lwin,34,12);click(lwin,34,13);key('Control_L',False)
+                band_begin(lwin,(34,13),(145,25));screenshot(root,'native-external-dnd.png');band_end()
+                wait_for(lambda:all((target/n).exists() for n in ('a.txt','b.txt')),'X11 native group drop into another window')
+                assert not (source/'a.txt').exists() and not (source/'b.txt').exists()
+                assert subprocess.check_output([xclip,'-selection','clipboard','-out'],timeout=3)==before,'DnD replaced the system clipboard'
+                focus(lwin);key('Control_L',True)
+                try:band_begin(lwin,(34,12),(145,25));band_end()
+                finally:key('Control_L',False)
+                wait_for(lambda:(target/'copy.txt').exists(),'X11 Ctrl-copy to another window');assert (source/'copy.txt').exists()
+                focus(lwin);band_begin(lwin,(34,13),(145,25));key('Escape');time.sleep(.2);band_end();time.sleep(.2)
+                assert (source/'keep.txt').exists() and not (target/'keep.txt').exists(),'X11 external Escape moved a file'
+                focus(rwin);time.sleep(.3);chord('z','Control_L');wait_for(lambda:not (target/'copy.txt').exists(),'X11 external copy undo')
+                time.sleep(.3);chord('z','Control_L');wait_for(lambda:(source/'a.txt').exists() and (source/'b.txt').exists(),'X11 external group move undo')
+                time.sleep(.3);chord('y','Control_L');wait_for(lambda:(target/'a.txt').exists() and not (source/'a.txt').exists(),'X11 external group redo')
+                print('Native X11 external DnD: two GUI windows, group move, Ctrl-copy, Escape, unchanged clipboard and undo/redo passed',flush=True)
+                focus(lwin);quit_when_ready(left)
+                # Xvfb has no WM. GTK identifies foreign top-level drop targets through WM_STATE.
+                wm_state=x.XInternAtom(d,b'WM_STATE',0);normal=(C.c_ulong*2)(1,0)
+                x.XChangeProperty.argtypes=[D,W,A,A,C.c_int,C.c_int,C.POINTER(C.c_ubyte),C.c_int]
+                x.XChangeProperty(d,rwin,wm_state,wm_state,32,0,C.cast(normal,C.POINTER(C.c_ubyte)),2);x.XFlush(d)
+                gtk_source=base/'gtk-source';gtk_target=base/'gtk-target';gtk_source.mkdir();gtk_target.mkdir();(gtk_source/'gtk-input.txt').write_text('GTK interoperability')
+                peer_env=dict(os.environ,HOME=str(base),XDG_CONFIG_HOME=str(config),XDG_DATA_HOME=str(base/'data'),XDG_STATE_HOME=str(base/'state'),GDK_BACKEND='x11',GSETTINGS_BACKEND='memory')
+                for name in ('WAYLAND_DISPLAY','WAYLAND_SOCKET','DBUS_SESSION_BUS_ADDRESS'):peer_env.pop(name,None)
+                with open('target/preview/native-gtk-peer.log','w') as peer_log:
+                    peer=subprocess.Popen([sys.executable,str(Path(__file__).with_name('dnd_peer.py')),str(gtk_source),str(gtk_target)],env=peer_env,stdout=peer_log,stderr=peer_log)
+                    try:
+                        wait_for(lambda:find_window(peer),'GTK peer window');gwin=find_window(peer);x.XMoveResizeWindow(d,gwin,0,0,800,860);x.XFlush(d);time.sleep(.3)
+                        focus(gwin);band_begin(gwin,(50,25),(145,25));screenshot(root,'native-external-dnd-gtk-drag.png');band_end()
+                        wait_for(lambda:(target/'gtk-input.txt').exists(),'GTK -> Basalgrim URI-list drop');assert (gtk_source/'gtk-input.txt').exists()
+                        wait_for(lambda:'DRAG_FINISHED' in Path('target/preview/native-gtk-peer.log').read_text(),'GTK completion acknowledgement')
+                        focus(rwin);band_begin(rwin,(34,13),(-50,25));band_end()
+                        wait_for(lambda:(gtk_target/'gtk-input.txt').exists(),'Basalgrim -> GTK drop');assert (target/'gtk-input.txt').exists()
+                        screenshot(root,'native-external-dnd-gtk.png')
+                        print('Native X11 GTK4 interoperability: incoming and outgoing file-list Copy passed',flush=True)
+                    finally:
+                        peer.terminate();peer.wait(timeout=5)
+                focus(rwin);quit_when_ready(right)
+            finally:
+                stop(left,llog)
+                if right is not None:stop(right,rlog)
+            sys.exit(0)
         if '--chrome-only' in sys.argv[2:]:
             parent=base/'up';inside=parent/'one/inside';inside.mkdir(parents=True)
             (inside/'ancestor.txt').write_text('ancestor move');(inside/'peer.txt').write_text('ancestor copy')

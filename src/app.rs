@@ -205,6 +205,7 @@ pub struct App {
     pub file_areas: [Rect; 2],
     marquee: Option<selection::Marquee>,
     file_drag: Option<drag_drop::FileDrag>,
+    external_drop: drag_drop::ExternalDropState,
     pub(crate) drop_regions: Vec<drag_drop::DropRegion>,
     pub operation_count: usize,
     pub operations: std::collections::VecDeque<crate::operations::OperationRecord>,
@@ -306,6 +307,7 @@ impl App {
             file_areas: [Rect::default(); 2],
             marquee: None,
             file_drag: None,
+            external_drop: Default::default(),
             drop_regions: Vec::new(),
             operation_count: 0,
             operations: Default::default(),
@@ -357,7 +359,7 @@ impl App {
     }
     /// Resolve against this frame's active hit regions, including modal overlays.
     pub fn hovered_area(&self) -> Option<Rect> {
-        if self.selection_area().is_some() || self.dragging_files() {
+        if self.selection_area().is_some() || self.dragging_files() || self.external_drag_active() {
             return None;
         }
         let pointer = self.pointer?;
@@ -377,7 +379,7 @@ impl App {
         self.file_tab_mut(self.active)
     }
     pub fn loading(&self) -> bool {
-        if self.dragging_files() {
+        if self.dragging_files() || self.external_drag_active() {
             return true;
         }
         self.panes.iter().flat_map(|p| &p.tabs).any(|t| t.loading)

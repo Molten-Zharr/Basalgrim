@@ -1,6 +1,7 @@
 pub mod app;
 pub mod clipboard;
 pub mod conflicts;
+pub mod dnd;
 pub mod fs;
 pub mod icons;
 pub mod input;

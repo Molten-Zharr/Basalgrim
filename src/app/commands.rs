@@ -142,7 +142,9 @@ impl App {
                         selection && !self.busy && self.other_destination().is_some()
                     }
                     Duplicate => selection && !self.busy,
-                    CancelOperation => self.busy || self.clipboard_reads_pending(),
+                    CancelOperation => {
+                        self.busy || self.clipboard_reads_pending() || self.external_drop_reading()
+                    }
                     Undo => self.replay_candidate(false).is_some(),
                     Redo => self.replay_candidate(true).is_some(),
                     HistoryStorage => self.journal_enabled,

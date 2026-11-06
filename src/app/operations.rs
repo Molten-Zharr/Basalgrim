@@ -112,6 +112,11 @@ impl App {
         }
     }
     pub fn cancel_operation(&mut self) {
+        if self.external_drop_reading() {
+            self.cancel_external_drop();
+            self.message("Чтение перетаскивания отменено", false);
+            return;
+        }
         if self.cancel_clipboard_read() {
             return;
         }

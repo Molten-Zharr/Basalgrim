@@ -210,7 +210,11 @@ impl App {
         }
     }
     pub(super) fn apply_trash(&mut self) {
-        if self.dialog.is_some() || self.marquee.is_some() || self.file_drag.is_some() || self.busy
+        if self.dialog.is_some()
+            || self.marquee.is_some()
+            || self.file_drag.is_some()
+            || self.external_drag_active()
+            || self.busy
         {
             return;
         }

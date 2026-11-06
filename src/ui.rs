@@ -60,6 +60,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     render_content(app, frame, palette);
     app.validate_marquee();
     app.validate_file_drag();
+    app.refresh_external_hover();
     // Use the same topmost hit region as clicking. Modal rendering has already
     // replaced background hits, so a covered control can never receive hover.
     if let Some(area) = app.hovered_area() {
@@ -270,7 +271,17 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
         " · "
     };
     if let Some(feedback) = app.drag_feedback() {
-        let text = if let Some(destination) = feedback.destination {
+        let text = if feedback.count == 0 {
+            format!(
+                "{} файлы → {}",
+                if feedback.copy {
+                    "Копировать"
+                } else {
+                    "Переместить"
+                },
+                fs::clean(&feedback.destination.as_ref().unwrap().to_string_lossy())
+            )
+        } else if let Some(destination) = feedback.destination {
             format!(
                 "{} {} → {} · Ctrl: копия · Esc: отмена",
                 if feedback.copy {
@@ -293,11 +304,16 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
             )
         };
         frame.render_widget(Paragraph::new(text).style(palette.accent()), zones[4]);
-    } else if app.clipboard_reads_pending() {
+    } else if app.clipboard_reads_pending() || app.external_drop_reading() {
         let area = zones[4];
         let width = 8.min(area.width);
         frame.render_widget(
-            Paragraph::new("Чтение буфера…").style(palette.muted()),
+            Paragraph::new(if app.external_drop_reading() {
+                "Чтение перетаскивания…"
+            } else {
+                "Чтение буфера…"
+            })
+            .style(palette.muted()),
             area,
         );
         let cancel = Rect::new(area.right() - width, area.y, width, area.height);

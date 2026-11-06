@@ -55,6 +55,9 @@ fn run() -> Result<()> {
     let mut previews = basalgrim::preview::images::PreviewRasterizer::default();
     let mut previous_click: Option<(egui::Pos2, Instant)> = None;
     let mut clipboard = None;
+    let mut dnd = None;
+    let mut dnd_ready = false;
+    let mut native_source = None;
     eframe::run_ui_native("Basalgrim · Molten-Zharr", options, move |root, frame| {
         let ctx = root.ctx().clone();
         app.handle(Input::DragModifiers {
@@ -65,6 +68,11 @@ fn run() -> Result<()> {
         {
             app.clipboard_connecting();
             clipboard = Some(basalgrim::clipboard::native::Runtime::gui(window.clone()));
+            let repaint = ctx.clone();
+            dnd = Some(basalgrim::dnd::native::Runtime::gui(
+                window.clone(),
+                move || repaint.request_repaint(),
+            ));
         }
         if let Some(clipboard) = &clipboard {
             app.pump_clipboard(clipboard);
@@ -122,6 +130,17 @@ fn run() -> Result<()> {
                 // point visible and include its rendered position in texture invalidation.
                 terminal.backend_mut().soft_backend.cursor_config.blink = false;
                 let _ = terminal.draw(|frame| ui::render(&mut app, frame));
+                if let Some(dnd) = &dnd {
+                    pump_dnd(
+                        dnd,
+                        &mut app,
+                        hover_image,
+                        Size::new(columns, rows),
+                        scale,
+                        &mut dnd_ready,
+                        &mut native_source,
+                    );
+                }
                 let backend = terminal.backend_mut();
                 if uploaded.as_ref() != Some(&backend.soft_backend.buffer)
                     || uploaded_cursor != backend.soft_backend.rendered_cursor
@@ -267,6 +286,8 @@ fn run() -> Result<()> {
                                 if app.selection_area().is_some() || app.dragging_files() {
                                     previous_click = None;
                                 }
+                            } else if dnd_ready && let Some(dnd) = &dnd {
+                                export_drag(&mut app, dnd, &mut native_source);
                             }
                         }
                         egui::Event::PointerButton {
@@ -284,7 +305,7 @@ fn run() -> Result<()> {
                                     previous_click = None;
                                 }
                                 app.handle(Input::PointerUp { x, y });
-                            } else {
+                            } else if app.outgoing_drag_id().is_none() {
                                 app.handle(Input::CancelDrag);
                             }
                         }
@@ -300,9 +321,24 @@ fn run() -> Result<()> {
                                 });
                             }
                         }
-                        egui::Event::PointerGone | egui::Event::WindowFocused(false) => {
+                        egui::Event::PointerGone => {
+                            if dnd_ready
+                                && ctx.input(|i| i.pointer.primary_down())
+                                && let Some(dnd) = &dnd
+                            {
+                                export_drag(&mut app, dnd, &mut native_source);
+                            }
                             previous_click = None;
-                            app.handle(Input::CancelDrag);
+                            if app.outgoing_drag_id().is_none() {
+                                app.handle(Input::CancelDrag);
+                            }
+                            app.handle(Input::Pointer(None));
+                        }
+                        egui::Event::WindowFocused(false) => {
+                            previous_click = None;
+                            if app.outgoing_drag_id().is_none() {
+                                app.handle(Input::CancelDrag);
+                            }
                             app.handle(Input::Pointer(None));
                         }
                         _ => {}
@@ -311,6 +347,20 @@ fn run() -> Result<()> {
             });
         if let Some(clipboard) = &clipboard {
             app.pump_clipboard(clipboard);
+        }
+        if let Some(dnd) = &dnd {
+            if let Some(id) = native_source
+                && app.outgoing_drag_id() != Some(id)
+            {
+                dnd.submit(basalgrim::dnd::Request::Cancel { id });
+                native_source = None;
+            }
+            for id in app.take_drop_cancellations() {
+                dnd.submit(basalgrim::dnd::Request::Cancel { id });
+            }
+            if let Some((id, action)) = app.external_drop_result() {
+                dnd.submit(basalgrim::dnd::Request::Finish { id, action });
+            }
         }
         if let Some(feedback) = app.drag_feedback() {
             ctx.set_cursor_icon(if feedback.destination.is_none() {
@@ -333,6 +383,90 @@ fn run() -> Result<()> {
         }
     })
     .map_err(|e| anyhow::anyhow!(e.to_string()))
+}
+fn export_drag(
+    app: &mut App,
+    dnd: &basalgrim::dnd::native::Runtime,
+    native_source: &mut Option<u64>,
+) {
+    if let Some(offer) = app.export_file_drag() {
+        if dnd.submit(basalgrim::dnd::Request::Start {
+            id: offer.id,
+            paths: offer.paths,
+            copy: offer.copy,
+        }) {
+            *native_source = Some(offer.id);
+        } else {
+            app.finish_export(offer.id, Err("Нативное перетаскивание недоступно".into()));
+        }
+    }
+}
+fn pump_dnd(
+    dnd: &basalgrim::dnd::native::Runtime,
+    app: &mut App,
+    image: egui::Rect,
+    size: Size,
+    scale: f32,
+    ready: &mut bool,
+    source: &mut Option<u64>,
+) {
+    use basalgrim::dnd::{Event, Request};
+    for event in dnd.events.try_iter() {
+        match event {
+            Event::Ready(result) => {
+                *ready = result.is_ok();
+                if let Err(error) = result {
+                    let receiving = app.external_drag_active();
+                    if let Some(id) = source.take() {
+                        app.finish_export(id, Err(error.clone()));
+                    }
+                    app.cancel_external_drop();
+                    if receiving {
+                        app.message(format!("Перетаскивание недоступно: {error}"), true);
+                    }
+                }
+            }
+            Event::Hover {
+                id,
+                x,
+                y,
+                physical,
+                allowed,
+                preferred,
+            } => {
+                let divisor = if physical { f64::from(scale) } else { 1.0 };
+                let point = pointer_cell(
+                    image,
+                    size,
+                    egui::pos2((x / divisor) as f32, (y / divisor) as f32),
+                );
+                let action = app.hover_external_drop(id, point, allowed, preferred);
+                dnd.submit(Request::Accept { id, action });
+            }
+            Event::Leave { id } => app.leave_external_drop(id),
+            Event::Drop { id } => {
+                dnd.submit(if app.capture_external_drop(id) {
+                    Request::Read { id }
+                } else {
+                    Request::Finish { id, action: None }
+                });
+            }
+            Event::Data { id, result } => {
+                // A native drag can return to this window; its destination operation now owns completion.
+                if app.receive_external_drop(id, result) {
+                    *source = None;
+                } else {
+                    dnd.submit(Request::Finish { id, action: None });
+                }
+            }
+            Event::Sent { id, result } => {
+                app.finish_export(id, result);
+                if *source == Some(id) {
+                    *source = None;
+                }
+            }
+        }
+    }
 }
 fn pointer_cell(
     image: egui::Rect,
