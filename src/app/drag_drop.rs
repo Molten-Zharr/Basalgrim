@@ -1,6 +1,5 @@
 use super::*;
 use crate::dnd::{DropAction, Outgoing};
-use crate::input::Input;
 use std::{
     collections::BTreeSet,
     time::{Duration, Instant},
@@ -28,8 +27,11 @@ pub(super) struct FileDrag {
     initial: BTreeSet<PathBuf>,
     initial_explicit: bool,
     initial_focus: Option<PathBuf>,
+    initial_range: crate::model::RangeSelection,
+    index: usize,
     toggle: bool,
     double: bool,
+    extend: bool,
     copy: bool,
     started: bool,
     external: Option<u64>,
@@ -270,7 +272,9 @@ impl App {
                     None
                 }
             })?;
-            if self.dialog.is_some() || !self.begin_file_drag(point, pane, index, false, false) {
+            if self.dialog.is_some()
+                || !self.begin_file_drag(point, pane, index, false, false, false)
+            {
                 return None;
             }
         }
@@ -321,6 +325,7 @@ impl App {
         index: usize,
         toggle: bool,
         double: bool,
+        extend: bool,
     ) -> bool {
         if self.busy || self.clipboard_reads_pending() || self.trash_in(pane) {
             return false;
@@ -337,7 +342,7 @@ impl App {
         } else {
             vec![entry.path.clone()]
         };
-        self.file_drag = Some(FileDrag {
+        let mut drag = FileDrag {
             pane,
             tab: self.panes[pane].active,
             cwd: tab.cwd.clone(),
@@ -349,14 +354,27 @@ impl App {
             initial: tab.marked.clone(),
             initial_explicit: tab.explicit_selection,
             initial_focus: tab.entry().map(|e| e.path.clone()),
+            initial_range: tab.range.clone(),
+            index,
             toggle,
             double,
+            extend,
             copy: toggle,
             started: false,
             external: None,
             last_scroll: Instant::now(),
-        });
+        };
+        // Capture Shift at press: releasing the modifier before the button must
+        // not collapse the range or turn a rapid Shift-click into an open.
+        if extend {
+            self.file_tab_mut(pane).select_range(index, toggle);
+            drag.sources = self.file_tab(pane).targets();
+        }
+        self.file_drag = Some(drag);
         self.active = pane;
+        if extend {
+            self.update_preview();
+        }
         true
     }
     pub fn dragging_files(&self) -> bool {
@@ -435,6 +453,7 @@ impl App {
             }
             tab.marked = sources.into_iter().collect();
             tab.explicit_selection = true;
+            tab.reset_range();
         }
     }
     pub(super) fn set_drag_copy(&mut self, copy: bool) {
@@ -452,12 +471,8 @@ impl App {
             return;
         };
         if !drag.started {
-            self.handle(Input::Click {
-                x: drag.origin.x,
-                y: drag.origin.y,
-                double: drag.double,
-                toggle: drag.toggle,
-            });
+            self.select_entry(drag.pane, drag.index, drag.toggle, drag.double, drag.extend);
+            self.update_preview();
         } else if let Some(destination) = feedback.and_then(|f| f.destination) {
             self.start_operation(Operation::Transfer {
                 sources: drag.sources,
@@ -481,6 +496,8 @@ impl App {
             .collect();
         tab.marked = drag.initial.intersection(&visible).cloned().collect();
         tab.explicit_selection = drag.initial_explicit;
+        tab.range = drag.initial_range.clone();
+        tab.retain_range();
         if let Some(index) = drag
             .initial_focus
             .as_ref()

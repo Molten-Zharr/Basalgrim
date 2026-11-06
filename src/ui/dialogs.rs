@@ -223,6 +223,11 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Dialog::Help => {
             for (keys, description) in [
                 ("↑ ↓ ← → / Home End / PgUp PgDn", "Навигация по файлам"),
+                ("Shift + навигация / щелчок", "Выделить диапазон файлов"),
+                (
+                    "Ctrl + Shift + навигация / щелчок",
+                    "Добавить диапазон к выбору",
+                ),
                 ("Esc", "Сбросить выделение и фильтр"),
             ] {
                 lines.push(Line::from(vec![

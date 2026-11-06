@@ -92,6 +92,51 @@ fn add(trash: &Root, original: &std::path::Path, i: usize) {
 }
 
 #[test]
+fn shift_ranges_use_the_regular_pane_and_capture_exact_restore_and_delete_targets() {
+    for grid in [false, true] {
+        let (_root, _trash, mut app) = setup(7);
+        app.settings.grid = grid;
+        render(&mut app, 170, 53);
+        for (index, shift) in [(1, false), (4, true), (2, true)] {
+            let r = hit(
+                &app,
+                |t| matches!(t, Target::Entry {index:i,..} if *i==index),
+            );
+            app.handle(Input::SelectionModifier(shift));
+            click(
+                &mut app,
+                Rect::new(r.x + 5.min(r.width - 1), r.y + 2.min(r.height - 1), 1, 1),
+                false,
+            );
+        }
+        app.handle(Input::SelectionModifier(false));
+        let view = app.trash.as_ref().unwrap();
+        assert_eq!(
+            view.targets()
+                .iter()
+                .map(|e| e.name.as_str())
+                .collect::<Vec<_>>(),
+            ["file-001.txt", "file-002.txt"]
+        );
+        app.action(Action::RestoreTrash);
+        assert!(
+            matches!(app.dialog, Some(Dialog::RestoreTrash {ref entries,..}) if entries.len()==2)
+        );
+        app.cancel_dialog();
+        render(&mut app, 34, 14);
+        app.handle(Input::Key(KeyPress {
+            shift: true,
+            ..KeyPress::plain(Key::End)
+        }));
+        assert_eq!(app.tab().selection_count(), 6);
+        assert_eq!(app.trash.as_ref().unwrap().deletion_targets().len(), 6);
+        app.action(Action::DeleteTrash);
+        assert!(matches!(app.dialog, Some(Dialog::DeleteTrash { .. })));
+        app.cancel_dialog(); // Selection only: no permanent deletion or host trash access.
+    }
+}
+
+#[test]
 fn mouse_group_restore_works_at_minimum_size_without_touching_file_clipboard_or_panes() {
     for (w, h) in [(34, 14), (150, 44)] {
         let (root, trash, mut app) = setup(2);

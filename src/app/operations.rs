@@ -215,6 +215,7 @@ impl App {
                     if tab.marked.remove(source) {
                         tab.marked.insert(destination.clone());
                     }
+                    tab.rename_range(source, destination);
                 }
             }
             if self.preview_path.as_ref() == Some(source)

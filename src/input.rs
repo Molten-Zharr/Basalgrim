@@ -83,7 +83,8 @@ impl KeyPress {
 }
 
 pub enum Input {
-    TextSelectionModifier(bool),
+    /// Shift state for pointer selection in file views and text fields.
+    SelectionModifier(bool),
     /// Hover position only; never changes keyboard focus or selection. None clears it.
     Pointer(Option<ratatui::layout::Position>),
     Key(KeyPress),

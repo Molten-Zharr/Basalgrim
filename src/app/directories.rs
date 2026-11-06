@@ -123,6 +123,7 @@ impl App {
                         tab.entries.clear();
                         tab.visible.clear();
                         tab.marked.clear();
+                        tab.reset_range();
                         tab.offset = 0;
                     }
                 }

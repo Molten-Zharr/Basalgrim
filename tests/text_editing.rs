@@ -240,11 +240,11 @@ fn caret_selection_cut_and_paste_use_the_same_unicode_graphemes() {
     render(&mut app, 150, 44);
     let field = hit(&app, |t| matches!(t, Target::TextSelect { .. }));
     key(&mut app, KeyPress::plain(Key::Home));
-    app.handle(Input::TextSelectionModifier(true));
+    app.handle(Input::SelectionModifier(true));
     click(&mut app, Rect::new(field.x + 2, field.y, 1, 1));
     key(&mut app, KeyPress::ctrl('c'));
     assert_eq!(app.take_text_copy().unwrap().text, "文");
-    app.handle(Input::TextSelectionModifier(false));
+    app.handle(Input::SelectionModifier(false));
     app.handle(Input::PointerDown {
         x: field.x + 2,
         y: field.y,

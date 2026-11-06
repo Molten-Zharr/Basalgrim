@@ -14,6 +14,7 @@ pub(super) struct Marquee {
     initial: BTreeSet<PathBuf>,
     initial_explicit: bool,
     initial_focused: Option<PathBuf>,
+    initial_range: crate::model::RangeSelection,
     items: Vec<(Rect, PathBuf)>,
     additive: bool,
     dragging: bool,
@@ -57,7 +58,7 @@ impl App {
         let pane = self.file_areas.iter().position(|r| r.contains(point));
         if self.dialog.is_none()
             && let Some(Target::Entry { pane, index }) = target.clone()
-            && self.begin_file_drag(point, pane, index, toggle, double)
+            && self.begin_file_drag(point, pane, index, toggle, double, self.selection_extend)
         {
             return;
         }
@@ -81,6 +82,7 @@ impl App {
                     initial: tab.marked.clone(),
                     initial_explicit: tab.explicit_selection,
                     initial_focused: tab.entry().map(|entry| entry.path.clone()),
+                    initial_range: tab.range.clone(),
                     items: self
                         .hits
                         .iter()
@@ -111,6 +113,7 @@ impl App {
             if background && !toggle {
                 self.tab_mut().marked.clear();
                 self.tab_mut().explicit_selection = true;
+                self.tab_mut().reset_range();
             }
             self.marquee = Some(candidate);
         }
@@ -149,6 +152,7 @@ impl App {
         );
         self.file_tab_mut(pane).marked = marked;
         self.file_tab_mut(pane).explicit_selection = true;
+        self.file_tab_mut(pane).reset_range();
     }
 
     pub(super) fn finish_marquee(&mut self, restore: bool) {
@@ -168,6 +172,8 @@ impl App {
                 .collect();
             tab.marked = drag.initial.intersection(&visible).cloned().collect();
             tab.explicit_selection = drag.initial_explicit;
+            tab.range = drag.initial_range;
+            tab.retain_range();
             if let Some(index) = drag.initial_focused.as_ref().and_then(|path| {
                 tab.visible
                     .iter()

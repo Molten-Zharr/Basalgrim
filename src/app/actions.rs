@@ -242,6 +242,7 @@ impl App {
             }
             Action::SelectAll => {
                 let tab = self.tab_mut();
+                tab.reset_range();
                 tab.explicit_selection = true;
                 tab.marked = tab
                     .visible

@@ -212,6 +212,26 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--range-selection-only' in sys.argv[2:]:
+            import range_selection_fixture
+            source=range_selection_fixture.prepare(base)
+            process,window,log=launch(source,config)
+            def range_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L'}[m] for m in mods])
+            def range_click(cx,cy,*mods):
+                held=[{'ctrl':'Control_L','shift':'Shift_L'}[m] for m in mods]
+                for mod in held:key(mod,True)
+                move(window,cx,cy);xt.XTestFakeButtonEvent(d,1,1,0);x.XFlush(d);time.sleep(.12)
+                for mod in reversed(held):key(mod,False)
+                xt.XTestFakeButtonEvent(d,1,0,0);x.XFlush(d);time.sleep(.18)
+            try:
+                range_selection_fixture.exercise(base,source,range_key,navigate,range_click,
+                    lambda cx,cy:click(window,cx,cy,5),
+                    # Xvfb/XTest's wheel button press/release produces two scroll steps.
+                    lambda name:screenshot(window,'native-x11-'+name+'.png'),wait_for,wheel_steps=2)
+                quit_when_ready(process)
+            finally:stop(process,log)
+            print('Native X11 range selection passed',flush=True)
+            sys.exit(0)
         if '--text-edit-only' in sys.argv[2:] or '--rename-refresh-only' in sys.argv[2:]:
             import text_edit_fixture
             editor=base/'editor';editor.mkdir();(editor/'alpha.txt').write_text('editor data')

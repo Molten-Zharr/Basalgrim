@@ -135,6 +135,31 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--range-selection-only' in sys.argv[2:]:
+                import range_selection_fixture
+                source=range_selection_fixture.prepare(base)
+                process=launch(source)
+                def range_click(cx,cy,*mods):
+                    if not mods:
+                        click(cx,cy);return
+                    args=['-s','100']
+                    for mod in mods:args+=['-M',mod]
+                    args+=['-s','700']
+                    for mod in reversed(mods):args+=['-m',mod]
+                    args+=['-s','100']
+                    held=subprocess.Popen([commands['wtype'],*args],env=env,stdout=app_log,stderr=app_log)
+                    try:
+                        time.sleep(.25);click(cx,cy,10)
+                        held.wait(timeout=4);assert held.returncode==0
+                        click(cx,cy,12)
+                    finally:
+                        if held.poll() is None:held.terminate();held.wait(timeout=4)
+                range_selection_fixture.exercise(base,source,key,navigate,range_click,
+                    lambda cx,cy:click(cx,cy,21),
+                    lambda name:run('grim','-g','0,0 1360x860',str(out/('native-wayland-'+name+'.png'))),wait_for)
+                key('q','ctrl');process.wait(timeout=5);process=None
+                print('Native Wayland range selection passed',flush=True)
+                return
             if '--text-edit-only' in sys.argv[2:]:
                 import text_edit_fixture
                 folder=base/'editor';folder.mkdir();(folder/'alpha.txt').write_text('editor data')

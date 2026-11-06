@@ -17,8 +17,8 @@ impl App {
             self.finish_marquee(true);
             return;
         }
-        if let Input::TextSelectionModifier(extend) = input {
-            self.editor_extend = extend;
+        if let Input::SelectionModifier(extend) = input {
+            self.selection_extend = extend;
             return;
         }
         if self.editor_pointer(&input) {
@@ -164,6 +164,7 @@ impl App {
                     {
                         self.tab_mut().marked.clear();
                         self.tab_mut().explicit_selection = false;
+                        self.tab_mut().reset_range();
                     }
                     self.open_commands(
                         point,
@@ -227,7 +228,7 @@ impl App {
                             start,
                             x.saturating_sub(area.x),
                             double,
-                            self.editor_extend,
+                            self.selection_extend,
                         ),
                     Some(Target::TextCommand(command)) if self.text_active() => {
                         self.editor_command(command)
@@ -363,22 +364,16 @@ impl App {
                         self.action(Action::NewTab);
                     }
                     Some(Target::Entry { pane, index }) => {
-                        self.active = pane;
-                        if !toggle && self.tab().explicit_selection {
-                            self.tab_mut().marked.clear();
-                            self.tab_mut().explicit_selection = false;
-                        }
-                        self.tab_mut().selected = index;
-                        if toggle {
-                            self.toggle_mark();
-                        } else if double {
-                            self.open_selected();
-                        }
+                        self.select_entry(pane, index, toggle, double, self.selection_extend);
                     }
                     Some(Target::EntryMark { pane, index }) => {
-                        self.active = pane;
-                        self.tab_mut().selected = index;
-                        self.toggle_mark();
+                        self.select_entry(
+                            pane,
+                            index,
+                            toggle || !self.selection_extend,
+                            false,
+                            self.selection_extend,
+                        );
                     }
                     _ => {}
                 }
@@ -504,17 +499,52 @@ impl App {
             self.tab_mut().rebuild(hidden);
         }
     }
-    fn move_selection(&mut self, delta: isize) {
+    pub(super) fn select_entry(
+        &mut self,
+        pane: usize,
+        index: usize,
+        toggle: bool,
+        double: bool,
+        extend: bool,
+    ) {
+        self.active = pane;
+        if index >= self.tab().visible.len() {
+            return;
+        }
+        if extend {
+            self.tab_mut().select_range(index, toggle);
+        } else {
+            if !toggle && self.tab().explicit_selection {
+                self.tab_mut().marked.clear();
+                self.tab_mut().explicit_selection = false;
+            }
+            self.tab_mut().selected = index;
+            self.tab_mut().reset_range();
+            if toggle {
+                self.tab_mut().explicit_selection = true;
+                self.toggle_mark();
+            } else if double {
+                self.open_selected();
+            }
+        }
+    }
+    fn move_selection(&mut self, delta: isize, extend: bool, additive: bool) {
         let tab = self.tab_mut();
         tab.follow_selection = true;
+        let index = tab
+            .selected
+            .saturating_add_signed(delta)
+            .min(tab.visible.len().saturating_sub(1));
+        if extend {
+            tab.select_range(index, additive);
+            return;
+        }
         if tab.explicit_selection {
             tab.marked.clear();
             tab.explicit_selection = false;
         }
-        tab.selected = tab
-            .selected
-            .saturating_add_signed(delta)
-            .min(tab.visible.len().saturating_sub(1));
+        tab.selected = index;
+        tab.reset_range();
     }
     pub(super) fn toggle_mark(&mut self) {
         if self.in_trash() {
@@ -525,6 +555,7 @@ impl App {
         {
             self.tab_mut().marked.insert(path);
         }
+        self.tab_mut().reset_range();
     }
     fn key(&mut self, press: KeyPress) {
         let press = press.normalized();
@@ -614,23 +645,24 @@ impl App {
             return;
         }
         let columns = self.tab().columns as isize;
-        if ctrl || alt || shift {
+        if alt || (ctrl && !shift) {
             return;
         }
         match key {
-            Key::Up => self.move_selection(-columns),
-            Key::Down => self.move_selection(columns),
-            Key::Left if self.settings.grid => self.move_selection(-1),
-            Key::Right if self.settings.grid => self.move_selection(1),
-            Key::Home => self.move_selection(isize::MIN),
-            Key::End => self.move_selection(isize::MAX),
-            Key::PageUp => self.move_selection(-(self.tab().page_size as isize)),
-            Key::PageDown => self.move_selection(self.tab().page_size as isize),
-            Key::Escape => {
+            Key::Up => self.move_selection(-columns, shift, ctrl),
+            Key::Down => self.move_selection(columns, shift, ctrl),
+            Key::Left if self.settings.grid => self.move_selection(-1, shift, ctrl),
+            Key::Right if self.settings.grid => self.move_selection(1, shift, ctrl),
+            Key::Home => self.move_selection(isize::MIN, shift, ctrl),
+            Key::End => self.move_selection(isize::MAX, shift, ctrl),
+            Key::PageUp => self.move_selection(-(self.tab().page_size as isize), shift, ctrl),
+            Key::PageDown => self.move_selection(self.tab().page_size as isize, shift, ctrl),
+            Key::Escape if !shift && !ctrl => {
                 if self.in_trash() {
                     self.tab_mut().explicit_selection = false;
                 }
                 self.tab_mut().marked.clear();
+                self.tab_mut().reset_range();
                 self.tab_mut().filter.clear();
                 let h = self.settings.hidden;
                 if self.in_trash() {

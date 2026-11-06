@@ -163,7 +163,7 @@ fn run() -> Result<()> {
             Event::Paste(text) => app.handle(Input::Text(text)),
             Event::Mouse(mouse) => {
                 let (x, y) = (mouse.column, mouse.row);
-                app.handle(Input::TextSelectionModifier(
+                app.handle(Input::SelectionModifier(
                     mouse.modifiers.contains(KeyModifiers::SHIFT),
                 ));
                 app.handle(Input::Pointer(Some(ratatui::layout::Position::new(x, y))));
@@ -172,10 +172,14 @@ fn run() -> Result<()> {
                 });
                 match mouse.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
-                        let double = previous_click.is_some_and(|(point, time)| {
-                            point == (x, y) && time.elapsed() < Duration::from_millis(400)
-                        });
-                        previous_click = if double {
+                        let selecting = mouse
+                            .modifiers
+                            .intersects(KeyModifiers::SHIFT | KeyModifiers::CONTROL);
+                        let double = !selecting
+                            && previous_click.is_some_and(|(point, time)| {
+                                point == (x, y) && time.elapsed() < Duration::from_millis(400)
+                            });
+                        previous_click = if double || selecting {
                             None
                         } else {
                             Some(((x, y), Instant::now()))

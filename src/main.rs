@@ -63,9 +63,7 @@ fn run() -> Result<()> {
         app.handle(Input::DragModifiers {
             copy: ctx.input(|i| i.modifiers.ctrl),
         });
-        app.handle(Input::TextSelectionModifier(
-            ctx.input(|i| i.modifiers.shift),
-        ));
+        app.handle(Input::SelectionModifier(ctx.input(|i| i.modifiers.shift)));
         if clipboard.is_none()
             && let Some(window) = frame.winit_window()
         {
@@ -255,7 +253,7 @@ fn run() -> Result<()> {
                             modifiers,
                             ..
                         } => {
-                            app.handle(Input::TextSelectionModifier(modifiers.shift));
+                            app.handle(Input::SelectionModifier(modifiers.shift));
                             previous_click = None;
                             if let Some((x, y)) = to_cell(pos) {
                                 app.handle(Input::SecondaryClick { x, y });
@@ -267,13 +265,15 @@ fn run() -> Result<()> {
                             pressed: true,
                             modifiers,
                         } => {
-                            app.handle(Input::TextSelectionModifier(modifiers.shift));
+                            app.handle(Input::SelectionModifier(modifiers.shift));
                             if let Some((x, y)) = to_cell(pos) {
-                                let double = previous_click.is_some_and(|(p, t)| {
-                                    p.distance(pos) < 5.0
-                                        && t.elapsed() < Duration::from_millis(400)
-                                });
-                                previous_click = if double {
+                                let selecting = modifiers.shift || modifiers.ctrl;
+                                let double = !selecting
+                                    && previous_click.is_some_and(|(p, t)| {
+                                        p.distance(pos) < 5.0
+                                            && t.elapsed() < Duration::from_millis(400)
+                                    });
+                                previous_click = if double || selecting {
                                     None
                                 } else {
                                     Some((pos, Instant::now()))

@@ -193,7 +193,7 @@ pub struct App {
     pub(crate) edit_owner: Option<PathOwner>,
     pub(crate) editor_menu: Option<(Position, usize)>,
     editor_drag: Option<Rect>,
-    editor_extend: bool,
+    selection_extend: bool,
     pub(crate) rename_area: Option<Rect>,
     text_paste: Option<(u64, u64)>,
     text_paste_fallback: Option<u64>,
@@ -301,7 +301,7 @@ impl App {
             edit_owner: None,
             editor_menu: None,
             editor_drag: None,
-            editor_extend: false,
+            selection_extend: false,
             rename_area: None,
             text_paste: None,
             text_paste_fallback: None,
@@ -452,6 +452,7 @@ impl App {
         tab.explicit_selection = false;
         tab.filter.clear();
         tab.selected = 0;
+        tab.reset_range();
         tab.offset = 0;
         tab.follow_selection = true;
         self.refresh();

@@ -149,7 +149,7 @@ impl App {
                         start,
                         x.saturating_sub(area.x),
                         double,
-                        self.editor_extend,
+                        self.selection_extend,
                     );
                     self.editor_drag = (!double).then_some(area);
                     return true;

@@ -113,6 +113,7 @@ impl TrashView {
             .files
             .offset
             .min(self.files.visible.len().saturating_sub(1));
+        self.files.retain_range();
     }
 }
 impl App {

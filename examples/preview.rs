@@ -96,6 +96,37 @@ fn main() -> Result<()> {
     app.update_preview();
     settle(&mut app)?;
     render(&mut app, &out, "grid", 150, 44)?;
+    // Exercise the same pointer-selection input as both frontends.
+    for (entry, extend) in [(index - 2, false), (index, true)] {
+        let area = app
+            .hits
+            .iter()
+            .find_map(|(r, t)| {
+                matches!(t, Target::Entry {pane:0,index:i} if *i==entry).then_some(*r)
+            })
+            .unwrap();
+        app.handle(Input::SelectionModifier(extend));
+        app.handle(Input::Click {
+            x: area.x + 5,
+            y: area.y + 2,
+            double: false,
+            toggle: false,
+        });
+    }
+    settle(&mut app)?;
+    render(&mut app, &out, "range-selection", 150, 44)?;
+    app.handle(Input::SelectionModifier(false));
+    let area = app
+        .hits
+        .iter()
+        .find_map(|(r, t)| matches!(t, Target::Entry {pane:0,index:i} if *i==index).then_some(*r))
+        .unwrap();
+    app.handle(Input::Click {
+        x: area.x + 5,
+        y: area.y + 2,
+        double: false,
+        toggle: false,
+    });
     let notice = app.notice.clone();
     let saved_grid = app.settings.grid;
     app.action(Action::Rename);
@@ -625,6 +656,12 @@ fn main() -> Result<()> {
     overview.settings.preview = false;
     overview.settings.grid = false;
     settle(&mut overview)?;
+    for key in [basalgrim::input::Key::End, basalgrim::input::Key::Up] {
+        overview.handle(Input::Key(basalgrim::input::KeyPress {
+            shift: true,
+            ..basalgrim::input::KeyPress::plain(key)
+        }));
+    }
     overview.active = 1;
     overview.open_trash(Some(vec![trash]));
     settle(&mut overview)?;

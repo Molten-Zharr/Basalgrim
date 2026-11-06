@@ -1,6 +1,9 @@
 use crate::fs::{Entry, Sort};
 use crate::operations::Cancellation;
-use std::{collections::BTreeSet, path::PathBuf};
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
 
 #[derive(Default)]
 pub struct Pane {
@@ -24,6 +27,7 @@ pub struct Tab {
     pub marked: BTreeSet<PathBuf>,
     /// An explicit set can be empty; keyboard focus still has a position.
     pub explicit_selection: bool,
+    pub(crate) range: RangeSelection,
     pub filter: String,
     pub sort: Sort,
     pub back: Vec<PathBuf>,
@@ -40,6 +44,13 @@ pub struct Tab {
     pub(crate) scan_cancel: Cancellation,
 }
 
+/// Paths, rather than row numbers, survive sorting and background refreshes.
+#[derive(Clone, Default)]
+pub(crate) struct RangeSelection {
+    anchor: Option<PathBuf>,
+    additive_base: Option<BTreeSet<PathBuf>>,
+}
+
 impl Tab {
     pub fn new(cwd: PathBuf) -> Self {
         Self {
@@ -49,6 +60,7 @@ impl Tab {
             selected: 0,
             marked: BTreeSet::new(),
             explicit_selection: false,
+            range: RangeSelection::default(),
             filter: String::new(),
             sort: Sort::Name,
             back: vec![],
@@ -81,6 +93,72 @@ impl Tab {
             self.marked.len()
         } else {
             usize::from(self.entry().is_some())
+        }
+    }
+    pub(crate) fn reset_range(&mut self) {
+        self.range = RangeSelection {
+            anchor: self.entry().map(|e| e.path.clone()),
+            additive_base: None,
+        };
+    }
+    pub(crate) fn select_range(&mut self, index: usize, additive: bool) {
+        if index >= self.visible.len() {
+            return;
+        }
+        let anchor = self
+            .range
+            .anchor
+            .as_ref()
+            .and_then(|p| {
+                self.visible
+                    .iter()
+                    .position(|&i| self.entries[i].path == *p)
+            })
+            .unwrap_or(self.selected.min(self.visible.len() - 1));
+        self.range.anchor = Some(self.entries[self.visible[anchor]].path.clone());
+        let mut marked = if additive {
+            if self.range.additive_base.is_none() {
+                self.range.additive_base = Some(self.targets().into_iter().collect());
+            }
+            self.range.additive_base.clone().unwrap()
+        } else {
+            self.range.additive_base = None;
+            BTreeSet::new()
+        };
+        marked.extend(
+            self.visible[anchor.min(index)..=anchor.max(index)]
+                .iter()
+                .map(|&i| self.entries[i].path.clone()),
+        );
+        self.marked = marked;
+        self.explicit_selection = true;
+        self.selected = index;
+    }
+    pub(crate) fn retain_range(&mut self) {
+        let visible: BTreeSet<_> = self
+            .visible
+            .iter()
+            .map(|&i| &self.entries[i].path)
+            .collect();
+        if self
+            .range
+            .anchor
+            .as_ref()
+            .is_some_and(|p| !visible.contains(p))
+        {
+            self.range = RangeSelection::default();
+        } else if let Some(base) = &mut self.range.additive_base {
+            base.retain(|p| visible.contains(p));
+        }
+    }
+    pub(crate) fn rename_range(&mut self, source: &Path, destination: &Path) {
+        if self.range.anchor.as_deref() == Some(source) {
+            self.range.anchor = Some(destination.to_path_buf());
+        }
+        if let Some(base) = &mut self.range.additive_base
+            && base.remove(source)
+        {
+            base.insert(destination.to_path_buf());
         }
     }
     pub fn scroll_rows(&mut self, rows: isize) {
@@ -116,6 +194,7 @@ impl Tab {
             .map(|&i| self.entries[i].path.clone())
             .collect();
         self.marked.retain(|p| visible.contains(p));
+        self.retain_range();
         self.offset = self.offset.min(self.visible.len().saturating_sub(1));
     }
 }
