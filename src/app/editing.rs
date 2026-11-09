@@ -90,7 +90,7 @@ impl App {
         if matches!(
             self.dialog,
             Some(Dialog::Edit {
-                kind: EditKind::Rename(_),
+                kind: EditKind::Rename(_) | EditKind::BatchRename,
                 ..
             })
         ) && self
@@ -181,7 +181,12 @@ impl App {
                 self.editor_menu = None;
                 self.text_paste = None;
             }
-            Input::Scroll { .. } => return true,
+            Input::Scroll { delta, .. } => {
+                if self.batch_editing() && self.editor_menu.is_none() {
+                    self.scroll_batch(delta as isize * 3);
+                }
+                return true;
+            }
             _ => {}
         }
         false
@@ -251,6 +256,35 @@ impl App {
                     return true;
                 }
                 _ => self.editor_menu = None,
+            }
+        }
+        if self.batch_editing() && !press.ctrl && !press.alt {
+            let page = self.batch.as_ref().map_or(1, |v| v.page) as isize;
+            let delta = match press.key {
+                Key::Up => Some(-1),
+                Key::Down => Some(1),
+                Key::PageUp => Some(-page),
+                Key::PageDown => Some(page),
+                _ => None,
+            };
+            if let Some(delta) = delta {
+                self.scroll_batch(delta);
+                return true;
+            }
+            if press.key == Key::F(5) {
+                self.update_batch_preview(true);
+                return true;
+            }
+            if !press.shift && press.key == Key::F(4) {
+                self.toggle_batch_mode();
+                return true;
+            }
+            if !press.shift
+                && press.key == Key::F(3)
+                && self.batch.as_ref().is_some_and(|view| !view.advanced)
+            {
+                self.number_batch();
+                return true;
             }
         }
         let command = [

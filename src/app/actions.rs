@@ -56,6 +56,10 @@ impl App {
         if self.dialog.is_some() {
             return;
         }
+        if action == Action::Rename && self.tab().selection_count() > 1 && !self.in_trash() {
+            self.begin_batch_rename();
+            return;
+        }
         if self.tab().explicit_selection && matches!(action, Action::Open | Action::Rename) {
             if self.tab().marked.len() != 1 {
                 return;
@@ -315,6 +319,9 @@ impl App {
         self.update_preview();
     }
     pub fn cancel_dialog(&mut self) {
+        if self.batch_editing() {
+            self.batch = None;
+        }
         self.editor_menu = None;
         self.editor_drag = None;
         self.text_paste = None;
@@ -391,6 +398,10 @@ impl App {
             return;
         }
         self.validate_editor();
+        if self.batch_editing() {
+            self.confirm_batch();
+            return;
+        }
         if let Some(Dialog::Conflict(current)) = &self.dialog {
             if current.selected == 4 {
                 self.toggle_conflict_remaining();
@@ -454,6 +465,7 @@ impl App {
                     return;
                 }
                 match kind {
+                    EditKind::BatchRename => unreachable!(),
                     EditKind::Setting(_) => unreachable!(),
                     EditKind::Search { .. } | EditKind::TrashSearch { .. } => {}
                     EditKind::Path(original) => {

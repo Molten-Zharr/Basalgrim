@@ -1008,7 +1008,14 @@ impl State {
         // emit events as if the corresponding keys from the Latin layout were pressed. In this case, clipboard shortcuts
         // are mapped to the physical keys that normally contain C, X, V, etc.
         // See also: https://github.com/emilk/egui/issues/3653
-        if let Some(active_key) = logical_key.or(physical_key) {
+        // A remapped/virtual keyboard can produce Unicode text from a physical
+        // Escape/Enter/function key. Never turn that text into a command. Keep
+        // letter/digit/punctuation fallbacks for shortcuts in non-Latin layouts.
+        let fallback_key = physical_key.filter(|key| {
+            !matches!(winit_logical_key, winit::keyboard::Key::Character(_))
+                || (key.symbol_or_name().is_ascii() && key.symbol_or_name().len() == 1)
+        });
+        if let Some(active_key) = logical_key.or(fallback_key) {
             if pressed
                 && (is_cut_command(self.egui_input.modifiers, active_key)
                     || is_copy_command(self.egui_input.modifiers, active_key)

@@ -212,6 +212,21 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--batch-rename-only' in sys.argv[2:]:
+            import batch_rename_fixture
+            source=batch_rename_fixture.prepare(base)
+            process,window,log=launch(source,config)
+            def batch_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L'}[m] for m in mods])
+            def batch_insert(value):
+                subprocess.run([xclip,'-selection','clipboard','-in'],input=value.encode(),check=True)
+                time.sleep(.15);batch_key('v','ctrl');time.sleep(.2)
+            try:
+                batch_rename_fixture.exercise(source,batch_key,batch_insert,
+                    lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-'+name+'.png'),wait_for)
+                quit_when_ready(process)
+            finally:stop(process,log)
+            print('Native X11 bulk rename passed',flush=True)
+            sys.exit(0)
         if '--range-selection-only' in sys.argv[2:]:
             import range_selection_fixture
             source=range_selection_fixture.prepare(base)

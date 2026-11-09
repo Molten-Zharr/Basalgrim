@@ -199,6 +199,14 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::BatchNumber) if self.batch_editing() => self.number_batch(),
+                    Some(Target::BatchMode) if self.batch_editing() => self.toggle_batch_mode(),
+                    Some(Target::BatchRefresh) if self.batch_editing() => {
+                        self.update_batch_preview(true)
+                    }
+                    Some(Target::BatchScroll(delta)) if self.batch_editing() => {
+                        self.scroll_batch(delta)
+                    }
                     Some(Target::JournalRefresh)
                         if matches!(self.dialog, Some(Dialog::Operations)) =>
                     {
@@ -474,6 +482,7 @@ impl App {
         self.live_search();
     }
     pub(super) fn live_search(&mut self) {
+        self.update_batch_preview(false);
         if let Some(Dialog::Edit {
             kind: EditKind::TrashSearch { .. },
             text,

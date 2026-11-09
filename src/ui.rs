@@ -1,3 +1,4 @@
+mod batch;
 mod commands;
 mod conflicts;
 mod dialogs;

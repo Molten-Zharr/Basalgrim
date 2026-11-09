@@ -3,6 +3,10 @@ use crate::app::Dialog;
 use ratatui::widgets::{Clear, Wrap};
 
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
+    if app.batch_editing() {
+        super::batch::render(app, frame, palette);
+        return;
+    }
     if matches!(
         app.dialog,
         Some(Dialog::Edit {

@@ -87,6 +87,15 @@ pub struct Spec {
 }
 pub fn specs(operation: &Operation) -> Vec<Spec> {
     match operation {
+        Operation::BatchRename(plan) => plan
+            .items
+            .iter()
+            .map(|item| Spec {
+                kind: "rename",
+                source: item.source.clone(),
+                target: Some(item.destination.clone()),
+            })
+            .collect(),
         Operation::CleanupHistory { .. } => Vec::new(),
         Operation::DeleteTrash { targets, .. } => targets
             .iter()

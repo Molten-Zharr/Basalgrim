@@ -1,4 +1,5 @@
 pub mod app;
+pub mod batch_rename;
 pub mod clipboard;
 pub mod conflicts;
 pub mod dnd;

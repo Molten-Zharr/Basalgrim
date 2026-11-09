@@ -17,6 +17,10 @@ mod watch;
 pub type DirectoryResult = Result<(PathBuf, Vec<Entry>), String>;
 
 pub enum Event {
+    RenamePreview {
+        token: u64,
+        result: Result<crate::batch_rename::Preview, String>,
+    },
     HistoryStorage {
         token: u64,
         result: Result<crate::journal::storage::Catalog, String>,
@@ -45,7 +49,7 @@ pub enum Event {
     },
     Operation {
         token: u64,
-        report: Report,
+        report: Box<Report>,
     },
     Open(Result<(), String>),
 }
@@ -66,6 +70,7 @@ enum Task {
     },
 }
 pub struct Worker {
+    rename_previews: Sender<(u64, Arc<Vec<PathBuf>>, String, Cancellation)>,
     trash: Sender<(u64, Option<Vec<crate::trash::Root>>, Cancellation)>,
     scans: Sender<(u64, PathBuf, Cancellation)>,
     previews: Sender<(u64, PathBuf, bool, Cancellation)>,
@@ -85,6 +90,32 @@ impl Default for Worker {
 impl Worker {
     pub fn new() -> Self {
         let (send, events) = mpsc::channel();
+        let (rename_previews, rx) =
+            mpsc::channel::<(u64, Arc<Vec<PathBuf>>, String, Cancellation)>();
+        let result = send.clone();
+        thread::spawn(move || {
+            while let Ok(mut request) = rx.recv() {
+                for newer in rx.try_iter() {
+                    request = newer;
+                }
+                let (token, sources, pattern, cancel) = request;
+                if cancel.is_cancelled() {
+                    continue;
+                }
+                let preview = crate::batch_rename::preview(&sources, &pattern, &cancel)
+                    .map_err(|e| format!("{e:#}"));
+                if !cancel.is_cancelled()
+                    && result
+                        .send(Event::RenamePreview {
+                            token,
+                            result: preview,
+                        })
+                        .is_err()
+                {
+                    break;
+                }
+            }
+        });
         let (trash, rx) = mpsc::channel::<(u64, Option<Vec<crate::trash::Root>>, Cancellation)>();
         let result = send.clone();
         thread::spawn(move || {
@@ -352,7 +383,10 @@ impl Worker {
                                 },
                             }
                         };
-                        Event::Operation { token, report }
+                        Event::Operation {
+                            token,
+                            report: Box::new(report),
+                        }
                     }
                 };
                 if send.send(event).is_err() {
@@ -361,6 +395,7 @@ impl Worker {
             }
         });
         Self {
+            rename_previews,
             trash,
             scans,
             previews,
@@ -375,6 +410,15 @@ impl Worker {
     }
     pub fn scan(&self, token: u64, path: PathBuf, cancellation: Cancellation) {
         let _ = self.scans.send((token, path, cancellation));
+    }
+    pub fn rename_preview(
+        &self,
+        token: u64,
+        sources: Arc<Vec<PathBuf>>,
+        pattern: String,
+        cancel: Cancellation,
+    ) {
+        let _ = self.rename_previews.send((token, sources, pattern, cancel));
     }
     pub fn read_trash(
         &self,

@@ -9,7 +9,7 @@ pub(super) struct RunningOperation {
     cancellation: Cancellation,
     cut: bool,
     clipboard_generation: u64,
-    rename: Option<RenameView>,
+    rename: Vec<RenameView>,
 }
 struct RenameView {
     source: PathBuf,
@@ -24,13 +24,12 @@ impl Drop for RunningOperation {
 
 impl App {
     pub(crate) fn entry_name<'a>(&'a self, pane: usize, entry: &'a fs::Entry) -> &'a str {
-        if let Some(rename) = self
-            .running_operation
-            .as_ref()
-            .and_then(|r| r.rename.as_ref())
-            && entry.path == rename.source
-            && rename.requests.contains(&self.file_tab(pane).request)
-        {
+        if let Some(rename) = self.running_operation.as_ref().and_then(|r| {
+            r.rename.iter().find(|rename| {
+                entry.path == rename.source
+                    && rename.requests.contains(&self.file_tab(pane).request)
+            })
+        }) {
             &rename.name
         } else {
             &entry.name
@@ -104,21 +103,38 @@ impl App {
         let id = self.token();
         let cancellation = Cancellation::default();
         let cut = matches!(operation, Operation::Transfer { cut: true, .. });
-        let rename = if let Operation::Rename { source, name } = &operation {
-            Some(RenameView {
-                source: source.clone(),
-                name: name.clone(),
+        let renames = match &operation {
+            Operation::Rename { source, name } => vec![(source.clone(), name.clone())],
+            Operation::BatchRename(plan) => plan
+                .items
+                .iter()
+                .map(|i| {
+                    (
+                        i.source.clone(),
+                        i.destination
+                            .file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .into_owned(),
+                    )
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        let rename = renames
+            .into_iter()
+            .map(|(source, name)| RenameView {
                 requests: self
                     .panes
                     .iter()
                     .flat_map(|p| &p.tabs)
-                    .filter(|t| t.entries.iter().any(|e| e.path == *source))
+                    .filter(|t| source.parent() == Some(t.cwd.as_path()))
                     .map(|t| t.request)
                     .collect(),
+                source,
+                name,
             })
-        } else {
-            None
-        };
+            .collect();
         let mut record = OperationRecord::new(id, operation.title().into(), operation.total());
         record.destination = operation.destination();
         self.operations.push_front(record);
@@ -197,35 +213,45 @@ impl App {
         // Publish the confirmed name into the existing snapshot before removing
         // its pending label. A later scan can sort once while retaining focus.
         // Only touch snapshots captured at dispatch, never a newly navigated tab.
-        if let Some(rename) = &running.rename
-            && let Some((source, destination)) = &report.renamed
-            && source == &rename.source
-        {
-            for tab in self.panes.iter_mut().flat_map(|p| &mut p.tabs) {
-                if rename.requests.contains(&tab.request)
-                    && let Some(entry) = tab.entries.iter_mut().find(|e| e.path == *source)
+        let requested: BTreeMap<_, _> = running.rename.iter().map(|r| (&r.source, r)).collect();
+        let published: BTreeMap<_, _> = report
+            .renamed
+            .iter()
+            .chain(&report.batch_renamed)
+            .filter_map(|(source, destination)| {
+                requested.get(source).map(|r| (source, (destination, *r)))
+            })
+            .collect();
+        for tab in self.panes.iter_mut().flat_map(|p| &mut p.tabs) {
+            let mut rebound = Vec::new();
+            for entry in &mut tab.entries {
+                if let Some((destination, rename)) = published.get(&entry.path)
+                    && rename.requests.contains(&tab.request)
                 {
-                    entry.path = destination.clone();
+                    let source = std::mem::replace(&mut entry.path, (*destination).clone());
                     entry.name = fs::clean(&destination.file_name().unwrap().to_string_lossy());
                     entry.hidden = destination
                         .file_name()
                         .unwrap()
                         .as_encoded_bytes()
                         .starts_with(b".");
-                    if tab.marked.remove(source) {
-                        tab.marked.insert(destination.clone());
-                    }
-                    tab.rename_range(source, destination);
+                    rebound.push((source, (*destination).clone()));
                 }
             }
-            if self.preview_path.as_ref() == Some(source)
-                && self.tab().entry().is_some_and(|e| e.path == *destination)
-            {
-                self.preview_cancel.cancel();
-                self.preview_token = self.token();
-                self.preview_loading = false;
-                self.preview_path = Some(destination.clone());
+            for (source, destination) in rebound {
+                if tab.marked.remove(&source) {
+                    tab.marked.insert(destination.clone());
+                }
+                tab.rename_range(&source, &destination);
             }
+        }
+        if let Some((destination, _)) = self.preview_path.as_ref().and_then(|p| published.get(p))
+            && self.tab().entry().is_some_and(|e| e.path == **destination)
+        {
+            self.preview_cancel.cancel();
+            self.preview_token = self.token();
+            self.preview_loading = false;
+            self.preview_path = Some((*destination).clone());
         }
         if running.cut
             && running.clipboard_generation == self.file_exchange.generation
@@ -373,7 +399,7 @@ mod tests {
             cancellation: cancellation.clone(),
             cut: true,
             clipboard_generation: app.file_exchange.generation,
-            rename: None,
+            rename: Vec::new(),
         });
         app.operations
             .push_front(OperationRecord::new(42, "Перемещение".into(), 2));
@@ -411,7 +437,7 @@ mod tests {
                 }
                 let source = root.path().join("dir-012");
                 let destination = root.path().join("dir-012-renamed");
-                app.running_operation.as_mut().unwrap().rename = Some(RenameView {
+                app.running_operation.as_mut().unwrap().rename = vec![RenameView {
                     source: source.clone(),
                     name: "dir-012-renamed".into(),
                     requests: app
@@ -420,7 +446,7 @@ mod tests {
                         .flat_map(|p| &p.tabs)
                         .map(|t| t.request)
                         .collect(),
-                });
+                }];
                 let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
                 terminal.draw(|f| crate::ui::render(&mut app, f)).unwrap();
                 let before = terminal.backend().buffer().clone();

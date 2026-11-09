@@ -128,8 +128,8 @@ impl App {
                         !self.trash.as_ref().unwrap().visible.is_empty()
                     }
                     Mark if self.in_trash() => self.trash.as_ref().unwrap().entry().is_some(),
-                    Open | Rename if context == MenuContext::Entries && count != 1 => false,
-                    Rename if context == MenuContext::Entries => {
+                    Open if context == MenuContext::Entries && count != 1 => false,
+                    Rename if context == MenuContext::Entries && count == 1 => {
                         self.tab().entry().is_some_and(|entry| {
                             entry.path.file_name().and_then(|n| n.to_str()).is_some()
                         })

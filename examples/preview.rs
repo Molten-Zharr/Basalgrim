@@ -641,36 +641,58 @@ fn main() -> Result<()> {
     render(&mut image_app, &out, "trash-confirm", 100, 28)?;
     image_app.cancel_dialog();
 
-    // The README shows the features being documented in a single real frame:
-    // an editable path and normal files beside the shared trash location.
-    let folder = demo.path().join("Projects/Basalgrim");
-    fs::write(
-        folder.join("README.md"),
-        "# Basalgrim\n\nShared GUI/TUI file manager.\n",
-    )?;
-    fs::write(folder.join("Cargo.toml"), include_str!("../Cargo.toml"))?;
-    fs::write(folder.join("notes.md"), "Shared GUI/TUI file operations\n")?;
+    // Show the current shared interface: batch rename, breadcrumbs and trash.
+    let folder = demo.path().join("Pictures/Отпуск");
+    fs::create_dir(&folder)?;
+    for name in ["IMG_1234.png", "IMG_5678.jpg", "IMG_7890.png"] {
+        fs::write(folder.join(name), "Screenshot fixture\n")?;
+    }
     let mut overview = App::new(folder.clone(), Settings::default());
     overview.icon_backend = basalgrim::icons::IconBackend::Gui;
     overview.settings.dual = true;
     overview.settings.preview = false;
     overview.settings.grid = false;
     settle(&mut overview)?;
-    for key in [basalgrim::input::Key::End, basalgrim::input::Key::Up] {
-        overview.handle(Input::Key(basalgrim::input::KeyPress {
-            shift: true,
-            ..basalgrim::input::KeyPress::plain(key)
-        }));
-    }
+    overview.action(Action::SelectAll);
     overview.active = 1;
     overview.open_trash(Some(vec![trash]));
     settle(&mut overview)?;
     overview.action(Action::SelectAll);
-    overview.action(Action::Path);
-    overview.handle(Input::Key(basalgrim::input::KeyPress::plain(
-        basalgrim::input::Key::End,
-    )));
+    overview.active = 0;
+    overview.action(Action::Rename);
+    overview.handle(Input::Text("Фото".into()));
+    settle(&mut overview)?;
     render(&mut overview, &out, "basalgrim-overview", 150, 38)?;
+    overview.settings.appearance.theme = Theme::Light;
+    render(&mut overview, &out, "batch-rename", 150, 38)?;
+    render(&mut overview, &out, "batch-rename-compact", 34, 14)?;
+    overview.handle(Input::Key(basalgrim::input::KeyPress::plain(
+        basalgrim::input::Key::F(4),
+    )));
+    overview.handle(Input::Text("Photo_{n:03}".into()));
+    settle(&mut overview)?;
+    render(&mut overview, &out, "batch-template-preserve", 150, 38)?;
+    render(
+        &mut overview,
+        &out,
+        "batch-template-preserve-compact",
+        34,
+        14,
+    )?;
+    overview.handle(Input::Key(basalgrim::input::KeyPress::ctrl('a')));
+    overview.handle(Input::Text("Снимок_{n:03}{jpg}".into()));
+    settle(&mut overview)?;
+    render(&mut overview, &out, "batch-template-error", 150, 38)?;
+    render(&mut overview, &out, "batch-template-error-compact", 34, 14)?;
+    overview.handle(Input::Key(basalgrim::input::KeyPress::plain(
+        basalgrim::input::Key::PageDown,
+    )));
+    render(&mut overview, &out, "batch-template-hint-compact", 34, 14)?;
+    overview.handle(Input::Key(basalgrim::input::KeyPress::ctrl('a')));
+    overview.handle(Input::Text("Photo_{n:03}{ext:jpg}".into()));
+    settle(&mut overview)?;
+    render(&mut overview, &out, "batch-template", 150, 38)?;
+    render(&mut overview, &out, "batch-template-compact", 34, 14)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

@@ -140,16 +140,48 @@ mod tests {
     use super::*;
     use crate::{icons::IconBackend, preview::ImagePreview};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect};
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
 
     #[test]
     fn pending_encodings_cannot_reappear_after_resize_hiding_or_a_new_request() {
-        let mut preview = TerminalPreview::new(TerminalGraphics {
+        let graphics = TerminalGraphics {
             backend: IconBackend::Kitty,
             cell_width: 8,
             cell_height: 16,
             tmux: false,
-        });
+        };
+        // Hold encoded results until after invalidation. A live worker can finish
+        // during render(), which consumes its result before the test can receive it.
+        let (requests, input) = mpsc::sync_channel::<Request>(1);
+        let (_send, results) = mpsc::channel();
+        let mut preview = TerminalPreview {
+            graphics,
+            requests,
+            results,
+            serial: 0,
+            current: None,
+            protocol: None,
+            failed: false,
+        };
+        let encode_pending = || {
+            let request = input.try_recv().unwrap();
+            let image = PreviewRasterizer::default()
+                .image(
+                    &request.slot,
+                    request.graphics.cell_width,
+                    request.graphics.cell_height,
+                )
+                .unwrap()
+                .clone();
+            Encoded {
+                id: request.id,
+                key: request.key,
+                result: request
+                    .graphics
+                    .encode(image, request.slot.area.as_size())
+                    .map_err(|error| error.to_string()),
+            }
+        };
         let slot = PreviewSlot {
             image: Arc::new(
                 ImagePreview::new(2, 1, vec![240, 20, 30, 255, 240, 20, 30, 255]).unwrap(),
@@ -161,20 +193,14 @@ mod tests {
         terminal
             .draw(|f| assert!(preview.render(f, Some(&slot))))
             .unwrap();
-        let old = preview
-            .results
-            .recv_timeout(Duration::from_secs(5))
-            .unwrap();
+        let old = encode_pending();
         preview.resize_cells(10, 20);
         preview.accept(old);
         assert!(preview.protocol.is_none());
         terminal
             .draw(|f| assert!(preview.render(f, Some(&slot))))
             .unwrap();
-        let old = preview
-            .results
-            .recv_timeout(Duration::from_secs(5))
-            .unwrap();
+        let old = encode_pending();
         let old_id = old.id;
         let old_key = old.key;
         terminal.draw(|f| assert!(preview.render(f, None))).unwrap();
@@ -189,10 +215,7 @@ mod tests {
             result: Err("obsolete".into()),
         });
         assert!(!preview.failed);
-        let current = preview
-            .results
-            .recv_timeout(Duration::from_secs(5))
-            .unwrap();
+        let current = encode_pending();
         preview.accept(current);
         assert!(preview.protocol.is_some());
     }

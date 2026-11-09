@@ -1,4 +1,6 @@
 mod actions;
+mod batch;
+pub use batch::BatchRenameView;
 mod clipboard;
 mod commands;
 mod conflicts;
@@ -63,6 +65,10 @@ pub enum Target {
     TextCommand(TextCommand),
     TextMenuBackground,
     TextMenuDismiss,
+    BatchNumber,
+    BatchMode,
+    BatchRefresh,
+    BatchScroll(isize),
     JournalRefresh,
     StorageRefresh,
     StoragePolicy,
@@ -114,6 +120,7 @@ pub enum EditKind {
     Folder,
     File,
     Rename(PathBuf),
+    BatchRename,
     Setting(SettingsEdit),
 }
 impl EditKind {
@@ -125,6 +132,7 @@ impl EditKind {
             Self::Folder => "Новая папка",
             Self::File => "Новый файл",
             Self::Rename(_) => "Переименовать",
+            Self::BatchRename => "Массовое переименование",
             Self::Setting(edit) => edit.title(),
         }
     }
@@ -185,6 +193,7 @@ pub struct App {
     pub journal_error: Option<String>,
     pub history_storage: StorageView,
     pub dialog: Option<Dialog>,
+    pub batch: Option<BatchRenameView>,
     pub clipboard: Option<Clipboard>,
     file_exchange: clipboard::Exchange,
     text_copy: Option<crate::clipboard::TextCopy>,
@@ -293,6 +302,7 @@ impl App {
             journal_error: None,
             history_storage: StorageView::default(),
             dialog: None,
+            batch: None,
             clipboard: None,
             file_exchange: Default::default(),
             text_copy: None,
@@ -410,6 +420,7 @@ impl App {
             || self.busy
             || self.clipboard_reads_pending()
             || self.history_storage.loading
+            || self.batch.as_ref().is_some_and(|v| v.pending)
             || self.trash.as_ref().is_some_and(|t| t.loading)
     }
     pub fn text_active(&self) -> bool {
@@ -474,6 +485,7 @@ impl App {
         while let Ok(event) = self.worker.events.try_recv() {
             match event {
                 Event::Trash { token, result } => self.accept_trash(token, result),
+                Event::RenamePreview { token, result } => self.accept_rename_preview(token, result),
                 Event::Journal { token, result } => self.accept_journal(token, result),
                 Event::HistoryStorage { token, result } => {
                     self.accept_history_storage(token, result)
@@ -501,7 +513,7 @@ impl App {
                     }
                 }
                 Event::Preview { .. } => {}
-                Event::Operation { token, report } => self.finish_operation(token, report),
+                Event::Operation { token, report } => self.finish_operation(token, *report),
                 Event::Open(result) => {
                     if let Err(e) = result {
                         self.message(e, true);

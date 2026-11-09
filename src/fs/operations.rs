@@ -37,6 +37,7 @@ pub enum Operation {
         source: PathBuf,
         name: String,
     },
+    BatchRename(crate::batch_rename::Plan),
     Transfer {
         sources: Vec<PathBuf>,
         destination: PathBuf,
@@ -72,6 +73,7 @@ impl Operation {
             } => "Создание папки",
             Self::Create { .. } => "Создание файла",
             Self::Rename { .. } => "Переименование",
+            Self::BatchRename(_) => "Массовое переименование",
             Self::Transfer { cut: false, .. } => "Копирование",
             Self::Transfer { .. } => "Перемещение",
             Self::Duplicate { .. } => "Дублирование",
@@ -86,6 +88,7 @@ impl Operation {
     pub fn total(&self) -> usize {
         match self {
             Self::CleanupHistory { selection } => selection.entries.len(),
+            Self::BatchRename(plan) => plan.len(),
             Self::Transfer { sources, .. }
             | Self::Duplicate { sources, .. }
             | Self::Trash { sources } => sources.len(),
@@ -98,6 +101,7 @@ impl Operation {
     pub fn destination(&self) -> Option<PathBuf> {
         match self {
             Self::CleanupHistory { .. } => None,
+            Self::BatchRename(plan) => Some(plan.parent.clone()),
             Self::Transfer { destination, .. } | Self::Duplicate { destination, .. } => {
                 Some(destination.clone())
             }
@@ -123,6 +127,7 @@ pub struct Report {
     pub destination_recoveries: Vec<crate::conflicts::DestinationRecovery>,
     /// The actual published rename destination, including Keep Both naming.
     pub renamed: Option<(PathBuf, PathBuf)>,
+    pub batch_renamed: Vec<(PathBuf, PathBuf)>,
 }
 
 #[derive(Debug)]
@@ -689,6 +694,36 @@ fn operate_inner(
             control.emit();
         };
         match operation {
+            Operation::BatchRename(plan) => {
+                plan.validate(cancellation)?;
+                for (index, item) in plan.items.iter().enumerate() {
+                    control.current(&item.source)?;
+                    control.begin_item(index)?;
+                    let outcome = (|| -> Result<()> {
+                        let step = control.before_step(
+                            "publish",
+                            Some(&item.source),
+                            Some(&item.destination),
+                        )?;
+                        // Revalidate after the potentially blocking durable intent. A later
+                        // collision stops this exact plan; completed items remain undoable.
+                        let result = plan
+                            .validate_item(item, cancellation)
+                            .and_then(|()| rename_new(&item.source, &item.destination));
+                        control.after_step(step, "publish", Some(&item.destination), &result);
+                        result
+                    })();
+                    let completed = outcome.is_ok();
+                    if completed {
+                        report
+                            .batch_renamed
+                            .push((item.source.clone(), item.destination.clone()));
+                        control.entry_done(&item.source);
+                        complete(item.source.clone(), &mut control);
+                    }
+                    control.conclude_item(outcome, completed, false)?;
+                }
+            }
             Operation::DeleteTrash { targets, .. } => {
                 for (index, target) in targets.into_iter().enumerate() {
                     control.current(target.path())?;
