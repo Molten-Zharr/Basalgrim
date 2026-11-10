@@ -21,3 +21,5 @@ pub mod worker;
 
 #[cfg(feature = "guitui")]
 pub mod raster;
+
+pub mod search;

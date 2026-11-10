@@ -319,6 +319,7 @@ impl App {
         self.update_preview();
     }
     pub fn cancel_dialog(&mut self) {
+        self.search = None;
         if self.batch_editing() {
             self.batch = None;
         }
@@ -398,6 +399,11 @@ impl App {
             return;
         }
         self.validate_editor();
+        if self.recursive_editing() {
+            let index = self.search.as_ref().map_or(0, |s| s.selected);
+            self.search_open(index);
+            return;
+        }
         if self.batch_editing() {
             self.confirm_batch();
             return;
@@ -465,6 +471,7 @@ impl App {
                     return;
                 }
                 match kind {
+                    EditKind::RecursiveSearch => unreachable!(),
                     EditKind::BatchRename => unreachable!(),
                     EditKind::Setting(_) => unreachable!(),
                     EditKind::Search { .. } | EditKind::TrashSearch { .. } => {}

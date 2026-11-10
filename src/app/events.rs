@@ -199,6 +199,34 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::RecursiveSearch)
+                        if matches!(
+                            self.dialog,
+                            Some(Dialog::Edit {
+                                kind: EditKind::Search { .. },
+                                ..
+                            })
+                        ) =>
+                    {
+                        self.begin_recursive_search()
+                    }
+                    Some(Target::SearchRetry) => {
+                        if let Some(view) = &mut self.search {
+                            view.query.clear();
+                        }
+                        self.update_recursive_search();
+                    }
+                    Some(Target::SearchStop) => {
+                        if let Some(view) = &mut self.search {
+                            view.worker.stop();
+                        }
+                    }
+                    Some(Target::SearchMove(delta)) => self.search_move(delta),
+                    Some(Target::SearchOpen(id, index)) => {
+                        if self.search.as_ref().is_some_and(|s| s.worker.id == id) {
+                            self.search_open(index);
+                        }
+                    }
                     Some(Target::BatchNumber) if self.batch_editing() => self.number_batch(),
                     Some(Target::BatchMode) if self.batch_editing() => self.toggle_batch_mode(),
                     Some(Target::BatchRefresh) if self.batch_editing() => {
@@ -482,6 +510,7 @@ impl App {
         self.live_search();
     }
     pub(super) fn live_search(&mut self) {
+        self.update_recursive_search();
         self.update_batch_preview(false);
         if let Some(Dialog::Edit {
             kind: EditKind::TrashSearch { .. },

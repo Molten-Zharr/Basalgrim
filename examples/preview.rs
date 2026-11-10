@@ -693,6 +693,16 @@ fn main() -> Result<()> {
     settle(&mut overview)?;
     render(&mut overview, &out, "batch-template", 150, 38)?;
     render(&mut overview, &out, "batch-template-compact", 34, 14)?;
+    let mut finder = App::new(demo.path().to_path_buf(), Settings::default());
+    finder.icon_backend = basalgrim::icons::IconBackend::Gui;
+    settle(&mut finder)?;
+    finder.begin_recursive_search();
+    finder.handle(Input::Text("notes".into()));
+    settle(&mut finder)?;
+    render(&mut finder, &out, "basalgrim-overview", 150, 38)?;
+    finder.settings.appearance.theme = Theme::Light;
+    render(&mut finder, &out, "recursive-search", 150, 38)?;
+    render(&mut finder, &out, "recursive-search-compact", 34, 14)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

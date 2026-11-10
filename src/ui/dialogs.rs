@@ -3,6 +3,10 @@ use crate::app::Dialog;
 use ratatui::widgets::{Clear, Wrap};
 
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
+    if app.recursive_editing() {
+        super::search::render(app, frame, palette);
+        return;
+    }
     if app.batch_editing() {
         super::batch::render(app, frame, palette);
         return;
@@ -334,6 +338,17 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
             cancel,
         );
         hit(app, cancel, Target::Cancel);
+    }
+    if matches!(
+        app.dialog,
+        Some(Dialog::Edit {
+            kind: crate::app::EditKind::Search { .. },
+            ..
+        })
+    ) {
+        let r = Rect::new(inner.x + 1, inner.y + 4, inner.width.saturating_sub(2), 1);
+        frame.render_widget(Paragraph::new(" Подпапки · F3").style(palette.accent()), r);
+        hit(app, r, Target::RecursiveSearch);
     }
     super::text_edit::menu(app, frame, palette);
 }

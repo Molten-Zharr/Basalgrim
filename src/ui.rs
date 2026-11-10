@@ -649,3 +649,5 @@ fn preview(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
         .collect::<Vec<_>>();
     frame.render_widget(Paragraph::new(lines), parts[1]);
 }
+
+mod search;

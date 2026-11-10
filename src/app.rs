@@ -1,6 +1,8 @@
 mod actions;
 mod batch;
+mod search;
 pub use batch::BatchRenameView;
+pub use search::SearchView;
 mod clipboard;
 mod commands;
 mod conflicts;
@@ -65,6 +67,11 @@ pub enum Target {
     TextCommand(TextCommand),
     TextMenuBackground,
     TextMenuDismiss,
+    RecursiveSearch,
+    SearchStop,
+    SearchRetry,
+    SearchMove(isize),
+    SearchOpen(u64, usize),
     BatchNumber,
     BatchMode,
     BatchRefresh,
@@ -120,6 +127,7 @@ pub enum EditKind {
     Folder,
     File,
     Rename(PathBuf),
+    RecursiveSearch,
     BatchRename,
     Setting(SettingsEdit),
 }
@@ -132,6 +140,7 @@ impl EditKind {
             Self::Folder => "Новая папка",
             Self::File => "Новый файл",
             Self::Rename(_) => "Переименовать",
+            Self::RecursiveSearch => "Поиск в подпапках",
             Self::BatchRename => "Массовое переименование",
             Self::Setting(edit) => edit.title(),
         }
@@ -193,6 +202,8 @@ pub struct App {
     pub journal_error: Option<String>,
     pub history_storage: StorageView,
     pub dialog: Option<Dialog>,
+    pub search: Option<SearchView>,
+    search_focus: Option<(u64, PathBuf)>,
     pub batch: Option<BatchRenameView>,
     pub clipboard: Option<Clipboard>,
     file_exchange: clipboard::Exchange,
@@ -302,6 +313,8 @@ impl App {
             journal_error: None,
             history_storage: StorageView::default(),
             dialog: None,
+            search: None,
+            search_focus: None,
             batch: None,
             clipboard: None,
             file_exchange: Default::default(),
@@ -420,6 +433,7 @@ impl App {
             || self.busy
             || self.clipboard_reads_pending()
             || self.history_storage.loading
+            || self.search.as_ref().is_some_and(|v| !v.worker.results.done)
             || self.batch.as_ref().is_some_and(|v| v.pending)
             || self.trash.as_ref().is_some_and(|t| t.loading)
     }
@@ -522,6 +536,7 @@ impl App {
             }
         }
         self.apply_directory_results();
+        self.poll_search();
         self.refresh_changed_directories();
         self.update_preview();
         self.apply_trash();

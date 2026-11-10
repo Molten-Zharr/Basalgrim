@@ -182,6 +182,9 @@ impl App {
                 self.text_paste = None;
             }
             Input::Scroll { delta, .. } => {
+                if self.recursive_editing() && self.editor_menu.is_none() {
+                    self.search_move(delta as isize * 3);
+                }
                 if self.batch_editing() && self.editor_menu.is_none() {
                     self.scroll_batch(delta as isize * 3);
                 }
@@ -256,6 +259,41 @@ impl App {
                     return true;
                 }
                 _ => self.editor_menu = None,
+            }
+        }
+        if !press.ctrl
+            && !press.alt
+            && press.key == Key::F(3)
+            && matches!(
+                self.dialog,
+                Some(Dialog::Edit {
+                    kind: EditKind::Search { .. },
+                    ..
+                })
+            )
+        {
+            self.begin_recursive_search();
+            return true;
+        }
+        if self.recursive_editing() && !press.ctrl && !press.alt {
+            let page = self.search.as_ref().map_or(1, |s| s.page) as isize;
+            let delta = match press.key {
+                Key::Up => Some(-1),
+                Key::Down => Some(1),
+                Key::PageUp => Some(-page),
+                Key::PageDown => Some(page),
+                _ => None,
+            };
+            if let Some(delta) = delta {
+                self.search_move(delta);
+                return true;
+            }
+            if press.key == Key::F(5) {
+                if let Some(view) = &mut self.search {
+                    view.query.clear();
+                }
+                self.update_recursive_search();
+                return true;
             }
         }
         if self.batch_editing() && !press.ctrl && !press.alt {

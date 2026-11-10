@@ -212,6 +212,20 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--recursive-search-only' in sys.argv[2:]:
+            import search_fixture
+            source=search_fixture.prepare(base)
+            process,window,log=launch(source,config)
+            def search_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L'}[m] for m in mods])
+            def search_insert(value):
+                subprocess.run([xclip,'-selection','clipboard','-in'],input=value.encode(),check=True)
+                time.sleep(.15);search_key('v','ctrl');time.sleep(.2)
+            try:
+                search_fixture.exercise(source,search_key,search_insert,
+                    lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-'+name+'.png'),wait_for)
+                quit_when_ready(process)
+            finally:stop(process,log)
+            sys.exit(0)
         if '--batch-rename-only' in sys.argv[2:]:
             import batch_rename_fixture
             source=batch_rename_fixture.prepare(base)

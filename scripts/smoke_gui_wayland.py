@@ -135,6 +135,13 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--recursive-search-only' in sys.argv[2:]:
+                import search_fixture
+                source=search_fixture.prepare(base);process=launch(source)
+                search_fixture.exercise(source,key,lambda value:run('wtype','-s','100',value,'-s','100'),click,
+                    lambda name:run('grim','-g','0,0 1360x860',str(out/('native-wayland-'+name+'.png'))),wait_for)
+                key('q','ctrl');process.wait(timeout=5);process=None
+                return
             if '--batch-rename-only' in sys.argv[2:]:
                 import batch_rename_fixture
                 source=batch_rename_fixture.prepare(base);process=launch(source)
