@@ -44,6 +44,20 @@ impl PreviewRasterizer {
 }
 
 fn rasterize(slot: &PreviewSlot, key: PreviewKey) -> Result<RgbaImage> {
+    fit(&slot.image, key.width, key.height, key.background)
+}
+pub(crate) fn fit(
+    image: &super::ImagePreview,
+    width: u32,
+    height: u32,
+    background: [u8; 3],
+) -> Result<RgbaImage> {
+    let key = PreviewKey {
+        image: image.id(),
+        width,
+        height,
+        background,
+    };
     ensure!(
         key.width > 0
             && key.height > 0
@@ -52,12 +66,8 @@ fn rasterize(slot: &PreviewSlot, key: PreviewKey) -> Result<RgbaImage> {
             && u64::from(key.width) * u64::from(key.height) <= 4 * 1024 * 1024,
         "Preview viewport too large"
     );
-    let source = RgbaImage::from_raw(
-        slot.image.width,
-        slot.image.height,
-        slot.image.pixels.clone(),
-    )
-    .context("Invalid image preview buffer")?;
+    let source = RgbaImage::from_raw(image.width, image.height, image.pixels.clone())
+        .context("Invalid image preview buffer")?;
     let scale =
         (key.width as f64 / source.width() as f64).min(key.height as f64 / source.height() as f64);
     let width = (source.width() as f64 * scale).round().max(1.0) as u32;

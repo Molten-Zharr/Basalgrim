@@ -191,7 +191,7 @@ impl Worker {
                     continue;
                 }
                 let preview =
-                    fs::preview_with_images(&path, graphics).map_err(|e| format!("{e:#}"));
+                    fs::preview_until(&path, graphics, &cancellation).map_err(|e| format!("{e:#}"));
                 if cancellation.is_cancelled() {
                     continue;
                 }

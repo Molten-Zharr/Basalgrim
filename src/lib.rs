@@ -23,3 +23,5 @@ pub mod worker;
 pub mod raster;
 
 pub mod search;
+
+pub mod thumbnails;

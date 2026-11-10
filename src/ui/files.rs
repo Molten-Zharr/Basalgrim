@@ -5,13 +5,20 @@ use ratatui::{
     widgets::{Cell, Row, Table},
 };
 
-fn image_slot(entry: &fs::Entry, area: Rect, palette: Palette) -> crate::icons::IconSlot {
+fn image_slot(
+    entry: &fs::Entry,
+    request: u64,
+    area: Rect,
+    palette: Palette,
+) -> crate::icons::IconSlot {
     let kind = crate::icons::IconKind::for_entry(entry);
     let rgb = |token| match palette.color(token) {
         ratatui::style::Color::Rgb(r, g, b) => [r, g, b],
         _ => unreachable!("Palette colors are RGB"),
     };
     crate::icons::IconSlot {
+        source: crate::thumbnails::Source::new(entry, request),
+        content: None,
         kind,
         area,
         foreground: rgb("text"),
@@ -444,6 +451,7 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
             let width = icon_area.width.min(6);
             Some(image_slot(
                 entry,
+                app.file_tab(pane).request,
                 Rect::new(
                     icon_area.x + (icon_area.width - width) / 2,
                     icon_area.y,
@@ -597,6 +605,7 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
         if images {
             icon_slots.push(image_slot(
                 entry,
+                app.file_tab(pane).request,
                 Rect::new(area.x + 3, area.y + 1 + (index - start) as u16, 2, 1),
                 palette,
             ));

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct IconKey {
     kind: IconKind,
+    image: u64,
     width: u32,
     height: u32,
     foreground: [u8; 3],
@@ -18,6 +19,7 @@ impl IconKey {
     pub fn new(slot: &IconSlot, cell_width: u32, cell_height: u32) -> Self {
         Self {
             kind: slot.kind,
+            image: slot.content.as_ref().map_or(0, |image| image.id()),
             width: u32::from(slot.area.width) * cell_width,
             height: u32::from(slot.area.height) * cell_height,
             foreground: slot.foreground,
@@ -30,14 +32,29 @@ impl IconKey {
 #[derive(Default)]
 pub struct IconRasterizer {
     cache: HashMap<IconKey, RgbaImage>,
+    bytes: usize,
 }
 impl IconRasterizer {
     pub fn image(&mut self, key: IconKey) -> Result<&RgbaImage> {
+        self.content(key, None)
+    }
+    pub fn content(
+        &mut self,
+        key: IconKey,
+        content: Option<&crate::preview::ImagePreview>,
+    ) -> Result<&RgbaImage> {
         if !self.cache.contains_key(&key) {
-            if self.cache.len() >= 128 {
+            let image = if let Some(content) = content {
+                crate::preview::images::fit(content, key.width, key.height, key.background)?
+            } else {
+                rasterize(key)?
+            };
+            if self.cache.len() >= 128 || self.bytes + image.len() > 16 * 1024 * 1024 {
                 self.cache.clear();
+                self.bytes = 0;
             }
-            self.cache.insert(key, rasterize(key)?);
+            self.bytes += image.len();
+            self.cache.insert(key, image);
         }
         Ok(&self.cache[&key])
     }
@@ -118,6 +135,8 @@ mod tests {
             for size in [8, 16, 32, 64] {
                 for background in [[0, 0, 0], [239, 242, 246]] {
                     let slot = IconSlot {
+                        source: None,
+                        content: None,
                         kind,
                         area: Rect::new(0, 0, 1, 1),
                         foreground: [110, 120, 130],

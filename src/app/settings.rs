@@ -82,6 +82,7 @@ pub enum SettingControl {
     RestoreSession,
     RetrySessionSave,
     IconMode,
+    Thumbnails,
     Theme(Theme),
     ResetAppearance,
     Color(String),
@@ -192,6 +193,7 @@ impl App {
                         true,
                         None,
                     );
+                    push("Миниатюры файлов".into(), if self.settings.appearance.thumbnails { "Включены" } else { "Выключены" }.into(), "Изображения и кадры видео вместо иконок в сетке и списке. Нужны режим иконок «Изображения» и поддержка графики; для видео — FFmpeg. Панель предпросмотра работает независимо.".into(), SettingControl::Thumbnails, true, None);
                 }
                 SettingsTab::Presets => {
                     for theme in Theme::ALL {
@@ -287,6 +289,7 @@ impl App {
                 self.retry_session_save();
                 return;
             }
+            SettingControl::Thumbnails => appearance.thumbnails = !appearance.thumbnails,
             SettingControl::IconMode => {
                 appearance.icon_mode = cycle(appearance.icon_mode, &IconMode::ALL, direction)
             }

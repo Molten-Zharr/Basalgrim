@@ -212,6 +212,17 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--media-only' in sys.argv[2:]:
+            import media_fixture
+            source=media_fixture.prepare(base)
+            settings.write_text(json.dumps({'preview':True,'grid':True,'font_size':16,'theme':'light','thumbnails':True}))
+            process,window,log=launch(source,config)
+            def media_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L'}[m] for m in mods])
+            try:
+                media_fixture.exercise(source,media_key,lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-media-'+name+'.png'),wait_for,settings)
+                quit_when_ready(process)
+            finally:stop(process,log)
+            sys.exit(0)
         if '--recursive-search-only' in sys.argv[2:]:
             import search_fixture
             source=search_fixture.prepare(base)

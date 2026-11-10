@@ -703,6 +703,75 @@ fn main() -> Result<()> {
     finder.settings.appearance.theme = Theme::Light;
     render(&mut finder, &out, "recursive-search", 150, 38)?;
     render(&mut finder, &out, "recursive-search-compact", 34, 14)?;
+    let media_dir = demo.path().join("Media");
+    fs::create_dir(&media_dir)?;
+    fs::copy(
+        demo.path().join("landscape.svg"),
+        media_dir.join("Горы.svg"),
+    )?;
+    image::RgbaImage::from_fn(320, 180, |x, y| {
+        image::Rgba([(40 + x / 2) as u8, (50 + y) as u8, 170, 255])
+    })
+    .save(media_dir.join("Палитра.png"))?;
+    let movie = media_dir.join("Демо.mp4");
+    if let Ok(status) = std::process::Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=640x360:rate=1:duration=2",
+            "-c:v",
+            "mpeg4",
+            "-threads",
+            "1",
+        ])
+        .arg(&movie)
+        .status()
+    {
+        ensure!(status.success(), "Could not create video preview fixture");
+    }
+    let mut media = App::new(media_dir, Settings::default());
+    media.icon_backend = basalgrim::icons::IconBackend::Gui;
+    media.settings.appearance.theme = Theme::Light;
+    settle(&mut media)?;
+    if let Some(index) = media
+        .tab()
+        .visible
+        .iter()
+        .position(|&i| media.tab().entries[i].path == movie)
+    {
+        media.tab_mut().selected = index;
+    }
+    media.update_preview();
+    settle(&mut media)?;
+    let ready = Instant::now() + Duration::from_secs(10);
+    loop {
+        settle(&mut media)?;
+        render(&mut media, &out, "media-warmup", 150, 38)?;
+        if !media.loading() {
+            break;
+        }
+        ensure!(Instant::now() < ready, "Media scene did not settle");
+    }
+    ensure!(
+        media
+            .icon_slots
+            .iter()
+            .filter(|s| s.source.is_some())
+            .all(|s| s.content.is_some()),
+        "Media screenshot still has fallback icons"
+    );
+    render(&mut media, &out, "basalgrim-overview", 150, 38)?;
+    render(&mut media, &out, "media-grid", 150, 38)?;
+    media.settings.grid = false;
+    render(&mut media, &out, "media-list", 150, 38)?;
+    render(&mut media, &out, "media-compact", 34, 14)?;
+    media.action(Action::Settings);
+    media.settings_tab(SettingsTab::Icons);
+    media.settings_view.selected = 1;
+    render(&mut media, &out, "media-settings-compact", 34, 14)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

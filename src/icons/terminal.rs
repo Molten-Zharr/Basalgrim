@@ -138,6 +138,7 @@ struct Request {
     key: IconKey,
     area: Size,
     graphics: TerminalGraphics,
+    content: Option<std::sync::Arc<crate::preview::ImagePreview>>,
 }
 
 struct Encoded {
@@ -183,7 +184,9 @@ impl TerminalIcons {
             let mut rasterizer = IconRasterizer::default();
             for request in input {
                 let result = (|| {
-                    let image = rasterizer.image(request.key)?.clone();
+                    let image = rasterizer
+                        .content(request.key, request.content.as_deref())?
+                        .clone();
                     request.graphics.encode(image, request.area)
                 })()
                 .map_err(|error: anyhow::Error| error.to_string());
@@ -246,6 +249,17 @@ impl TerminalIcons {
         if self.failed {
             return false;
         }
+        let visible: std::collections::HashSet<_> = slots
+            .iter()
+            .map(|slot| {
+                IconKey::new(
+                    slot,
+                    u32::from(self.graphics.cell_width),
+                    u32::from(self.graphics.cell_height),
+                )
+            })
+            .collect();
+        self.cache.retain(|key, _| visible.contains(key));
         for slot in slots {
             let key = IconKey::new(
                 slot,
@@ -258,9 +272,10 @@ impl TerminalIcons {
                 }
                 continue;
             }
-            if self.cache.len() >= 128 {
-                self.cache.clear();
-                self.generation += 1;
+            // Reserve room for the bounded thumbnail scene plus ordinary SVGs.
+            // Do not clear an entire visible scene and invalidate its pending encodings.
+            if self.cache.len() >= 256 {
+                continue;
             }
             self.serial += 1;
             let request = Request {
@@ -269,6 +284,7 @@ impl TerminalIcons {
                 key,
                 area: slot.area.as_size(),
                 graphics: self.graphics,
+                content: slot.content.clone(),
             };
             match self.requests.try_send(request) {
                 Ok(()) => {
@@ -341,6 +357,8 @@ mod tests {
             let mut terminal = Terminal::new(TestBackend::new(20, 8)).unwrap();
             let slots = [
                 IconSlot {
+                    source: None,
+                    content: None,
                     kind: IconKind::Code,
                     area: Rect::new(1, 1, 6, 2),
                     foreground: [248, 248, 242],
@@ -348,6 +366,8 @@ mod tests {
                     background: [0, 0, 0],
                 },
                 IconSlot {
+                    source: None,
+                    content: None,
                     kind: IconKind::Code,
                     area: Rect::new(10, 1, 6, 2),
                     foreground: [248, 248, 242],
@@ -387,6 +407,8 @@ mod tests {
         })
         .unwrap();
         let slot = IconSlot {
+            source: None,
+            content: None,
             kind: IconKind::File,
             area: Rect::new(0, 0, 6, 2),
             foreground: [248, 248, 242],

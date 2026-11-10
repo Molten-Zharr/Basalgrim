@@ -77,7 +77,8 @@ impl IconKind {
             "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" | "tif" | "tiff" | "avif"
             | "heic" | "ico" => Self::Image,
             "mp3" | "flac" | "wav" | "ogg" | "opus" | "m4a" | "aac" => Self::Audio,
-            "mp4" | "mkv" | "webm" | "avi" | "mov" | "m4v" => Self::Video,
+            "mp4" | "mkv" | "webm" | "avi" | "mov" | "m4v" | "mpeg" | "mpg" | "m2ts" | "ogv"
+            | "flv" | "3gp" => Self::Video,
             "pdf" => Self::Pdf,
             "exe" | "appimage" | "deb" | "rpm" | "sh" | "bin" => Self::Application,
             "ttf" | "otf" | "woff" | "woff2" => Self::Font,
@@ -95,8 +96,10 @@ impl IconKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IconSlot {
+    pub source: Option<crate::thumbnails::Source>,
+    pub content: Option<std::sync::Arc<crate::preview::ImagePreview>>,
     pub kind: IconKind,
     pub area: Rect,
     pub foreground: [u8; 3],

@@ -98,6 +98,12 @@ pub fn render(app: &mut App, frame: &mut Frame) {
             );
         }
     }
+    app.thumbnails.update(
+        &mut app.icon_slots,
+        app.settings.appearance.thumbnails
+            && app.icon_backend.supports_images()
+            && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images,
+    );
     for slot in &mut app.icon_slots {
         if let ratatui::style::Color::Rgb(r, g, b) =
             frame.buffer_mut()[(slot.area.x, slot.area.y)].bg
@@ -516,6 +522,8 @@ fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
                 _ => unreachable!("Palette colors are RGB"),
             };
             app.icon_slots.push(crate::icons::IconSlot {
+                source: None,
+                content: None,
                 kind: crate::icons::IconKind::Trash,
                 area: Rect::new(rect.x + 1, rect.y, 2, 1),
                 foreground: rgb("text"),

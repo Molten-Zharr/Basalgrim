@@ -117,11 +117,14 @@ pub fn compose_icons(
     let width = backend.get_pixmap_width();
     let height = backend.get_pixmap_height();
     for slot in slots {
-        let image = icons.image(crate::icons::images::IconKey::new(
-            slot,
-            backend.char_width as u32,
-            backend.char_height as u32,
-        ))?;
+        let image = icons.content(
+            crate::icons::images::IconKey::new(
+                slot,
+                backend.char_width as u32,
+                backend.char_height as u32,
+            ),
+            slot.content.as_deref(),
+        )?;
         let left = usize::from(slot.area.x) * backend.char_width;
         let top = usize::from(slot.area.y) * backend.char_height;
         for y in 0..(image.height() as usize).min(height.saturating_sub(top)) {

@@ -8,6 +8,8 @@ use std::sync::{
 #[cfg(any(feature = "guitui", feature = "tui"))]
 mod decode;
 #[cfg(any(feature = "guitui", feature = "tui"))]
+pub mod video;
+#[cfg(any(feature = "guitui", feature = "tui"))]
 pub use decode::read;
 #[cfg(any(feature = "guitui", feature = "tui"))]
 pub mod images;
@@ -22,6 +24,12 @@ pub struct ImagePreview {
     pub pixels: Vec<u8>,
     id: u64,
 }
+impl PartialEq for ImagePreview {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+impl Eq for ImagePreview {}
 impl ImagePreview {
     pub fn new(width: u32, height: u32, pixels: Vec<u8>) -> anyhow::Result<Self> {
         anyhow::ensure!(

@@ -108,6 +108,7 @@ pub struct Appearance {
     pub borders: BorderWeight,
     pub corners: Corners,
     pub icon_mode: IconMode,
+    pub thumbnails: bool,
     pub colors: BTreeMap<Theme, BTreeMap<String, [u8; 3]>>,
 }
 impl Default for Appearance {
@@ -119,6 +120,7 @@ impl Default for Appearance {
             borders: BorderWeight::default(),
             corners: Corners::default(),
             icon_mode: IconMode::default(),
+            thumbnails: true,
             colors: BTreeMap::new(),
         }
     }

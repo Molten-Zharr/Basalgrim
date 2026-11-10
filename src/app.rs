@@ -186,6 +186,7 @@ pub struct App {
     pub trash_home_only: bool,
     pub icon_backend: crate::icons::IconBackend,
     pub icon_slots: Vec<crate::icons::IconSlot>,
+    pub thumbnails: crate::thumbnails::Thumbnails,
     pub preview_slot: Option<crate::preview::PreviewSlot>,
     pub panes: [Pane; 2],
     pub active: usize,
@@ -288,6 +289,7 @@ impl App {
             trash_home_only: false,
             icon_backend: crate::icons::IconBackend::Symbols,
             icon_slots: Vec::new(),
+            thumbnails: Default::default(),
             preview_slot: None,
             panes: [
                 Pane {
@@ -429,7 +431,8 @@ impl App {
         // A completed snapshot held behind a dialog is idle, not pending I/O.
         self.panes.iter().flat_map(|p| &p.tabs).any(|t| {
             t.loading && !(t.refreshing && self.directory_results.contains_key(&t.request))
-        }) || self.preview_loading
+        }) || self.thumbnails.loading()
+            || self.preview_loading
             || self.busy
             || self.clipboard_reads_pending()
             || self.history_storage.loading
@@ -537,6 +540,7 @@ impl App {
         }
         self.apply_directory_results();
         self.poll_search();
+        self.thumbnails.poll();
         self.refresh_changed_directories();
         self.update_preview();
         self.apply_trash();

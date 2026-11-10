@@ -177,7 +177,14 @@ pub fn preview(path: &Path) -> Result<Preview> {
     preview_with_images(path, true)
 }
 
-pub fn preview_with_images(path: &Path, _graphics: bool) -> Result<Preview> {
+pub fn preview_with_images(path: &Path, graphics: bool) -> Result<Preview> {
+    preview_until(path, graphics, &crate::operations::Cancellation::default())
+}
+pub fn preview_until(
+    path: &Path,
+    _graphics: bool,
+    _cancel: &crate::operations::Cancellation,
+) -> Result<Preview> {
     let meta = fs::symlink_metadata(path)?;
     let mut result = Preview {
         title: clean(&path.file_name().unwrap_or_default().to_string_lossy()),
@@ -233,10 +240,18 @@ pub fn preview_with_images(path: &Path, _graphics: bool) -> Result<Preview> {
             use std::io::{Seek, SeekFrom};
             let mut prefix = Vec::new();
             (&mut file).take(512).read_to_end(&mut prefix)?;
-            if let Some(decoded) = crate::preview::read(path, &mut file, &prefix, _graphics) {
+            let video = crate::preview::video::candidate(path, &prefix);
+            let decoded = if video {
+                Some(crate::preview::video::read(&mut file, _graphics, _cancel))
+            } else {
+                crate::preview::read(path, &mut file, &prefix, _graphics)
+            };
+            if let Some(decoded) = decoded {
                 match decoded {
                     Ok(decoded) => {
-                        result.details.push(decoded.details);
+                        result
+                            .details
+                            .extend(decoded.details.lines().map(str::to_owned));
                         result.image = decoded.image;
                         result.lines.push(if _graphics {
                             "Подготовка изображения…".into()
@@ -246,7 +261,12 @@ pub fn preview_with_images(path: &Path, _graphics: bool) -> Result<Preview> {
                     }
                     Err(error) => {
                         result.lines = vec![
-                            "Предпросмотр изображения недоступен".into(),
+                            if video {
+                                "Предпросмотр видео недоступен"
+                            } else {
+                                "Предпросмотр изображения недоступен"
+                            }
+                            .into(),
                             clean(&format!("{error:#}")),
                         ];
                     }
