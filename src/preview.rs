@@ -1,9 +1,11 @@
-//! Bounded image previews shared by the native and terminal frontends.
+//! Bounded content previews shared by the native and terminal frontends.
 use ratatui::layout::Rect;
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
 };
+
+pub mod syntax;
 
 #[cfg(any(feature = "guitui", feature = "tui"))]
 mod decode;

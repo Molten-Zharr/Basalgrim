@@ -135,6 +135,18 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--syntax-only' in sys.argv[2:]:
+                import syntax_fixture
+                source=syntax_fixture.prepare(base)
+                settings.write_text(json.dumps({'preview':True,'grid':False,'font_size':16,'theme':'light','icon_mode':'symbols'}))
+                process=launch(source)
+                def syntax_shot(name):
+                    path=out/('native-wayland-syntax-'+name+'.png')
+                    run('grim','-g','0,0 1360x860',str(path))
+                    with Image.open(path) as image:return image.copy()
+                syntax_fixture.exercise(source,key,click,syntax_shot,wait_for)
+                key('q','ctrl');process.wait(timeout=5);process=None
+                return
             if '--media-only' in sys.argv[2:]:
                 import media_fixture
                 source=media_fixture.prepare(base)

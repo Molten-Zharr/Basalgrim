@@ -651,9 +651,31 @@ fn preview(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
     let lines = preview
         .lines
         .iter()
+        .enumerate()
         .skip(app.preview_offset)
         .take(app.preview_page)
-        .map(|line| Line::styled(line.clone(), palette.text()))
+        .map(|(index, line)| {
+            let Some(tokens) = preview.code.as_ref().and_then(|code| code.lines.get(index)) else {
+                return Line::styled(line.as_str(), palette.text());
+            };
+            let mut spans = vec![Span::styled(&line[..5], palette.muted())];
+            spans.extend(tokens.iter().map(|token| {
+                use crate::preview::syntax::Kind;
+                let style = match token.kind {
+                    Kind::Plain => palette.text(),
+                    Kind::Comment => palette.muted(),
+                    Kind::Keyword => palette
+                        .text()
+                        .fg(palette.color("selection_accent"))
+                        .add_modifier(Modifier::BOLD),
+                    Kind::String => palette.text().fg(palette.color("help_heading")),
+                    Kind::Constant => palette.text().fg(palette.color("active")),
+                    Kind::Name => palette.text().fg(palette.color("folder_icon")),
+                };
+                Span::styled(&line[token.range.clone()], style)
+            }));
+            Line::from(spans)
+        })
         .collect::<Vec<_>>();
     frame.render_widget(Paragraph::new(lines), parts[1]);
 }

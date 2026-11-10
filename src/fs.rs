@@ -170,6 +170,7 @@ pub struct Preview {
     pub title: String,
     pub details: Vec<String>,
     pub lines: Vec<String>,
+    pub code: Option<crate::preview::syntax::CodePreview>,
     pub image: Option<std::sync::Arc<crate::preview::ImagePreview>>,
 }
 
@@ -193,6 +194,7 @@ pub fn preview_until(
             format!("Изменён  {}", date(meta.modified().ok())),
         ],
         lines: vec![],
+        code: None,
         image: None,
     };
     #[cfg(unix)]
@@ -279,6 +281,13 @@ pub fn preview_until(
         file.take(65_537).read_to_end(&mut bytes)?;
         let truncated = bytes.len() > 65_536;
         bytes.truncate(65_536);
+        // A byte budget may cut a valid final UTF-8 character in half.
+        if truncated
+            && let Err(error) = std::str::from_utf8(&bytes)
+            && error.error_len().is_none()
+        {
+            bytes.truncate(error.valid_up_to());
+        }
         if bytes.contains(&0) || std::str::from_utf8(&bytes).is_err() {
             result.lines = vec![
                 "Бинарный файл".into(),
@@ -292,6 +301,13 @@ pub fn preview_until(
                 .enumerate()
                 .map(|(i, line)| format!("{:>3}  {}", i + 1, clean(&line.replace('\t', "    "))))
                 .collect();
+            result.code = crate::preview::syntax::highlight(path, &result.lines, _cancel);
+            if let Some(code) = &result.code {
+                result.details.push(format!("Язык     {}", code.language));
+                if code.limited {
+                    result.details.push("Подсветка ограничена".into());
+                }
+            }
             if truncated || text.lines().count() > 300 {
                 result
                     .lines

@@ -763,7 +763,11 @@ fn main() -> Result<()> {
             .all(|s| s.content.is_some()),
         "Media screenshot still has fallback icons"
     );
+    // README always uses the project's classic palette, independent of the
+    // user's selected theme and feature-specific documentation illustrations.
+    media.settings.appearance.theme = Theme::MoltenZharr;
     render(&mut media, &out, "basalgrim-overview", 150, 38)?;
+    media.settings.appearance.theme = Theme::Light;
     render(&mut media, &out, "media-grid", 150, 38)?;
     media.settings.grid = false;
     render(&mut media, &out, "media-list", 150, 38)?;
@@ -772,6 +776,47 @@ fn main() -> Result<()> {
     media.settings_tab(SettingsTab::Icons);
     media.settings_view.selected = 1;
     render(&mut media, &out, "media-settings-compact", 34, 14)?;
+    // Feature illustrations belong in usage documentation; keep the README's
+    // general overview independent of the latest roadmap feature.
+    let code_path = media.tab().cwd.join("Пример.rs");
+    fs::write(
+        &code_path,
+        "// Привет из Basalgrim\nfn main() {\n    let name = \"Мир\";\n    let count = 42;\n\n    for i in 0..count {\n        println!(\"{name}: {i}\");\n    }\n}\n",
+    )?;
+    media.dialog = None;
+    media.settings.grid = true;
+    media.action(Action::Refresh);
+    settle(&mut media)?;
+    media.tab_mut().selected = media
+        .tab()
+        .visible
+        .iter()
+        .position(|&i| media.tab().entries[i].path == code_path)
+        .unwrap();
+    media.update_preview();
+    settle(&mut media)?;
+    let ready = Instant::now() + Duration::from_secs(10);
+    loop {
+        render(&mut media, &out, "syntax-warmup", 150, 38)?;
+        if !media.loading() {
+            break;
+        }
+        ensure!(Instant::now() < ready, "Code scene did not settle");
+        settle(&mut media)?;
+    }
+    ensure!(
+        media
+            .icon_slots
+            .iter()
+            .filter(|s| s.source.is_some())
+            .all(|s| s.content.is_some()),
+        "Code screenshot still has fallback icons"
+    );
+    render(&mut media, &out, "syntax-light", 150, 38)?;
+    media.settings.grid = false;
+    render(&mut media, &out, "syntax-list", 150, 38)?;
+    media.settings.appearance.theme = Theme::MoltenZharr;
+    render(&mut media, &out, "syntax-dark", 150, 38)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

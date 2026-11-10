@@ -212,6 +212,16 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--syntax-only' in sys.argv[2:]:
+            import syntax_fixture
+            source=syntax_fixture.prepare(base)
+            settings.write_text(json.dumps({'preview':True,'grid':False,'font_size':16,'theme':'light','icon_mode':'symbols'}))
+            process,window,log=launch(source,config)
+            try:
+                syntax_fixture.exercise(source,key,lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-syntax-'+name+'.png'),wait_for)
+                quit_when_ready(process)
+            finally:stop(process,log)
+            sys.exit(0)
         if '--media-only' in sys.argv[2:]:
             import media_fixture
             source=media_fixture.prepare(base)
