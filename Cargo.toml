@@ -40,6 +40,7 @@ anyhow = "1"
 zip = { version = "9.5", default-features = false, features = ["deflate-flate2"] }
 tar = "0.4.46"
 flate2 = "1"
+quick-xml = "0.41"
 ratatui = { version = "0.30.2", default-features = false, features = ["std", "unstable-rendered-line-info"] }
 crossterm = { version = "0.29", features = ["osc52", "osc"], optional = true }
 base64 = { version = "0.22", optional = true }

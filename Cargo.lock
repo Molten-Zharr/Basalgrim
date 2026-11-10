@@ -173,6 +173,7 @@ dependencies = [
  "flate2",
  "image",
  "portable-pty",
+ "quick-xml",
  "ratatui",
  "ratatui-image",
  "raw-window-handle",

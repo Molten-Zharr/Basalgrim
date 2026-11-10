@@ -6,6 +6,7 @@ mod files;
 mod folder_size;
 mod operations;
 mod path;
+mod places;
 mod selection;
 mod settings;
 mod storage;
@@ -482,6 +483,15 @@ fn toolbar(
 fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
     let block = panel(palette, " МЕСТА ", false);
     let inner = block.inner(area);
+    let bookmarks: Vec<_> = app
+        .library
+        .snapshot
+        .bookmarks
+        .iter()
+        .filter(|item| !app.in_quick_access(&item.path))
+        .take(usize::from(inner.height))
+        .cloned()
+        .collect();
     frame.render_widget(block, area);
     let mut y = inner.y + 1;
     frame.render_widget(
@@ -513,7 +523,7 @@ fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
             rect,
         );
         hit(app, rect, Target::Place(place.path.clone()));
-        y += 2;
+        y += if bookmarks.is_empty() { 2 } else { 1 };
     }
     if y < inner.bottom() {
         let rect = Rect::new(inner.x, y, inner.width, 1);
@@ -550,6 +560,33 @@ fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
         }
         hit(app, rect, Target::Action(Action::TrashView));
         y += 2;
+    }
+    for section in crate::places::Section::ALL {
+        if y >= inner.bottom().saturating_sub(5) {
+            break;
+        }
+        let rect = Rect::new(inner.x, y, inner.width, 1);
+        frame.render_widget(
+            Paragraph::new(format!("    {}", section.label())).style(palette.accent()),
+            rect,
+        );
+        hit(app, rect, Target::PlacesSection(section));
+        y += 1;
+    }
+    if y + 2 < inner.bottom().saturating_sub(5) && !bookmarks.is_empty() {
+        y += 1;
+        for item in bookmarks {
+            if y >= inner.bottom().saturating_sub(5) {
+                break;
+            }
+            let rect = Rect::new(inner.x, y, inner.width, 1);
+            frame.render_widget(
+                Paragraph::new(format!("  {}", item.label)).style(palette.text()),
+                rect,
+            );
+            hit(app, rect, Target::SavedPlace(item.path));
+            y += 1;
+        }
     }
     if y + 5 < inner.bottom() {
         y += 1;

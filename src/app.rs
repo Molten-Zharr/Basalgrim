@@ -23,8 +23,10 @@ pub use storage::StorageView;
 mod operations;
 mod path;
 pub use path::{PathMenu, PathOwner};
+mod places;
 mod selection;
 mod session;
+pub use places::{PlaceControl, PlacesView};
 mod settings;
 mod trash;
 pub use settings::{
@@ -48,6 +50,16 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    PlacesSection(crate::places::Section),
+    SavedPlace(PathBuf),
+    PlacesRow {
+        revision: u64,
+        index: usize,
+    },
+    PlacesControl {
+        revision: u64,
+        control: PlaceControl,
+    },
     ArchiveFormat(crate::archive::Format),
     Terminal {
         id: u64,
@@ -141,6 +153,11 @@ pub enum Target {
 
 #[derive(Clone)]
 pub enum EditKind {
+    PlaceFilter,
+    PlaceLabel {
+        section: crate::places::Section,
+        path: PathBuf,
+    },
     ArchiveCreate {
         sources: Vec<PathBuf>,
         destination: PathBuf,
@@ -166,6 +183,8 @@ pub enum EditKind {
 impl EditKind {
     pub fn title(&self) -> &'static str {
         match self {
+            Self::PlaceFilter => "Фильтр мест",
+            Self::PlaceLabel { .. } => "Название места",
             Self::ArchiveCreate { .. } => "Создать архив",
             Self::ArchiveExtract { .. } => "Распаковать в папку",
             Self::TrashSearch { .. } => "Поиск в корзине",
@@ -181,6 +200,7 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    Places,
     CloseTerminal,
     FolderSize,
     HistoryStorage,
@@ -218,6 +238,9 @@ pub struct Place {
 }
 
 pub struct App {
+    pub library: crate::places::Library,
+    pub places_view: PlacesView,
+    place_open: Option<places::PendingOpen>,
     pub trash: Option<TrashView>,
     pub trash_home_only: bool,
     pub icon_backend: crate::icons::IconBackend,
@@ -325,6 +348,9 @@ impl App {
             path: PathBuf::from("/"),
         });
         let mut app = Self {
+            library: Default::default(),
+            places_view: Default::default(),
+            place_open: None,
             trash: None,
             trash_home_only: false,
             icon_backend: crate::icons::IconBackend::Symbols,
@@ -556,6 +582,7 @@ impl App {
             self.dialog = None;
             self.hits.clear();
         }
+        self.poll_places();
         self.persist_session();
         self.validate_marquee();
         self.observe_directories();
@@ -594,11 +621,14 @@ impl App {
                 }
                 Event::Preview { .. } => {}
                 Event::Operation { token, report } => self.finish_operation(token, *report),
-                Event::Open(result) => {
-                    if let Err(e) = result {
-                        self.message(e, true);
+                Event::Open { path, result } => match result {
+                    Ok(()) => {
+                        if let Some(path) = path.filter(|_| self.library.ready) {
+                            self.library.send(crate::places::Command::Recent(path));
+                        }
                     }
-                }
+                    Err(e) => self.message(e, true),
+                },
             }
         }
         self.apply_directory_results();

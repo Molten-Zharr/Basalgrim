@@ -127,6 +127,12 @@ pub enum Input {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
+    Places,
+    Bookmark,
+    Favorites,
+    Recent,
+    Favorite,
+    Unfavorite,
     ArchiveCreate,
     ArchiveExtract,
     Commands,
@@ -231,9 +237,21 @@ impl Action {
         Self::EmptyTrash,
         Self::ArchiveCreate,
         Self::ArchiveExtract,
+        Self::Places,
+        Self::Bookmark,
+        Self::Favorites,
+        Self::Recent,
+        Self::Favorite,
+        Self::Unfavorite,
     ];
     pub fn name(self) -> &'static str {
         match self {
+            Self::Places => "Места / закладки",
+            Self::Bookmark => "Добавить папку в закладки",
+            Self::Favorites => "Избранное",
+            Self::Recent => "Недавние файлы",
+            Self::Favorite => "В избранное",
+            Self::Unfavorite => "Убрать из избранного",
             Self::ArchiveCreate => "Создать архив…",
             Self::ArchiveExtract => "Распаковать…",
             Self::Commands => "Меню действий",
@@ -317,6 +335,24 @@ pub fn default_bindings() -> Vec<Binding> {
         key: KeyPress::plain(key),
     })
     .collect();
+    for (action, key, alt, shift) in [
+        (Places, 'b', false, false),
+        (Bookmark, 'b', true, false),
+        (Favorites, 's', true, false),
+        (Recent, 'n', true, false),
+        (Favorite, 'f', true, false),
+        (Unfavorite, 'f', true, true),
+    ] {
+        result.push(Binding {
+            action,
+            key: KeyPress {
+                key: Key::Char(key),
+                ctrl: true,
+                alt,
+                shift,
+            },
+        });
+    }
     for (action, key) in [(ArchiveCreate, 'a'), (ArchiveExtract, 'e')] {
         result.push(Binding {
             action,

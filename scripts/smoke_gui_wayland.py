@@ -135,6 +135,21 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--places-only' in sys.argv[2:]:
+                import places_fixture
+                source=places_fixture.prepare(base)
+                env['PATH']=str(base/'bin')+os.pathsep+env['PATH']
+                env['BASALGRIM_OPEN_LOG']=str(base/'opened.txt')
+                settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+                process=launch(source)
+                places_fixture.exercise(base,source,key,lambda text:run('wtype',text),click,lambda name:run('grim','-g','0,0 1360x860',str(out/('native-wayland-places-'+name+'.png'))),wait_for)
+                key('q','ctrl');process.wait(timeout=5);process=None
+                process=launch(source);key('b','ctrl');time.sleep(.3)
+                run('grim','-g','0,0 1360x860',str(out/'native-wayland-places-restart.png'))
+                assert places_fixture.rows(base,0)[0][1]=='Work shelf' and len(places_fixture.rows(base,1))==1
+                assert bytes(base/'Imported') in places_fixture.hidden_bookmarks(base)
+                key('Escape');key('q','ctrl');process.wait(timeout=5);process=None
+                return
             if '--archives-only' in sys.argv[2:]:
                 import archive_fixture
                 source=archive_fixture.prepare(base)

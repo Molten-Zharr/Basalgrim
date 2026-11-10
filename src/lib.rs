@@ -28,3 +28,5 @@ pub mod search;
 
 pub mod archive;
 pub mod thumbnails;
+
+pub mod places;

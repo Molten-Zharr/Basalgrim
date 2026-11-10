@@ -70,10 +70,12 @@ impl App {
                 Trash,
                 ArchiveCreate,
                 ArchiveExtract,
+                Favorite,
+                Unfavorite,
             ],
             MenuContext::Directory => &[
                 NewFile, NewFolder, Paste, FolderSize, Sort, Grid, Hidden, Refresh, Search,
-                SelectAll, CopyPath,
+                SelectAll, CopyPath, Bookmark, Places,
             ],
             MenuContext::All => &[
                 Open,
@@ -121,6 +123,12 @@ impl App {
                 Settings,
                 Help,
                 Quit,
+                Places,
+                Bookmark,
+                Favorites,
+                Recent,
+                Favorite,
+                Unfavorite,
             ],
         };
         actions
@@ -128,6 +136,10 @@ impl App {
             .copied()
             .map(|action| {
                 let enabled = match action {
+                    Bookmark => self.can_bookmark(),
+                    Favorite => self.can_favorite(true),
+                    Unfavorite => self.can_favorite(false),
+                    Places if context != MenuContext::All => self.library.ready,
                     ArchiveCreate => {
                         selection
                             && !self.busy

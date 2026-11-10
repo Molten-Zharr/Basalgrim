@@ -52,7 +52,10 @@ pub enum Event {
         token: u64,
         report: Box<Report>,
     },
-    Open(Result<(), String>),
+    Open {
+        path: Option<PathBuf>,
+        result: Result<(), String>,
+    },
 }
 enum Task {
     HistoryStorage {
@@ -227,6 +230,7 @@ impl Worker {
                 if opening.is_cancelled() {
                     break;
                 }
+                let recent = archive.is_none().then(|| path.clone());
                 let opened = (|| -> anyhow::Result<()> {
                     let path = if let Some(archive) = archive {
                         anyhow::ensure!(
@@ -250,7 +254,10 @@ impl Worker {
                     fs::open_external(&path)
                 })();
                 if result
-                    .send(Event::Open(opened.map_err(|e| format!("{e:#}"))))
+                    .send(Event::Open {
+                        path: recent,
+                        result: opened.map_err(|e| format!("{e:#}")),
+                    })
                     .is_err()
                 {
                     break;

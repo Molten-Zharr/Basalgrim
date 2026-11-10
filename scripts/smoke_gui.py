@@ -163,6 +163,7 @@ def type_text(text):
     for c in text:
         name = {'/':'slash', '.':'period', '-':'minus', '_':'underscore', ' ':'space'}.get(c,c)
         if c == '_': chord('minus', 'Shift_L')
+        elif c.isascii() and c.isupper(): chord(c.lower(), 'Shift_L')
         else: key(name)
 
 def navigate(path):
@@ -212,6 +213,26 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--places-only' in sys.argv[2:]:
+            import places_fixture
+            source=places_fixture.prepare(base)
+            os.environ['PATH']=str(base/'bin')+os.pathsep+os.environ['PATH']
+            os.environ['BASALGRIM_OPEN_LOG']=str(base/'opened.txt')
+            settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+            process,window,log=launch(source,config)
+            def place_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
+            try:
+                places_fixture.exercise(base,source,place_key,type_text,lambda cx,cy,b=1:click(window,cx,cy,b),lambda name:screenshot(window,'native-x11-places-'+name+'.png'),wait_for)
+                quit_when_ready(process)
+            finally:stop(process,log)
+            process,window,log=launch(source,config)
+            try:
+                chord('b','Control_L');time.sleep(.3);screenshot(window,'native-x11-places-restart.png')
+                assert places_fixture.rows(base,0)[0][1]=='Work shelf' and len(places_fixture.rows(base,1))==1
+                assert bytes(base/'Imported') in places_fixture.hidden_bookmarks(base)
+                key('Escape');quit_when_ready(process)
+            finally:stop(process,log)
+            sys.exit(0)
         if '--archives-only' in sys.argv[2:]:
             import archive_fixture
             source=archive_fixture.prepare(base)

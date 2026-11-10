@@ -82,6 +82,12 @@ impl Settings {
         // Older settings do not have these commands. Keep custom bindings intact,
         // including keys that were free before the commands were introduced.
         for action in [
+            Action::Places,
+            Action::Bookmark,
+            Action::Favorites,
+            Action::Recent,
+            Action::Favorite,
+            Action::Unfavorite,
             Action::ArchiveCreate,
             Action::ArchiveExtract,
             Action::Operations,

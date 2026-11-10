@@ -202,6 +202,17 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::PlacesSection(section))
+                        if matches!(self.dialog, None | Some(Dialog::Places)) =>
+                    {
+                        self.open_places(section)
+                    }
+                    Some(Target::PlacesRow { revision, index }) => {
+                        self.place_select(revision, index, double)
+                    }
+                    Some(Target::PlacesControl { revision, control }) => {
+                        self.place_control(revision, control)
+                    }
                     Some(Target::FolderMeasure {
                         owner,
                         request,
@@ -416,6 +427,7 @@ impl App {
                         self.action(a);
                     }
                     Some(Target::Place(path)) => self.navigate(path, true),
+                    Some(Target::SavedPlace(path)) => self.place_open(path, false),
                     Some(Target::CloseTab { owner, request })
                         if owner.valid(self)
                             && (self.settings.dual || owner.pane == self.active)
@@ -453,6 +465,9 @@ impl App {
                     }
                     _ => {}
                 }
+            }
+            Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::Places)) => {
+                self.place_move(delta as isize * 3)
             }
             Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::Commands(_))) => {
                 self.scroll_commands(delta as isize * 3)
@@ -639,6 +654,10 @@ impl App {
         self.tab_mut().reset_range();
     }
     fn key(&mut self, press: KeyPress) {
+        if matches!(self.dialog, Some(Dialog::Places)) {
+            self.places_key(press);
+            return;
+        }
         let press = press.normalized();
         if matches!(self.dialog, Some(Dialog::FolderSize)) {
             self.folder_size_key(press);

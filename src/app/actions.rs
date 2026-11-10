@@ -83,6 +83,12 @@ impl App {
             self.tab_mut().selected = index;
         }
         match action {
+            Action::Places => self.open_places(crate::places::Section::Bookmarks),
+            Action::Favorites => self.open_places(crate::places::Section::Favorites),
+            Action::Recent => self.open_places(crate::places::Section::Recent),
+            Action::Bookmark => self.bookmark_current(),
+            Action::Favorite => self.favorite_selection(true),
+            Action::Unfavorite => self.favorite_selection(false),
             Action::ArchiveCreate => self.begin_archive(),
             Action::ArchiveExtract => self.begin_extract(false),
             Action::Terminal => self.toggle_terminal(),
@@ -336,6 +342,15 @@ impl App {
         self.update_preview();
     }
     pub fn cancel_dialog(&mut self) {
+        self.place_open = None;
+        if self.places_editing() {
+            self.editor_menu = None;
+            self.editor_drag = None;
+            self.text_paste = None;
+            self.text_paste_fallback = None;
+            self.dialog = Some(Dialog::Places);
+            return;
+        }
         if matches!(self.dialog, Some(Dialog::FolderSize)) {
             self.folder_sizes.stop();
         }
@@ -463,10 +478,18 @@ impl App {
             Dialog::Settings | Dialog::CaptureBinding { .. } => {
                 self.dialog = Some(Dialog::Settings)
             }
+            Dialog::Places => {
+                self.dialog = Some(Dialog::Places);
+                self.place_control(self.places_view.revision, PlaceControl::Open);
+            }
             Dialog::Help | Dialog::Commands(_) | Dialog::Paths(_) => {}
             Dialog::Operations => self.dialog = Some(Dialog::Operations),
             Dialog::Trash(sources) => self.start_operation(Operation::Trash { sources }),
             Dialog::Edit { kind, text, .. } => {
+                if matches!(kind, EditKind::PlaceFilter | EditKind::PlaceLabel { .. }) {
+                    self.submit_place_edit(kind, text);
+                    return;
+                }
                 if matches!(
                     kind,
                     EditKind::ArchiveCreate { .. } | EditKind::ArchiveExtract { .. }
@@ -503,6 +526,7 @@ impl App {
                     EditKind::ArchiveCreate { .. } | EditKind::ArchiveExtract { .. } => {
                         unreachable!()
                     }
+                    EditKind::PlaceFilter | EditKind::PlaceLabel { .. } => unreachable!(),
                     EditKind::RecursiveSearch => unreachable!(),
                     EditKind::BatchRename => unreachable!(),
                     EditKind::Setting(_) => unreachable!(),
