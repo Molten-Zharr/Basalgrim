@@ -107,6 +107,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Dialog::DeleteTrash { empty: true, .. } => "Очистить всю корзину?",
         Dialog::DeleteTrash { .. } => "Удалить безвозвратно?",
         Dialog::Help => "Управление · basalgrim",
+        Dialog::CloseTerminal => "Завершить терминал?",
         Dialog::CleanupHistory(_) => "Очистить данные undo/redo?",
         Dialog::Settings
         | Dialog::CaptureBinding { .. }
@@ -128,6 +129,13 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         | Dialog::Conflict(_)
         | Dialog::Commands(_) => unreachable!(),
         Dialog::Paths(_) | Dialog::FolderSize => unreachable!(),
+        Dialog::CloseTerminal => {
+            lines = vec![
+                Line::raw(" Оболочка и активная команда будут"),
+                Line::raw(" завершены. Чтобы оставить их работать,"),
+                Line::raw(" отмените и нажмите «Скрыть». "),
+            ];
+        }
         Dialog::CleanupHistory(selection) => {
             lines = vec![
                 Line::raw(format!(
@@ -320,7 +328,11 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         } else if matches!(app.dialog, Some(Dialog::Help)) {
             " Enter  Закрыть "
         } else {
-            " Enter  Применить "
+            if matches!(app.dialog, Some(Dialog::CloseTerminal)) {
+                " Enter  Завершить "
+            } else {
+                " Enter  Применить "
+            }
         })
         .style(
             palette

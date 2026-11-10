@@ -2,6 +2,7 @@ mod actions;
 mod batch;
 mod folder_size;
 mod search;
+mod terminal;
 pub use batch::BatchRenameView;
 pub use search::SearchView;
 mod clipboard;
@@ -46,6 +47,10 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    Terminal {
+        id: u64,
+        control: crate::terminal::Control,
+    },
     FolderMeasure {
         owner: PathOwner,
         request: u64,
@@ -156,6 +161,7 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    CloseTerminal,
     FolderSize,
     HistoryStorage,
     CleanupHistory(crate::journal::storage::Selection),
@@ -215,6 +221,7 @@ pub struct App {
     pub dialog: Option<Dialog>,
     pub search: Option<SearchView>,
     pub folder_sizes: crate::folder_size::FolderSizes,
+    pub terminal: crate::terminal::Terminal,
     pub folder_size_offset: usize,
     pub folder_size_max: usize,
     search_focus: Option<(u64, PathBuf)>,
@@ -330,6 +337,7 @@ impl App {
             dialog: None,
             search: None,
             folder_sizes: Default::default(),
+            terminal: Default::default(),
             folder_size_offset: 0,
             folder_size_max: 0,
             search_focus: None,
@@ -428,7 +436,10 @@ impl App {
             .and_then(|(area, target)| {
                 (!matches!(
                     target,
-                    Target::MenuBackground
+                    Target::Terminal {
+                        control: crate::terminal::Control::Focus,
+                        ..
+                    } | Target::MenuBackground
                         | Target::DismissMenu
                         | Target::EntryBackground
                         | Target::TextMenuBackground
@@ -447,7 +458,8 @@ impl App {
         // A completed snapshot held behind a dialog is idle, not pending I/O.
         self.panes.iter().flat_map(|p| &p.tabs).any(|t| {
             t.loading && !(t.refreshing && self.directory_results.contains_key(&t.request))
-        }) || self.thumbnails.loading()
+        }) || (self.terminal.visible && self.terminal.snapshot.running)
+            || self.thumbnails.loading()
             || self.preview_loading
             || self.busy
             || self.clipboard_reads_pending()
@@ -504,6 +516,9 @@ impl App {
         self.update_preview();
     }
     pub fn tick(&mut self) {
+        if self.terminal.poll() && matches!(self.dialog, Some(Dialog::CloseTerminal)) {
+            self.dialog = None;
+        }
         self.tick_file_drag();
         self.tick_trash();
         if matches!(&self.dialog,Some(Dialog::Paths(menu)) if !menu.owner.valid(self)) {

@@ -9,6 +9,7 @@ mod path;
 mod selection;
 mod settings;
 mod storage;
+mod terminal;
 mod text_edit;
 pub mod theme;
 mod trash;
@@ -59,6 +60,7 @@ pub fn hit(app: &mut App, rect: Rect, target: Target) {
 pub fn render(app: &mut App, frame: &mut Frame) {
     app.validate_editor();
     app.rename_area = None;
+    app.terminal.area = Rect::default();
     app.icon_slots.clear();
     app.preview_slot = None;
     let palette = Palette::new(&app.settings);
@@ -167,6 +169,11 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
         dialogs::render(app, frame, palette);
         return;
     }
+    if app.terminal.visible && (app.terminal.expanded || area.height < 30) {
+        terminal::render(app, frame, area, palette);
+        dialogs::render(app, frame, palette);
+        return;
+    }
     let compact = area.height < 20;
     let commands = toolbar_commands(app, area.width);
     let toolbar_height = toolbar_rows(area.width, &commands) + 2;
@@ -215,12 +222,20 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
         zones[0],
     );
     toolbar(app, frame, zones[1], &commands, palette);
-    let sidebar = zones[2].width >= 95 && !compact;
+    let file_area = if app.terminal.visible {
+        let split = Layout::vertical([Constraint::Percentage(55), Constraint::Percentage(45)])
+            .split(zones[2]);
+        terminal::render(app, frame, split[1], palette);
+        split[0]
+    } else {
+        zones[2]
+    };
+    let sidebar = file_area.width >= 95 && !compact;
     let body = Layout::horizontal([
         Constraint::Length(if sidebar { 24 } else { 0 }),
         Constraint::Min(30),
     ])
-    .split(zones[2]);
+    .split(file_area);
     if sidebar {
         places(app, frame, body[0], palette);
     }
@@ -426,6 +441,7 @@ fn footer_commands(app: &App, compact: bool) -> Vec<(&'static str, Action)> {
         vec![
             ("Переименовать", Rename),
             ("Превью", Preview),
+            ("Терминал", Terminal),
             ("Обновить", Refresh),
             ("Операции", Operations),
             ("Папка", NewFolder),

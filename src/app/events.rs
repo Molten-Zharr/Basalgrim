@@ -4,6 +4,9 @@ use ratatui::layout::Position;
 
 impl App {
     pub fn handle(&mut self, input: Input) {
+        if self.terminal_input(&input) {
+            return;
+        }
         if matches!(
             input,
             Input::Key(KeyPress {
@@ -104,7 +107,7 @@ impl App {
                 self.pointer = position;
                 return;
             }
-            Input::Text(text) => self.insert_text(&text),
+            Input::Text(text) | Input::Paste(text) => self.insert_text(&text),
             Input::Key(key) => self.key(key),
             Input::SecondaryClick { .. }
                 if matches!(

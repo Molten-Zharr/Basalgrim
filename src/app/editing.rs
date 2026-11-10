@@ -43,14 +43,24 @@ impl App {
         });
     }
     pub fn text_paste_pending(&self) -> bool {
-        self.text_active()
+        (self.terminal_focused()
             && self
-                .text_paste
-                .is_some_and(|(_, revision)| revision == self.editor.revision)
+                .terminal
+                .paste
+                .is_some_and(|(_, revision)| revision == self.terminal.revision))
+            || self.text_active()
+                && self
+                    .text_paste
+                    .is_some_and(|(_, revision)| revision == self.editor.revision)
     }
     pub fn take_text_paste_fallback(&mut self) -> Option<u64> {
         self.text_paste_fallback.take().filter(|id| {
-            self.text_paste_pending() && self.text_paste.is_some_and(|(current, _)| current == *id)
+            (self.text_paste_pending()
+                && self.text_paste.is_some_and(|(current, _)| current == *id))
+                || (self.terminal_focused()
+                    && self.terminal.paste.is_some_and(|(current, revision)| {
+                        current == *id && revision == self.terminal.revision
+                    }))
         })
     }
     pub(super) fn request_text_paste(&mut self) {
@@ -63,6 +73,14 @@ impl App {
         }
     }
     pub fn finish_text_paste(&mut self, id: u64, result: Result<String, String>) {
+        if self
+            .terminal
+            .paste
+            .is_some_and(|(current, _)| current == id)
+        {
+            self.finish_terminal_paste(id, result);
+            return;
+        }
         let Some((current, revision)) = self.text_paste else {
             return;
         };
@@ -80,6 +98,14 @@ impl App {
         }
     }
     pub fn gui_pasted_text(&mut self, text: String) {
+        if self.terminal_focused() {
+            if let Some((id, _)) = self.terminal.paste {
+                self.finish_terminal_paste(id, Ok(text));
+            } else {
+                self.terminal.paste_text(&text);
+            }
+            return;
+        }
         if let Some((id, _)) = self.text_paste {
             self.finish_text_paste(id, Ok(text));
         } else if self.text_active() {

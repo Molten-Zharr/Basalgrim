@@ -135,6 +135,21 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--terminal-only' in sys.argv[2:]:
+                import terminal_fixture
+                source=terminal_fixture.prepare(base);env['SHELL']='/bin/bash'
+                settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'light','icon_mode':'symbols'}))
+                process=launch(source)
+                def shell_paste(value):
+                    subprocess.run([commands['wl-copy'],'--type','text/plain;charset=utf-8'],input=value.encode(),env=env,check=True)
+                    time.sleep(.15);key('v','ctrl','shift');time.sleep(.15)
+                def shell_shot(name):
+                    path=out/('native-wayland-terminal-'+name+'.png')
+                    run('grim','-g','0,0 1360x860',str(path))
+                    with Image.open(path) as image:return image.copy()
+                terminal_fixture.exercise(source,key,lambda value:run('wtype','-s','100',value,'-s','100'),shell_paste,click,shell_shot,wait_for)
+                key('q','ctrl');process.wait(timeout=5);assert process.returncode==0;process=None
+                return
             if '--folder-size-only' in sys.argv[2:]:
                 import folder_size_fixture
                 source=folder_size_fixture.prepare(base)

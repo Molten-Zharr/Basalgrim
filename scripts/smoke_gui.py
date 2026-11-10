@@ -212,6 +212,21 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--terminal-only' in sys.argv[2:]:
+            import terminal_fixture
+            source=terminal_fixture.prepare(base)
+            os.environ['SHELL']='/bin/bash'
+            settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'light','icon_mode':'symbols'}))
+            process,window,log=launch(source,config)
+            def shell_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L'}[m] for m in mods])
+            def shell_paste(value):
+                subprocess.run([xclip,'-selection','clipboard','-in'],input=value.encode(),check=True)
+                time.sleep(.15);shell_key('v','ctrl','shift');time.sleep(.15)
+            try:
+                terminal_fixture.exercise(source,shell_key,type_text,shell_paste,lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-terminal-'+name+'.png'),wait_for)
+                quit_when_ready(process)
+            finally:stop(process,log)
+            sys.exit(0)
         if '--folder-size-only' in sys.argv[2:]:
             import folder_size_fixture
             source=folder_size_fixture.prepare(base)

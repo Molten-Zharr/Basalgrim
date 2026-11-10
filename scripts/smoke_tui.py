@@ -149,10 +149,10 @@ def main():
             send(b"\t\x1b[B\t\x1b[B\r")  # Menu, shortcuts, Help, capture
             send(b"\x11")  # Current quit key must be captured, not dispatched
             assert child.poll() is None
-            send(b"\x1bOS")  # F4 replaces F1
-            wait_for(lambda: json.loads(settings_path.read_text())["bindings"][0]["key"]["key"] == {"F": 4}, "shortcut capture")
+            send(b"\x1b[23~")  # F11 replaces F1
+            wait_for(lambda: json.loads(settings_path.read_text())["bindings"][0]["key"]["key"] == {"F": 11}, "shortcut capture")
             send(b"\x1b")  # Settings -> files
-            send(b"\x1bOS")  # New help shortcut
+            send(b"\x1b[23~")  # New help shortcut
             send(b"\x1b")  # Help -> files
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 18, 50, 0, 0))
             child.send_signal(signal.SIGWINCH)
@@ -163,7 +163,7 @@ def main():
             child = subprocess.Popen([str(binary), str(folder)], stdin=slave, stdout=slave, stderr=slave, env=env)
             output.clear()
             wait_for(lambda: b"BASALGRIM" in output, "first frame after restart")
-            send(b"\x1bOS")  # Persisted F4 opens help after restart
+            send(b"\x1b[23~")  # Persisted F11 opens help after restart
             assert "Управление".encode() in output
             send(b"\x1b")
             quit_when_ready(child, send)

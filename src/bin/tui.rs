@@ -142,7 +142,7 @@ fn run() -> Result<()> {
             Event::Key(key) if key.kind != KeyEventKind::Release => {
                 let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
                 let alt = key.modifiers.contains(KeyModifiers::ALT);
-                if app.text_active()
+                if app.text_input_active()
                     && !ctrl
                     && !alt
                     && let KeyCode::Char(c) = key.code
@@ -160,7 +160,7 @@ fn run() -> Result<()> {
                     }));
                 }
             }
-            Event::Paste(text) => app.handle(Input::Text(text)),
+            Event::Paste(text) => app.handle(Input::Paste(text)),
             Event::Mouse(mouse) => {
                 let (x, y) = (mouse.column, mouse.row);
                 app.handle(Input::SelectionModifier(

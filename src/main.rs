@@ -215,7 +215,7 @@ fn run() -> Result<()> {
                     ctx.request_repaint();
                 }
                 let mut suppress_text = false;
-                let mut paste_into_text = app.text_active();
+                let mut paste_into_text = app.text_input_active();
                 for event in events {
                     match event {
                         egui::Event::Key {
@@ -225,7 +225,7 @@ fn run() -> Result<()> {
                             modifiers,
                             ..
                         } => {
-                            paste_into_text = app.text_active();
+                            paste_into_text = app.text_input_active();
                             if let Some(key) = event_key(key, physical_key, modifiers.shift) {
                                 app.handle(Input::Key(KeyPress {
                                     key,
@@ -235,14 +235,16 @@ fn run() -> Result<()> {
                                 }));
                                 // A plain shortcut such as / opens an editor;
                                 // its accompanying Text must not type / into it.
-                                suppress_text = !paste_into_text && app.text_active();
+                                suppress_text = !paste_into_text && app.text_input_active();
                             }
                         }
-                        egui::Event::Text(text) if app.text_active() && !suppress_text => {
+                        egui::Event::Text(text) if app.text_input_active() && !suppress_text => {
                             app.handle(Input::Text(text))
                         }
                         egui::Event::Paste(text)
-                            if app.text_active() && paste_into_text && !app.native_text_paste() =>
+                            if app.text_input_active()
+                                && paste_into_text
+                                && !app.native_text_paste() =>
                         {
                             app.gui_pasted_text(text)
                         }

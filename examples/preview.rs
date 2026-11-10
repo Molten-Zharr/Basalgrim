@@ -641,7 +641,7 @@ fn main() -> Result<()> {
     render(&mut image_app, &out, "trash-confirm", 100, 28)?;
     image_app.cancel_dialog();
 
-    // Show the current shared interface: batch rename, breadcrumbs and trash.
+    // Feature illustrations for usage documentation.
     let folder = demo.path().join("Pictures/Отпуск");
     fs::create_dir(&folder)?;
     for name in ["IMG_1234.png", "IMG_5678.jpg", "IMG_7890.png"] {
@@ -662,7 +662,6 @@ fn main() -> Result<()> {
     overview.action(Action::Rename);
     overview.handle(Input::Text("Фото".into()));
     settle(&mut overview)?;
-    render(&mut overview, &out, "basalgrim-overview", 150, 38)?;
     overview.settings.appearance.theme = Theme::Light;
     render(&mut overview, &out, "batch-rename", 150, 38)?;
     render(&mut overview, &out, "batch-rename-compact", 34, 14)?;
@@ -699,7 +698,6 @@ fn main() -> Result<()> {
     finder.begin_recursive_search();
     finder.handle(Input::Text("notes".into()));
     settle(&mut finder)?;
-    render(&mut finder, &out, "basalgrim-overview", 150, 38)?;
     finder.settings.appearance.theme = Theme::Light;
     render(&mut finder, &out, "recursive-search", 150, 38)?;
     render(&mut finder, &out, "recursive-search-compact", 34, 14)?;
@@ -763,11 +761,6 @@ fn main() -> Result<()> {
             .all(|s| s.content.is_some()),
         "Media screenshot still has fallback icons"
     );
-    // README always uses the project's classic palette, independent of the
-    // user's selected theme and feature-specific documentation illustrations.
-    media.settings.appearance.theme = Theme::MoltenZharr;
-    render(&mut media, &out, "basalgrim-overview", 150, 38)?;
-    media.settings.appearance.theme = Theme::Light;
     render(&mut media, &out, "media-grid", 150, 38)?;
     media.settings.grid = false;
     render(&mut media, &out, "media-list", 150, 38)?;

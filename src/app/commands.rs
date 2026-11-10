@@ -93,6 +93,7 @@ impl App {
                 Grid,
                 Dual,
                 Preview,
+                Terminal,
                 FolderSize,
                 Hidden,
                 Sort,

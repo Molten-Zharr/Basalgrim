@@ -299,14 +299,14 @@ fn modifier_matching_is_exact_and_reassigned_keys_update_help_and_command_bar() 
     }));
     assert_eq!(app.settings.grid, grid);
     capture(&mut app, Action::Rename);
-    key(&mut app, Key::F(4));
+    key(&mut app, Key::F(11));
     key(&mut app, Key::Escape);
     let buffer = render(&mut app, 150, 40);
-    assert!(text(&buffer).contains("F4 Переименовать"));
+    assert!(text(&buffer).contains("F11 Переименовать"));
     app.action(Action::Help);
     let buffer = render(&mut app, 150, 60);
     let text = text(&buffer);
-    assert!(text.contains("F4"));
+    assert!(text.contains("F11"));
     assert!(text.contains("Переименовать"));
     assert!(!text.contains("F2"));
 }
@@ -426,7 +426,7 @@ fn themes_are_isolated_per_app_and_layouts_handle_all_geometry_modes() {
 fn reset_all_bindings_restores_aliases_and_palette_changes_survive_reload() {
     let (root, mut app) = app();
     capture(&mut app, Action::Help);
-    key(&mut app, Key::F(4));
+    key(&mut app, Key::F(11));
     app.settings_section(SettingsSection::Shortcuts);
     app.setting(0, true, 1);
     assert_eq!(app.settings.bindings, input::default_bindings());

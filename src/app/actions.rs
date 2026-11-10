@@ -76,6 +76,7 @@ impl App {
             self.tab_mut().selected = index;
         }
         match action {
+            Action::Terminal => self.toggle_terminal(),
             Action::FolderSize => {
                 if let Some(path) = self.folder_size_target(false) {
                     self.open_folder_size(path);
@@ -430,6 +431,7 @@ impl App {
             return;
         };
         match dialog {
+            Dialog::CloseTerminal => self.terminal.close(),
             Dialog::FolderSize => self.dialog = Some(Dialog::FolderSize),
             Dialog::HistoryStorage => self.dialog = Some(Dialog::HistoryStorage),
             Dialog::CleanupHistory(selection) => {

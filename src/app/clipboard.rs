@@ -151,6 +151,12 @@ impl App {
                             Err("Системный текстовый буфер недоступен".into()),
                         );
                     }
+                    if let Some((id, _)) = self.terminal.paste {
+                        self.finish_terminal_paste(
+                            id,
+                            Err("Системный текстовый буфер недоступен".into()),
+                        );
+                    }
                     self.cancel_clipboard_read();
                     let text_ids = self
                         .file_exchange

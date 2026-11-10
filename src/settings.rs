@@ -85,6 +85,7 @@ impl Settings {
             Action::Operations,
             Action::HistoryStorage,
             Action::FolderSize,
+            Action::Terminal,
             Action::CancelOperation,
             Action::Commands,
             Action::CopyToOtherPane,
