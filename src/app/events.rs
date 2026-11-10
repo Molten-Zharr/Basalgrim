@@ -416,6 +416,15 @@ impl App {
                         self.action(a);
                     }
                     Some(Target::Place(path)) => self.navigate(path, true),
+                    Some(Target::CloseTab { owner, request })
+                        if owner.valid(self)
+                            && (self.settings.dual || owner.pane == self.active)
+                            && self.panes[owner.pane].tabs.len() > 1
+                            && self.panes[owner.pane].tab().request == request =>
+                    {
+                        self.active = owner.pane;
+                        self.action(Action::CloseTab);
+                    }
                     Some(Target::Tab { pane, index })
                         if self.panes.get(pane).is_some_and(|p| index < p.tabs.len())
                             && (self.settings.dual || pane == self.active) =>

@@ -276,18 +276,24 @@ fn tabs(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Palet
             format!(" {}:{} ", i + 1, name)
         })
         .collect::<Vec<_>>();
+    let active = app.panes[pane].active;
+    let closable = labels.len() > 1;
+    let tab_width = |index: usize| {
+        labels[index].width().min(22) as u16 + if closable && index == active { 3 } else { 0 }
+    };
     let available = row.width.saturating_sub(4);
-    let overflow =
-        labels.iter().map(|s| s.width().min(22) + 1).sum::<usize>() > usize::from(available);
+    let overflow = (0..labels.len())
+        .map(|i| usize::from(tab_width(i)) + 1)
+        .sum::<usize>()
+        > usize::from(available);
     let budget = available
         .saturating_sub(if overflow { 8 } else { 0 })
         .max(1);
-    let active = app.panes[pane].active;
     let mut start = active;
-    let mut used = (labels[active].width().min(22) as u16).min(budget) + 1;
-    while start > 0 && used + (labels[start - 1].width().min(22) as u16) < budget {
+    let mut used = tab_width(active).min(budget) + 1;
+    while start > 0 && used + tab_width(start - 1) < budget {
         start -= 1;
-        used += (labels[start].width().min(22) as u16) + 1;
+        used += tab_width(start) + 1;
     }
     let mut x = row.x;
     if overflow {
@@ -308,8 +314,13 @@ fn tabs(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Palet
     let end_x = x + budget;
     let mut end = start;
     while end < labels.len() && x < end_x {
-        let width = (labels[end].width().min(22) as u16).min(end_x - x);
-        let rect = Rect::new(x, row.y, width, 1);
+        let width = tab_width(end).min(end_x - x);
+        let close_width = if closable && active == end {
+            3.min(width.saturating_sub(1))
+        } else {
+            0
+        };
+        let rect = Rect::new(x, row.y, width - close_width, 1);
         frame.render_widget(
             Paragraph::new(labels[end].clone()).style(if active == end {
                 palette.selection()
@@ -326,6 +337,21 @@ fn tabs(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Palet
             Some(app.panes[pane].tabs[end].cwd.clone()),
             true,
         );
+        if close_width > 0 {
+            let close = Rect::new(rect.right(), row.y, close_width, 1);
+            frame.render_widget(
+                Paragraph::new(if close_width == 3 { " × " } else { "×" }).style(palette.accent()),
+                close,
+            );
+            hit(
+                app,
+                close,
+                Target::CloseTab {
+                    owner: crate::app::PathOwner::current(app, pane),
+                    request: app.panes[pane].tab().request,
+                },
+            );
+        }
         x += width + 1;
         end += 1;
     }

@@ -247,3 +247,108 @@ fn stale_tab_controls_are_ignored_after_closing_a_tab_or_the_other_pane() {
     assert!(!app.settings.dual);
     assert_eq!(app.panes[1].tabs.len(), 1);
 }
+
+#[test]
+fn active_tab_cross_closes_its_pane_with_overflow_and_keeps_the_last_tab() {
+    for grid in [false, true] {
+        for (w, h) in [(170, 53), (80, 24), (34, 14)] {
+            let temp = tempfile::tempdir().unwrap();
+            let mut app = setup(
+                &temp.path().join("Очень длинное имя папки со вкладками"),
+                grid,
+            );
+            for _ in 0..12 {
+                app.action(Action::NewTab);
+                settle(&mut app);
+            }
+            for remaining in (2..=13).rev() {
+                let buffer = render(&mut app, w, h);
+                let close = hit(
+                    &app,
+                    |t| matches!(t, Target::CloseTab { owner, .. } if owner.pane == 0),
+                );
+                let label = hit(
+                    &app,
+                    |t| matches!(t, Target::Tab { pane: 0, index } if *index == app.panes[0].active),
+                );
+                let plus = hit(&app, |t| matches!(t, Target::NewTab { pane: 0 }));
+                assert_eq!(close.x, label.right());
+                assert!(!close.intersects(plus));
+                assert_eq!(buffer[(close.x + 1, close.y)].symbol(), "×");
+                click(&mut app, close);
+                settle(&mut app);
+                assert_eq!(app.panes[0].tabs.len(), remaining - 1);
+                assert_eq!(app.panes[0].active, remaining - 2);
+            }
+            render(&mut app, w, h);
+            assert!(
+                !app.hits
+                    .iter()
+                    .any(|(_, t)| matches!(t, Target::CloseTab { .. }))
+            );
+            app.action(Action::CloseTab);
+            assert_eq!(app.panes[0].tabs.len(), 1);
+        }
+    }
+}
+
+#[test]
+fn cross_in_the_unfocused_pane_closes_only_that_panes_current_tab() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut app = setup(temp.path(), false);
+    app.action(Action::NewTab);
+    app.action(Action::Dual);
+    app.active = 1;
+    app.action(Action::NewTab);
+    settle(&mut app);
+    app.active = 0;
+    let original = app.panes[0].tab().request;
+    render(&mut app, 170, 53);
+    let cross = hit(
+        &app,
+        |t| matches!(t, Target::CloseTab { owner, .. } if owner.pane == 1),
+    );
+    app.handle(Input::Pointer(Some((cross.x + 1, cross.y).into())));
+    assert_eq!(app.hovered_area(), Some(cross));
+    assert_eq!(app.active, 0);
+    click(&mut app, cross);
+    assert_eq!(app.active, 1);
+    assert_eq!(app.panes[1].tabs.len(), 1);
+    assert_eq!(app.panes[0].tabs.len(), 2);
+    assert_eq!(app.panes[0].tab().request, original);
+}
+
+#[test]
+fn obsolete_close_buttons_cannot_close_replacement_tabs_or_click_through_a_modal() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut app = setup(temp.path(), false);
+    for _ in 0..2 {
+        app.action(Action::NewTab);
+        settle(&mut app);
+    }
+    app.panes[0].active = 1;
+    render(&mut app, 170, 53);
+    let cross = hit(&app, |t| matches!(t, Target::CloseTab { .. }));
+    app.action(Action::CloseTab);
+    click(&mut app, cross); // Same index and directory, but a different tab/request.
+    assert_eq!(app.panes[0].tabs.len(), 2);
+    render(&mut app, 170, 53);
+    let cross = hit(&app, |t| matches!(t, Target::CloseTab { .. }));
+    app.action(Action::Help);
+    render(&mut app, 170, 53);
+    click(&mut app, cross);
+    assert_eq!(app.panes[0].tabs.len(), 2);
+    app.cancel_dialog();
+    app.action(Action::Dual);
+    app.active = 1;
+    app.action(Action::NewTab);
+    settle(&mut app);
+    render(&mut app, 170, 53);
+    let cross = hit(
+        &app,
+        |t| matches!(t, Target::CloseTab { owner, .. } if owner.pane == 1),
+    );
+    app.action(Action::Dual);
+    click(&mut app, cross);
+    assert_eq!(app.panes[1].tabs.len(), 2);
+}

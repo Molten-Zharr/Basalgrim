@@ -121,6 +121,10 @@ pub enum Target {
     NewTab {
         pane: usize,
     },
+    CloseTab {
+        owner: PathOwner,
+        request: u64,
+    },
     Confirm,
     Cancel,
     SettingsSection(SettingsSection),

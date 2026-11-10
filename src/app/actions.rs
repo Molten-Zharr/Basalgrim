@@ -292,6 +292,7 @@ impl App {
                 }
                 let pane = &mut self.panes[self.active];
                 if pane.tabs.len() > 1 {
+                    pane.tab().scan_cancel.cancel();
                     pane.tabs.remove(pane.active);
                     pane.active = pane.active.min(pane.tabs.len() - 1);
                 }

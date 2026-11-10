@@ -457,9 +457,15 @@ try:
                 click(window,167,5);wait_for(lambda:json.loads(settings.read_text()).get('dual') is False,'second pane close button')
                 click(window,155,5);wait_for(lambda:json.loads(settings.read_text()).get('dual') is True,'header restores second pane')
                 assert len(snapshot()['panes'][1]['tabs'])==2
-                screenshot(window,'native-pane-tabs.png');quit_when_ready(process)
+                screenshot(window,'native-pane-tabs.png')
+                screenshot(window,'native-tab-close.png')
+                click(window,47,6);wait_for(lambda:len(snapshot()['panes'][0]['tabs'])==1,'unfocused left tab close cross')
+                assert len(snapshot()['panes'][1]['tabs'])==2
+                click(window,119,6);wait_for(lambda:len(snapshot()['panes'][1]['tabs'])==1,'right tab close cross')
+                assert snapshot()['panes'][0]['tabs']==[str(inside)] and snapshot()['panes'][1]['tabs']==[str(inside)]
+                quit_when_ready(process)
             finally:stop(process,log)
-            print('Native X11 chrome: breadcrumb move/copy, scoped plus buttons, second-pane header and retained tabs passed',flush=True)
+            print('Native X11 chrome: breadcrumb move/copy, scoped plus buttons, second-pane header, retained tabs and pane-scoped tab close crosses passed',flush=True)
             sys.exit(0)
         # Real file gestures share the transfer worker, and never export an OS clipboard.
         drag_root=base/'drag-native';drag_root.mkdir();(drag_root/'folder').mkdir()

@@ -370,8 +370,13 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                 click(167,5);wait_for(lambda:json.loads(settings.read_text()).get('dual') is False,'Wayland second-pane close')
                 click(155,5);wait_for(lambda:json.loads(settings.read_text()).get('dual') is True,'Wayland second-pane restore');assert len(snapshot()['panes'][1]['tabs'])==2
                 run('grim','-g','0,0 1360x860',str(out/'native-wayland-pane-tabs.png'))
+                run('grim','-g','0,0 1360x860',str(out/'native-wayland-tab-close.png'))
+                click(47,6);wait_for(lambda:len(snapshot()['panes'][0]['tabs'])==1,'Wayland unfocused left tab close cross')
+                assert len(snapshot()['panes'][1]['tabs'])==2
+                click(119,6);wait_for(lambda:len(snapshot()['panes'][1]['tabs'])==1,'Wayland right tab close cross')
+                assert snapshot()['panes'][0]['tabs']==[str(inside)] and snapshot()['panes'][1]['tabs']==[str(inside)]
                 key('q','ctrl');process.wait(timeout=5);process=None
-                print('Native Wayland chrome: breadcrumbs, pane-scoped plus, second-pane toggle and retained tabs passed',flush=True)
+                print('Native Wayland chrome: breadcrumbs, pane-scoped plus, second-pane toggle, retained tabs and pane-scoped tab close crosses passed',flush=True)
                 return
             drag_root=base/'drag-native';drag_root.mkdir();(drag_root/'folder').mkdir()
             for name in ('a.txt','b.txt','c.txt'):(drag_root/name).write_text(name)
