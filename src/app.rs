@@ -1,4 +1,5 @@
 mod actions;
+mod archive;
 mod batch;
 mod folder_size;
 mod search;
@@ -47,6 +48,7 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    ArchiveFormat(crate::archive::Format),
     Terminal {
         id: u64,
         control: crate::terminal::Control,
@@ -135,8 +137,20 @@ pub enum Target {
 
 #[derive(Clone)]
 pub enum EditKind {
-    TrashSearch { original: String },
-    Search { original: String },
+    ArchiveCreate {
+        sources: Vec<PathBuf>,
+        destination: PathBuf,
+    },
+    ArchiveExtract {
+        request: crate::archive::Extraction,
+        destination: PathBuf,
+    },
+    TrashSearch {
+        original: String,
+    },
+    Search {
+        original: String,
+    },
     Path(PathBuf),
     Folder,
     File,
@@ -148,6 +162,8 @@ pub enum EditKind {
 impl EditKind {
     pub fn title(&self) -> &'static str {
         match self {
+            Self::ArchiveCreate { .. } => "Создать архив",
+            Self::ArchiveExtract { .. } => "Распаковать в папку",
             Self::TrashSearch { .. } => "Поиск в корзине",
             Self::Search { .. } => "Поиск в текущей папке",
             Self::Path(_) => "Перейти к папке",
@@ -485,8 +501,12 @@ impl App {
         tab.loading = true;
         tab.refreshing = false;
         tab.error = None;
-        self.worker
-            .scan(token, tab.cwd.clone(), tab.scan_cancel.clone());
+        self.worker.scan_archive(
+            token,
+            tab.cwd.clone(),
+            tab.archive.clone(),
+            tab.scan_cancel.clone(),
+        );
     }
     pub fn refresh(&mut self) {
         self.reload(self.active, self.panes[self.active].active);
@@ -501,6 +521,13 @@ impl App {
         if history && tab.cwd != path {
             tab.back.push(tab.cwd.clone());
             tab.forward.clear();
+        }
+        if tab
+            .archive
+            .as_ref()
+            .is_some_and(|a| !path.starts_with(&a.source))
+        {
+            tab.archive = None;
         }
         tab.cwd = path;
         tab.entries.clear();
@@ -598,10 +625,11 @@ impl App {
         self.preview_token = self.token();
         self.preview_loading = path.is_some();
         if let Some(path) = path {
-            self.worker.preview_image(
+            self.worker.preview_archive(
                 self.preview_token,
                 path,
                 graphics,
+                self.tab().archive.clone(),
                 self.preview_cancel.clone(),
             );
         }
@@ -612,8 +640,15 @@ impl App {
             return;
         }
         if let Some(entry) = self.tab().entry() {
-            if entry.directory {
+            if entry.directory
+                || (self.tab().archive.is_none()
+                    && !entry.symlink
+                    && crate::archive::Format::of(&entry.path).is_some())
+            {
                 self.navigate(entry.path.clone(), true);
+            } else if let Some(archive) = &self.tab().archive {
+                self.worker
+                    .open_archive(entry.path.clone(), archive.clone());
             } else {
                 self.worker.open(entry.path.clone());
             }

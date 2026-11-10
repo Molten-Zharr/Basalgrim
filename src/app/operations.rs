@@ -88,7 +88,8 @@ impl App {
             return None;
         }
         let tab = self.panes[1 - self.active].tab();
-        (tab.error.is_none() && (!tab.loading || tab.refreshing)).then_some(tab.cwd.as_path())
+        (tab.archive.is_none() && tab.error.is_none() && (!tab.loading || tab.refreshing))
+            .then_some(tab.cwd.as_path())
     }
 
     pub fn current_operation(&self) -> Option<&OperationRecord> {

@@ -33,6 +33,17 @@ impl App {
         let count = self.tab().selection_count();
         let selection = count > 0;
         let actions: &[Action] = match context {
+            MenuContext::Entries if self.in_archive() => &[Open, ArchiveExtract],
+            MenuContext::Directory if self.in_archive() => &[
+                ArchiveExtract,
+                Sort,
+                Grid,
+                Hidden,
+                Refresh,
+                Search,
+                SelectAll,
+                CopyPath,
+            ],
             MenuContext::Trash => &[RestoreTrash, RestoreTrashHere, DeleteTrash],
             MenuContext::TrashBackground => &[EmptyTrash, Sort, Grid, Refresh],
             MenuContext::All if self.in_trash() => &[
@@ -57,6 +68,8 @@ impl App {
                 MoveToOtherPane,
                 FolderSize,
                 Trash,
+                ArchiveCreate,
+                ArchiveExtract,
             ],
             MenuContext::Directory => &[
                 NewFile, NewFolder, Paste, FolderSize, Sort, Grid, Hidden, Refresh, Search,
@@ -64,6 +77,8 @@ impl App {
             ],
             MenuContext::All => &[
                 Open,
+                ArchiveCreate,
+                ArchiveExtract,
                 Mark,
                 SelectAll,
                 Copy,
@@ -113,6 +128,20 @@ impl App {
             .copied()
             .map(|action| {
                 let enabled = match action {
+                    ArchiveCreate => {
+                        selection
+                            && !self.busy
+                            && !self.in_archive()
+                            && !self.in_trash()
+                            && !self.tab().loading
+                    }
+                    ArchiveExtract => {
+                        self.can_extract()
+                            || (context == MenuContext::Directory
+                                && self.in_archive()
+                                && !self.busy
+                                && !self.tab().loading)
+                    }
                     FolderSize => {
                         self.folder_size_target(context == MenuContext::Directory)
                             .is_some()
@@ -164,7 +193,8 @@ impl App {
                     Parent => self.tab().cwd.parent().is_some(),
                     Quit => !self.busy,
                     _ => true,
-                } && (!self.busy || !matches!(action, Rename | Trash));
+                } && (!self.busy || !matches!(action, Rename | Trash))
+                    && !(self.in_archive() && Self::archive_writable_action(action));
                 CommandItem { action, enabled }
             })
             .filter(|item| (context == MenuContext::All && !self.in_trash()) || item.enabled)
@@ -209,8 +239,13 @@ impl App {
             && item.enabled
         {
             let action = item.action;
+            let archive_background = matches!(&self.dialog, Some(Dialog::Commands(menu)) if menu.context == MenuContext::Directory);
             let folder = (action == Action::FolderSize).then(|| self.folder_size_target(matches!(&self.dialog, Some(Dialog::Commands(menu)) if menu.context == MenuContext::Directory))).flatten();
             self.dialog = None;
+            if action == Action::ArchiveExtract {
+                self.begin_extract(archive_background);
+                return;
+            }
             if let Some(path) = folder {
                 self.open_folder_size(path);
                 return;

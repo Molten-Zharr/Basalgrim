@@ -26,4 +26,5 @@ pub mod raster;
 
 pub mod search;
 
+pub mod archive;
 pub mod thumbnails;

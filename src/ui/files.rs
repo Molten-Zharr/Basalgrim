@@ -121,12 +121,18 @@ pub fn render(
     } else {
         format!("  / {}", tab.filter)
     };
+    let archive_label = if tab.archive.is_some() {
+        " · Архив: только чтение"
+    } else {
+        ""
+    };
     frame.render_widget(
         Paragraph::new(format!(
-            " {}  ·  {} элементов{}",
+            " {}  ·  {} элементов{}{}",
             tab.sort.label(),
             tab.visible.len(),
-            filter
+            filter,
+            archive_label
         ))
         .style(palette.text().fg(palette.color("separator"))),
         parts[2],
@@ -155,6 +161,7 @@ pub fn render(
         );
         return;
     }
+    let icon_start = app.icon_slots.len();
     if app.settings.grid {
         app.set_file_area(pane, parts[3]);
         grid(app, frame, parts[3], pane, palette);
@@ -169,6 +176,11 @@ pub fn render(
             ),
         );
         list(app, frame, parts[3], pane, palette);
+    }
+    if app.file_tab(pane).archive.is_some() {
+        for slot in &mut app.icon_slots[icon_start..] {
+            slot.source = None;
+        }
     }
     let owner = app.panes[pane].active;
     app.drop_region(

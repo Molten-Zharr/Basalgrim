@@ -149,12 +149,18 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
                 Line::raw(" Журнал операций сохранится."),
             ];
         }
-        Dialog::Edit { error, .. } => {
+        Dialog::Edit { error, kind, .. } => {
             lines.push(Line::raw(""));
             lines.push(Line::raw(""));
             lines.push(Line::styled(
-                error.clone().unwrap_or_else(|| {
-                    " Shift+стрелки — выделить · ПКМ — буфер · Ctrl+U — очистить".into()
+                error.clone().unwrap_or_else(|| match kind {
+                    crate::app::EditKind::ArchiveCreate { .. } => {
+                        " Имя архива и папка назначения".into()
+                    }
+                    crate::app::EditKind::ArchiveExtract { .. } => {
+                        " Создать папку с содержимым архива".into()
+                    }
+                    _ => " Shift+стрелки — выделить · ПКМ — буфер · Ctrl+U — очистить".into(),
                 }),
                 palette.muted(),
             ));
@@ -301,6 +307,26 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
             palette,
         );
     }
+    if matches!(
+        app.dialog,
+        Some(Dialog::Edit {
+            kind: crate::app::EditKind::ArchiveCreate { .. },
+            ..
+        })
+    ) {
+        use crate::archive::Format;
+        let mut x = inner.x + 1;
+        for (text, format) in [
+            (" ZIP ", Format::Zip),
+            (" TAR ", Format::Tar),
+            (" TAR.GZ ", Format::TarGz),
+        ] {
+            let area = Rect::new(x, inner.y + 5, text.len() as u16, 1);
+            frame.render_widget(Paragraph::new(text).style(palette.accent()), area);
+            hit(app, area, Target::ArchiveFormat(format));
+            x += area.width + 1;
+        }
+    }
     if rect.width >= 4 && rect.height > 0 {
         let close = Rect::new(rect.right() - 4, rect.y, 3, 1);
         frame.render_widget(Paragraph::new(" × ").style(palette.accent()), close);
@@ -361,7 +387,8 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
             kind: crate::app::EditKind::Search { .. },
             ..
         })
-    ) {
+    ) && !app.in_archive()
+    {
         let r = Rect::new(inner.x + 1, inner.y + 4, inner.width.saturating_sub(2), 1);
         frame.render_widget(Paragraph::new(" Подпапки · F3").style(palette.accent()), r);
         hit(app, r, Target::RecursiveSearch);

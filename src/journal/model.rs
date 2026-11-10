@@ -87,6 +87,26 @@ pub struct Spec {
 }
 pub fn specs(operation: &Operation) -> Vec<Spec> {
     match operation {
+        Operation::ArchiveCreate {
+            sources,
+            destination,
+            ..
+        } => vec![Spec {
+            kind: "copy",
+            source: sources
+                .first()
+                .cloned()
+                .unwrap_or_else(|| destination.clone()),
+            target: Some(destination.clone()),
+        }],
+        Operation::ArchiveExtract {
+            request,
+            destination,
+        } => vec![Spec {
+            kind: "copy",
+            source: request.source.clone(),
+            target: Some(destination.clone()),
+        }],
         Operation::BatchRename(plan) => plan
             .items
             .iter()

@@ -20,6 +20,7 @@ impl Pane {
 }
 
 pub struct Tab {
+    pub archive: Option<std::sync::Arc<crate::archive::Catalog>>,
     pub cwd: PathBuf,
     pub entries: Vec<Entry>,
     pub visible: Vec<usize>,
@@ -54,6 +55,7 @@ pub(crate) struct RangeSelection {
 impl Tab {
     pub fn new(cwd: PathBuf) -> Self {
         Self {
+            archive: None,
             cwd,
             entries: vec![],
             visible: vec![],

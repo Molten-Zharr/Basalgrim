@@ -15,7 +15,7 @@ impl App {
         self.finish_marquee(true);
         self.cancel_file_drag();
         if !self.terminal.exists() {
-            if self.in_trash() {
+            if self.in_trash() || self.in_archive() {
                 self.message("Откройте обычную папку для запуска терминала", true);
                 return;
             }
@@ -55,7 +55,7 @@ impl App {
                 self.terminal.invalidate_input();
             }
             Control::Paths => {
-                if !self.in_trash() {
+                if !self.in_trash() && !self.in_archive() {
                     let mut paths = self.tab().targets();
                     if paths.is_empty() {
                         paths.push(self.tab().cwd.clone());
@@ -74,7 +74,7 @@ impl App {
                 self.terminal.send(b"\x03");
             }
             Control::Restart => {
-                if !self.terminal.snapshot.running && !self.in_trash() {
+                if !self.terminal.snapshot.running && !self.in_trash() && !self.in_archive() {
                     self.terminal.start(self.tab().cwd.clone());
                 }
             }

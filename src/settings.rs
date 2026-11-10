@@ -82,6 +82,8 @@ impl Settings {
         // Older settings do not have these commands. Keep custom bindings intact,
         // including keys that were free before the commands were introduced.
         for action in [
+            Action::ArchiveCreate,
+            Action::ArchiveExtract,
             Action::Operations,
             Action::HistoryStorage,
             Action::FolderSize,

@@ -212,6 +212,17 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--archives-only' in sys.argv[2:]:
+            import archive_fixture
+            source=archive_fixture.prepare(base)
+            settings.write_text(json.dumps({'preview':True,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+            process,window,log=launch(source,config)
+            def archive_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
+            try:
+                archive_fixture.exercise(source,archive_key,type_text,lambda cx,cy,b=1:click(window,cx,cy,b),lambda name:screenshot(window,'native-x11-archive-'+name+'.png'),wait_for)
+                quit_when_ready(process)
+            finally:stop(process,log)
+            sys.exit(0)
         if '--terminal-only' in sys.argv[2:]:
             import terminal_fixture
             source=terminal_fixture.prepare(base)

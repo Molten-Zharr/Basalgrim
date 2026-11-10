@@ -13,6 +13,7 @@ mod conflicts;
 mod cross_device;
 mod delete_trash;
 pub(crate) use delete_trash::RetainedRemoval;
+mod archives;
 mod restore;
 
 #[derive(Debug, Clone)]
@@ -25,6 +26,15 @@ pub struct RetainedCopy {
 
 #[derive(Debug, Clone)]
 pub enum Operation {
+    ArchiveCreate {
+        sources: Vec<PathBuf>,
+        destination: PathBuf,
+        format: crate::archive::Format,
+    },
+    ArchiveExtract {
+        request: crate::archive::Extraction,
+        destination: PathBuf,
+    },
     CleanupHistory {
         selection: crate::journal::storage::Selection,
     },
@@ -67,6 +77,8 @@ pub enum Operation {
 impl Operation {
     pub fn title(&self) -> &'static str {
         match self {
+            Self::ArchiveCreate { .. } => "Создание архива",
+            Self::ArchiveExtract { .. } => "Распаковка архива",
             Self::CleanupHistory { .. } => "Очистка undo/redo",
             Self::Create {
                 directory: true, ..
@@ -100,6 +112,9 @@ impl Operation {
     }
     pub fn destination(&self) -> Option<PathBuf> {
         match self {
+            Self::ArchiveCreate { destination, .. } | Self::ArchiveExtract { destination, .. } => {
+                Some(destination.clone())
+            }
             Self::CleanupHistory { .. } => None,
             Self::BatchRename(plan) => Some(plan.parent.clone()),
             Self::Transfer { destination, .. } | Self::Duplicate { destination, .. } => {
@@ -694,6 +709,27 @@ fn operate_inner(
             control.emit();
         };
         match operation {
+            Operation::ArchiveCreate { .. } | Operation::ArchiveExtract { .. } => {
+                let destination = operation.destination().unwrap();
+                control.current(&destination)?;
+                control.begin_item(0)?;
+                let outcome = archives::run(&operation, &mut policy, &mut resolve, &mut control);
+                let completed = matches!(outcome, Ok(true));
+                let skipped = matches!(outcome, Ok(false));
+                if completed {
+                    let actual = control
+                        .rename_destination
+                        .take()
+                        .unwrap_or_else(|| destination.clone());
+                    complete(actual, &mut control);
+                }
+                if skipped {
+                    report.skipped.push(destination);
+                    control.progress.items_skipped = 1;
+                }
+                let outcome = conflicts::conclude(outcome, &mut control);
+                control.conclude_item(outcome, completed, skipped)?;
+            }
             Operation::BatchRename(plan) => {
                 plan.validate(cancellation)?;
                 for (index, item) in plan.items.iter().enumerate() {

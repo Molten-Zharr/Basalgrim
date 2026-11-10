@@ -19,7 +19,7 @@ impl App {
         )
     }
     pub fn begin_recursive_search(&mut self) {
-        if self.in_trash() || self.busy {
+        if self.in_trash() || self.in_archive() || self.busy {
             return;
         }
         let query = match &self.dialog {

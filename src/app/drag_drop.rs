@@ -69,6 +69,11 @@ impl App {
                 .and_then(|p| p.tabs.get(r.tab))
                 .is_some_and(|t| {
                     t.cwd == r.cwd
+                        && t.archive.as_ref().is_none_or(|a| {
+                            r.destination
+                                .as_ref()
+                                .is_some_and(|p| !p.starts_with(&a.source))
+                        })
                         && t.request == r.request
                         && t.error.is_none()
                         && (!t.loading || t.refreshing)
@@ -307,6 +312,11 @@ impl App {
             .as_ref()
             .is_some_and(|v| v.owner.pane == pane && v.owner.tab == tab)
             && t.error.is_none()
+            && t.archive.as_ref().is_none_or(|a| {
+                destination
+                    .as_ref()
+                    .is_some_and(|p| !p.starts_with(&a.source))
+            })
             && (!t.loading || t.refreshing);
         self.drop_regions.push(DropRegion {
             area,
@@ -327,7 +337,11 @@ impl App {
         double: bool,
         extend: bool,
     ) -> bool {
-        if self.busy || self.clipboard_reads_pending() || self.trash_in(pane) {
+        if self.busy
+            || self.clipboard_reads_pending()
+            || self.trash_in(pane)
+            || self.file_tab(pane).archive.is_some()
+        {
             return false;
         }
         let tab = self.file_tab(pane);

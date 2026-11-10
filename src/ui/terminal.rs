@@ -11,10 +11,10 @@ fn button(
     palette: Palette,
 ) {
     let enabled = match control {
-        Control::Paths => !app.in_trash() && app.terminal.snapshot.running,
+        Control::Paths => !app.in_trash() && !app.in_archive() && app.terminal.snapshot.running,
         Control::Paste | Control::Interrupt => app.terminal.snapshot.running,
         Control::Copy => app.terminal.selection.is_some(),
-        Control::Restart => !app.in_trash(),
+        Control::Restart => !app.in_trash() && !app.in_archive(),
         _ => true,
     };
     frame.render_widget(

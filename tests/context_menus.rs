@@ -73,6 +73,7 @@ fn right_click_offers_only_commands_for_one_entry_or_the_marked_group() {
                 Action::Rename,
                 Action::Duplicate,
                 Action::Trash,
+                Action::ArchiveCreate,
             ];
             if index == 0 {
                 expected.insert(5, Action::FolderSize);
@@ -108,7 +109,8 @@ fn right_click_offers_only_commands_for_one_entry_or_the_marked_group() {
                 Action::Cut,
                 Action::Rename,
                 Action::Duplicate,
-                Action::Trash
+                Action::Trash,
+                Action::ArchiveCreate
             ]
         );
         render(&mut app);

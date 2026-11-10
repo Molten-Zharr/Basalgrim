@@ -127,6 +127,8 @@ pub enum Input {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
+    ArchiveCreate,
+    ArchiveExtract,
     Commands,
     Operations,
     HistoryStorage,
@@ -227,9 +229,13 @@ impl Action {
         Self::RestoreTrashHere,
         Self::DeleteTrash,
         Self::EmptyTrash,
+        Self::ArchiveCreate,
+        Self::ArchiveExtract,
     ];
     pub fn name(self) -> &'static str {
         match self {
+            Self::ArchiveCreate => "Создать архив…",
+            Self::ArchiveExtract => "Распаковать…",
             Self::Commands => "Меню действий",
             Self::Operations => "Операции",
             Self::HistoryStorage => "Хранилище undo/redo",
@@ -311,6 +317,15 @@ pub fn default_bindings() -> Vec<Binding> {
         key: KeyPress::plain(key),
     })
     .collect();
+    for (action, key) in [(ArchiveCreate, 'a'), (ArchiveExtract, 'e')] {
+        result.push(Binding {
+            action,
+            key: KeyPress {
+                alt: true,
+                ..KeyPress::ctrl(key)
+            },
+        });
+    }
     result.push(Binding {
         action: FolderSize,
         key: KeyPress {

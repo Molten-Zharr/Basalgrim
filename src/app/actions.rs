@@ -56,6 +56,13 @@ impl App {
         if self.dialog.is_some() {
             return;
         }
+        if self.in_archive() && Self::archive_writable_action(action) {
+            self.message(
+                "Архив открыт для чтения. Используйте «Распаковать…».",
+                false,
+            );
+            return;
+        }
         if action == Action::Rename && self.tab().selection_count() > 1 && !self.in_trash() {
             self.begin_batch_rename();
             return;
@@ -76,6 +83,8 @@ impl App {
             self.tab_mut().selected = index;
         }
         match action {
+            Action::ArchiveCreate => self.begin_archive(),
+            Action::ArchiveExtract => self.begin_extract(false),
             Action::Terminal => self.toggle_terminal(),
             Action::FolderSize => {
                 if let Some(path) = self.folder_size_target(false) {
@@ -457,6 +466,13 @@ impl App {
             Dialog::Operations => self.dialog = Some(Dialog::Operations),
             Dialog::Trash(sources) => self.start_operation(Operation::Trash { sources }),
             Dialog::Edit { kind, text, .. } => {
+                if matches!(
+                    kind,
+                    EditKind::ArchiveCreate { .. } | EditKind::ArchiveExtract { .. }
+                ) {
+                    self.submit_archive(kind, text);
+                    return;
+                }
                 if let EditKind::Setting(edit) = kind {
                     match self.submit_setting(edit.clone(), &text) {
                         Ok(()) => self.dialog = Some(Dialog::Settings),
@@ -483,6 +499,9 @@ impl App {
                     return;
                 }
                 match kind {
+                    EditKind::ArchiveCreate { .. } | EditKind::ArchiveExtract { .. } => {
+                        unreachable!()
+                    }
                     EditKind::RecursiveSearch => unreachable!(),
                     EditKind::BatchRename => unreachable!(),
                     EditKind::Setting(_) => unreachable!(),

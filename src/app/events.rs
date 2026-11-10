@@ -352,6 +352,7 @@ impl App {
                         self.action(action)
                     }
                     Some(Target::Confirm) => self.confirm_dialog(),
+                    Some(Target::ArchiveFormat(format)) => self.archive_format(format),
                     Some(Target::Cancel) => self.cancel_dialog(),
                     Some(Target::SettingsSection(section))
                         if matches!(self.dialog, Some(Dialog::Settings)) =>

@@ -33,7 +33,13 @@ impl App {
             .panes
             .iter()
             .flat_map(|p| &p.tabs)
-            .map(|t| t.cwd.clone())
+            .map(|t| {
+                t.archive
+                    .as_ref()
+                    .and_then(|a| a.source.parent())
+                    .unwrap_or(&t.cwd)
+                    .to_path_buf()
+            })
             .collect();
         self.worker.watch(paths.clone());
         let changes = self.worker.directory_changes();
@@ -63,11 +69,14 @@ impl App {
             .pending_directory_changes
             .iter()
             .filter(|path| {
-                !self
-                    .panes
-                    .iter()
-                    .flat_map(|p| &p.tabs)
-                    .any(|t| &t.cwd == *path && t.loading)
+                !self.panes.iter().flat_map(|p| &p.tabs).any(|t| {
+                    t.archive
+                        .as_ref()
+                        .and_then(|a| a.source.parent())
+                        .unwrap_or(&t.cwd)
+                        == *path
+                        && t.loading
+                })
             })
             .cloned()
             .collect();
@@ -75,7 +84,14 @@ impl App {
             self.pending_directory_changes.remove(&path);
             for pane in 0..self.panes.len() {
                 for index in 0..self.panes[pane].tabs.len() {
-                    if self.panes[pane].tabs[index].cwd == path {
+                    let tab = &self.panes[pane].tabs[index];
+                    if tab
+                        .archive
+                        .as_ref()
+                        .and_then(|a| a.source.parent())
+                        .unwrap_or(&tab.cwd)
+                        == path
+                    {
                         self.refresh_tab(pane, index);
                     }
                 }
@@ -105,7 +121,8 @@ impl App {
                 tab.loading = false;
                 tab.refreshing = false;
                 match result {
-                    Ok((cwd, entries)) => {
+                    Ok((cwd, entries, archive)) => {
+                        tab.archive = archive;
                         if fingerprint(&tab.entries) != fingerprint(&entries) {
                             self.folder_sizes.invalidate(&cwd);
                         }
@@ -158,10 +175,11 @@ impl App {
             self.preview_loading = true;
             self.preview_cancel.cancel();
             self.preview_cancel = Default::default();
-            self.worker.preview_image(
+            self.worker.preview_archive(
                 self.preview_token,
                 path,
                 self.icon_backend.supports_images(),
+                self.tab().archive.clone(),
                 self.preview_cancel.clone(),
             );
         }

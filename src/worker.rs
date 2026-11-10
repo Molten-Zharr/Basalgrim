@@ -1,4 +1,4 @@
-use crate::fs::{self, Entry, Operation, Preview, Report};
+use crate::fs::{self, Operation, Preview, Report};
 use crate::operations::{Cancellation, Progress};
 use std::{
     collections::BTreeSet,
@@ -14,7 +14,8 @@ use std::{
 
 mod watch;
 
-pub type DirectoryResult = Result<(PathBuf, Vec<Entry>), String>;
+pub type DirectoryResult = Result<crate::archive::Directory, String>;
+type Archive = Option<Arc<crate::archive::Catalog>>;
 
 pub enum Event {
     RenamePreview {
@@ -72,11 +73,12 @@ enum Task {
 pub struct Worker {
     rename_previews: Sender<(u64, Arc<Vec<PathBuf>>, String, Cancellation)>,
     trash: Sender<(u64, Option<Vec<crate::trash::Root>>, Cancellation)>,
-    scans: Sender<(u64, PathBuf, Cancellation)>,
-    previews: Sender<(u64, PathBuf, bool, Cancellation)>,
+    scans: Sender<(u64, PathBuf, Archive, Cancellation)>,
+    previews: Sender<(u64, PathBuf, bool, Archive, Cancellation)>,
     tasks: Option<Sender<Task>>,
     task_thread: Option<thread::JoinHandle<()>>,
-    opens: Sender<PathBuf>,
+    opens: Sender<(PathBuf, Archive)>,
+    open_cancel: Cancellation,
     shutdown: Arc<AtomicBool>,
     pub events: Receiver<Event>,
     progress: Arc<Mutex<Option<(u64, Progress)>>>,
@@ -147,18 +149,23 @@ impl Worker {
                 }
             }
         });
-        let (scans, rx) = mpsc::channel::<(u64, PathBuf, Cancellation)>();
+        let (scans, rx) = mpsc::channel::<(u64, PathBuf, Archive, Cancellation)>();
         let result = send.clone();
         thread::spawn(move || {
-            for (token, path, cancellation) in rx {
+            for (token, path, archive, cancellation) in rx {
                 if cancellation.is_cancelled() {
                     continue;
                 }
                 let read = (|| -> anyhow::Result<_> {
+                    if let Some(snapshot) =
+                        crate::archive::directory(&path, archive, &cancellation)?
+                    {
+                        return Ok(Some(snapshot));
+                    }
                     let resolved = path.canonicalize()?;
                     Ok(
                         fs::read_directory_until(&resolved, || cancellation.is_cancelled())?
-                            .map(|entries| (resolved, entries)),
+                            .map(|entries| (resolved, entries, None)),
                     )
                 })();
                 if cancellation.is_cancelled() {
@@ -178,7 +185,7 @@ impl Worker {
                 }
             }
         });
-        let (previews, rx) = mpsc::channel::<(u64, PathBuf, bool, Cancellation)>();
+        let (previews, rx) = mpsc::channel::<(u64, PathBuf, bool, Archive, Cancellation)>();
         let result = send.clone();
         thread::spawn(move || {
             while let Ok(mut request) = rx.recv() {
@@ -186,12 +193,15 @@ impl Worker {
                 for newer in rx.try_iter() {
                     request = newer;
                 }
-                let (token, path, graphics, cancellation) = request;
+                let (token, path, graphics, archive, cancellation) = request;
                 if cancellation.is_cancelled() {
                     continue;
                 }
-                let preview =
-                    fs::preview_until(&path, graphics, &cancellation).map_err(|e| format!("{e:#}"));
+                let preview = match archive {
+                    Some(archive) => archive.preview(&path, graphics, &cancellation),
+                    None => fs::preview_until(&path, graphics, &cancellation),
+                }
+                .map_err(|e| format!("{e:#}"));
                 if cancellation.is_cancelled() {
                     continue;
                 }
@@ -206,14 +216,41 @@ impl Worker {
                 }
             }
         });
-        let (opens, rx) = mpsc::channel::<PathBuf>();
+        let open_cancel = Cancellation::default();
+        let opening = open_cancel.clone();
+        let (opens, rx) = mpsc::channel::<(PathBuf, Archive)>();
         let result = send.clone();
         thread::spawn(move || {
-            for path in rx {
+            let mut retained = Vec::new();
+            let mut bytes = 0u64;
+            for (path, archive) in rx {
+                if opening.is_cancelled() {
+                    break;
+                }
+                let opened = (|| -> anyhow::Result<()> {
+                    let path = if let Some(archive) = archive {
+                        anyhow::ensure!(
+                            retained.len() < 32,
+                            "Открыто 32 временных файла; используйте распаковку"
+                        );
+                        let dir = tempfile::tempdir()?;
+                        let path = archive.materialize(
+                            &path,
+                            dir.path(),
+                            (512u64 * 1024 * 1024).saturating_sub(bytes),
+                            &opening,
+                        )?;
+                        bytes += std::fs::metadata(&path)?.len();
+                        retained.push(dir);
+                        path
+                    } else {
+                        path
+                    };
+                    crate::archive::check(&opening)?;
+                    fs::open_external(&path)
+                })();
                 if result
-                    .send(Event::Open(
-                        fs::open_external(&path).map_err(|e| format!("{e:#}")),
-                    ))
+                    .send(Event::Open(opened.map_err(|e| format!("{e:#}"))))
                     .is_err()
                 {
                     break;
@@ -402,6 +439,7 @@ impl Worker {
             tasks: Some(tasks),
             task_thread: Some(task_thread),
             opens,
+            open_cancel,
             shutdown,
             events,
             progress,
@@ -409,7 +447,16 @@ impl Worker {
         }
     }
     pub fn scan(&self, token: u64, path: PathBuf, cancellation: Cancellation) {
-        let _ = self.scans.send((token, path, cancellation));
+        self.scan_archive(token, path, None, cancellation);
+    }
+    pub fn scan_archive(
+        &self,
+        token: u64,
+        path: PathBuf,
+        archive: Archive,
+        cancellation: Cancellation,
+    ) {
+        let _ = self.scans.send((token, path, archive, cancellation));
     }
     pub fn rename_preview(
         &self,
@@ -465,7 +512,19 @@ impl Worker {
         graphics: bool,
         cancellation: Cancellation,
     ) {
-        let _ = self.previews.send((token, path, graphics, cancellation));
+        self.preview_archive(token, path, graphics, None, cancellation);
+    }
+    pub fn preview_archive(
+        &self,
+        token: u64,
+        path: PathBuf,
+        graphics: bool,
+        archive: Archive,
+        cancellation: Cancellation,
+    ) {
+        let _ = self
+            .previews
+            .send((token, path, graphics, archive, cancellation));
     }
     pub fn operate(&self, token: u64, operation: Operation, cancellation: Cancellation) -> bool {
         self.tasks
@@ -482,11 +541,15 @@ impl Worker {
         self.progress.lock().ok()?.take()
     }
     pub fn open(&self, path: PathBuf) {
-        let _ = self.opens.send(path);
+        let _ = self.opens.send((path, None));
+    }
+    pub fn open_archive(&self, path: PathBuf, archive: Arc<crate::archive::Catalog>) {
+        let _ = self.opens.send((path, Some(archive)));
     }
 }
 impl Drop for Worker {
     fn drop(&mut self) {
+        self.open_cancel.cancel();
         self.shutdown.store(true, Ordering::Release);
         self.tasks.take();
         if let Some(thread) = self.task_thread.take() {
