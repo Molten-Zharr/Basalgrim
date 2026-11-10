@@ -3,6 +3,10 @@ use crate::app::Dialog;
 use ratatui::widgets::{Clear, Wrap};
 
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
+    if matches!(app.dialog, Some(Dialog::FolderSize)) {
+        super::folder_size::render(app, frame, palette);
+        return;
+    }
     if app.recursive_editing() {
         super::search::render(app, frame, palette);
         return;
@@ -110,7 +114,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         | Dialog::HistoryStorage
         | Dialog::Conflict(_)
         | Dialog::Commands(_) => unreachable!(),
-        Dialog::Paths(_) => unreachable!(),
+        Dialog::Paths(_) | Dialog::FolderSize => unreachable!(),
     };
     let block = panel(palette, format!(" {title} "), true);
     let inner = block.inner(rect);
@@ -123,7 +127,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         | Dialog::HistoryStorage
         | Dialog::Conflict(_)
         | Dialog::Commands(_) => unreachable!(),
-        Dialog::Paths(_) => unreachable!(),
+        Dialog::Paths(_) | Dialog::FolderSize => unreachable!(),
         Dialog::CleanupHistory(selection) => {
             lines = vec![
                 Line::raw(format!(

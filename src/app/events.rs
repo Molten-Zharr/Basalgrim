@@ -199,6 +199,33 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::FolderMeasure {
+                        owner,
+                        request,
+                        path,
+                    }) if self.dialog.is_none()
+                        && owner.valid(self)
+                        && self.panes[owner.pane].tab().request == request =>
+                    {
+                        self.open_folder_size(path)
+                    }
+                    Some(Target::FolderStop(id))
+                        if matches!(self.dialog, Some(Dialog::FolderSize))
+                            && id == self.folder_sizes.id =>
+                    {
+                        self.folder_sizes.stop()
+                    }
+                    Some(Target::FolderRetry(id))
+                        if matches!(self.dialog, Some(Dialog::FolderSize))
+                            && id == self.folder_sizes.id =>
+                    {
+                        self.retry_folder_size()
+                    }
+                    Some(Target::FolderScroll(delta))
+                        if matches!(self.dialog, Some(Dialog::FolderSize)) =>
+                    {
+                        self.scroll_folder_size(delta)
+                    }
                     Some(Target::RecursiveSearch)
                         if matches!(
                             self.dialog,
@@ -473,6 +500,9 @@ impl App {
                     .saturating_add_signed(delta as isize * 5)
                     .min(max);
             }
+            Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::FolderSize)) => {
+                self.scroll_folder_size(delta as isize * 3)
+            }
             Input::Scroll { x, y, delta } if self.dialog.is_none() => {
                 if self.preview_area.contains(Position::new(x, y)) {
                     let max = self
@@ -597,6 +627,10 @@ impl App {
     }
     fn key(&mut self, press: KeyPress) {
         let press = press.normalized();
+        if matches!(self.dialog, Some(Dialog::FolderSize)) {
+            self.folder_size_key(press);
+            return;
+        }
         if self.editor_key(press) {
             return;
         }

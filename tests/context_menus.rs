@@ -66,17 +66,18 @@ fn right_click_offers_only_commands_for_one_entry_or_the_marked_group() {
             // a folder and a file
             let r = entry(&mut app, index);
             right(&mut app, r.x, r.y);
-            assert_eq!(
-                actions(&app),
-                [
-                    Action::Open,
-                    Action::Copy,
-                    Action::Cut,
-                    Action::Rename,
-                    Action::Duplicate,
-                    Action::Trash
-                ]
-            );
+            let mut expected = vec![
+                Action::Open,
+                Action::Copy,
+                Action::Cut,
+                Action::Rename,
+                Action::Duplicate,
+                Action::Trash,
+            ];
+            if index == 0 {
+                expected.insert(5, Action::FolderSize);
+            }
+            assert_eq!(actions(&app), expected);
             assert!(app.command_items().iter().all(|i| i.enabled));
             let text: String = render(&mut app)
                 .content
@@ -162,7 +163,7 @@ fn background_menu_uses_the_directory_even_when_files_are_marked() {
     ] {
         assert!(!items.contains(&a));
     }
-    assert!(items.len() <= 9);
+    assert!(items.len() <= 10);
     assert_eq!(app.tab().marked.len(), 2);
     app.cancel_dialog();
     app.clipboard = Some(Clipboard {

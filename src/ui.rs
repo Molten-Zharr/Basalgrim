@@ -3,6 +3,7 @@ mod commands;
 mod conflicts;
 mod dialogs;
 mod files;
+mod folder_size;
 mod operations;
 mod path;
 mod selection;
@@ -612,7 +613,13 @@ fn preview(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
         );
         return;
     };
-    let header_height = (preview.details.len() as u16 + 4).min(inner.height);
+    let directory = app
+        .tab()
+        .entry()
+        .filter(|e| e.directory && !e.symlink && !app.in_trash());
+    let header_height =
+        (preview.details.len() as u16 + 4 + if directory.is_some() { 2 } else { 0 })
+            .min(inner.height);
     let parts =
         Layout::vertical([Constraint::Length(header_height), Constraint::Min(0)]).split(inner);
     let mut header = vec![
@@ -628,6 +635,31 @@ fn preview(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
             .iter()
             .map(|s| Line::styled(format!(" {s}"), palette.muted())),
     );
+    if let Some(entry) = directory {
+        let label = app
+            .folder_sizes
+            .cached(&entry.path)
+            .map(|r| format!(" Содержимое ~{} · кэш", fs::size(r.bytes)))
+            .unwrap_or_else(|| " Размер не подсчитан".into());
+        header.push(Line::styled(label, palette.muted()));
+        let row = Rect::new(
+            parts[0].x,
+            parts[0].y + header.len() as u16,
+            parts[0].width,
+            1,
+        );
+        header.push(Line::styled(" Размер папки…", palette.accent()));
+        if row.bottom() <= parts[0].bottom() {
+            app.hits.push((
+                row,
+                Target::FolderMeasure {
+                    owner: crate::app::PathOwner::current(app, app.active),
+                    request: app.tab().request,
+                    path: entry.path.clone(),
+                },
+            ));
+        }
+    }
     header.push(Line::styled(
         " ───────────────────────────────",
         palette.text().fg(palette.color("separator")),

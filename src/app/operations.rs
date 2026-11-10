@@ -100,6 +100,7 @@ impl App {
             self.message("Дождитесь завершения или отмените текущую операцию", true);
             return;
         }
+        self.folder_sizes.invalidate(Path::new("/"));
         let id = self.token();
         let cancellation = Cancellation::default();
         let cut = matches!(operation, Operation::Transfer { cut: true, .. });
@@ -199,6 +200,7 @@ impl App {
         }
     }
     pub(super) fn finish_operation(&mut self, token: u64, report: Report) {
+        self.folder_sizes.invalidate(Path::new("/"));
         if !self
             .running_operation
             .as_ref()

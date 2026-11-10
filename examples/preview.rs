@@ -817,6 +817,31 @@ fn main() -> Result<()> {
     render(&mut media, &out, "syntax-list", 150, 38)?;
     media.settings.appearance.theme = Theme::MoltenZharr;
     render(&mut media, &out, "syntax-dark", 150, 38)?;
+    let size_dir = demo.path().join("Folder sizes");
+    let measured = size_dir.join("a-folder");
+    fs::create_dir_all(measured.join("nested"))?;
+    fs::write(measured.join("nested/part"), vec![0; 4096])?;
+    fs::write(measured.join(".hidden"), vec![0; 2048])?;
+    fs::write(measured.join("plain"), vec![0; 6144])?;
+    std::os::unix::fs::symlink(".", measured.join("loop"))?;
+    let mut sizes = App::new(size_dir, Settings::default());
+    sizes.settings.appearance.theme = Theme::Light;
+    settle(&mut sizes)?;
+    sizes.open_folder_size(measured.clone());
+    settle(&mut sizes)?;
+    render(&mut sizes, &out, "folder-size", 150, 38)?;
+    render(&mut sizes, &out, "folder-size-compact", 34, 14)?;
+    sizes.cancel_dialog();
+    sizes.open_folder_size(measured.clone());
+    settle(&mut sizes)?;
+    ensure!(
+        sizes.folder_sizes.result.cached,
+        "Expected cached measurement"
+    );
+    render(&mut sizes, &out, "folder-size-cached", 150, 38)?;
+    sizes.retry_folder_size();
+    sizes.folder_sizes.stop();
+    render(&mut sizes, &out, "folder-size-stopped", 150, 38)?;
     println!("Rendered GUI/TUI previews to {}", out.display());
     Ok(())
 }

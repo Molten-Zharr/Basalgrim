@@ -18,7 +18,7 @@ use std::{
     time::SystemTime,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Entry {
     pub path: PathBuf,
     pub name: String,
@@ -211,6 +211,7 @@ pub fn preview_until(
             clean(&format!("→ {}", fs::read_link(path)?.display())),
         ];
     } else if meta.is_dir() {
+        result.details.remove(0); // Directory inode length is not the size of its contents.
         // Bound directory previews as well as text previews; don't collect a huge tree.
         result.lines.push("СОДЕРЖИМОЕ ПАПКИ".into());
         for entry in fs::read_dir(path)?.take(61) {

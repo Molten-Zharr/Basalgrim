@@ -212,6 +212,17 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--folder-size-only' in sys.argv[2:]:
+            import folder_size_fixture
+            source=folder_size_fixture.prepare(base)
+            settings.write_text(json.dumps({'preview':True,'grid':False,'font_size':16,'theme':'light','icon_mode':'symbols'}))
+            process,window,log=launch(source,config)
+            def size_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L'}[m] for m in mods])
+            try:
+                folder_size_fixture.exercise(source,size_key,lambda cx,cy,b=1:click(window,cx,cy,b),lambda name:screenshot(window,'native-x11-folder-'+name+'.png'),wait_for)
+                quit_when_ready(process)
+            finally:stop(process,log)
+            sys.exit(0)
         if '--syntax-only' in sys.argv[2:]:
             import syntax_fixture
             source=syntax_fixture.prepare(base)

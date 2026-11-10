@@ -84,6 +84,7 @@ impl Settings {
         for action in [
             Action::Operations,
             Action::HistoryStorage,
+            Action::FolderSize,
             Action::CancelOperation,
             Action::Commands,
             Action::CopyToOtherPane,

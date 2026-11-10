@@ -55,10 +55,12 @@ impl App {
                 Duplicate,
                 CopyToOtherPane,
                 MoveToOtherPane,
+                FolderSize,
                 Trash,
             ],
             MenuContext::Directory => &[
-                NewFile, NewFolder, Paste, Sort, Grid, Hidden, Refresh, Search, SelectAll, CopyPath,
+                NewFile, NewFolder, Paste, FolderSize, Sort, Grid, Hidden, Refresh, Search,
+                SelectAll, CopyPath,
             ],
             MenuContext::All => &[
                 Open,
@@ -91,6 +93,7 @@ impl App {
                 Grid,
                 Dual,
                 Preview,
+                FolderSize,
                 Hidden,
                 Sort,
                 Back,
@@ -109,6 +112,11 @@ impl App {
             .copied()
             .map(|action| {
                 let enabled = match action {
+                    FolderSize => {
+                        self.folder_size_target(context == MenuContext::Directory)
+                            .is_some()
+                            && (context != MenuContext::Entries || self.single_folder().is_some())
+                    }
                     DeleteTrash => {
                         !self.busy
                             && self.in_trash()
@@ -200,7 +208,12 @@ impl App {
             && item.enabled
         {
             let action = item.action;
+            let folder = (action == Action::FolderSize).then(|| self.folder_size_target(matches!(&self.dialog, Some(Dialog::Commands(menu)) if menu.context == MenuContext::Directory))).flatten();
             self.dialog = None;
+            if let Some(path) = folder {
+                self.open_folder_size(path);
+                return;
+            }
             self.action(action);
         }
     }

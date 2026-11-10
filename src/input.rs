@@ -142,6 +142,7 @@ pub enum Action {
     Grid,
     Dual,
     Preview,
+    FolderSize,
     Hidden,
     Sort,
     Copy,
@@ -187,6 +188,7 @@ impl Action {
         Self::Grid,
         Self::Dual,
         Self::Preview,
+        Self::FolderSize,
         Self::Hidden,
         Self::Sort,
         Self::Copy,
@@ -247,6 +249,7 @@ impl Action {
             Self::Grid => "Сетка / список",
             Self::Dual => "Вторая панель",
             Self::Preview => "Предпросмотр",
+            Self::FolderSize => "Размер папки",
             Self::Hidden => "Скрытые файлы",
             Self::Sort => "Сортировка",
             Self::Copy => "Копировать",
@@ -303,6 +306,13 @@ pub fn default_bindings() -> Vec<Binding> {
         key: KeyPress::plain(key),
     })
     .collect();
+    result.push(Binding {
+        action: FolderSize,
+        key: KeyPress {
+            shift: true,
+            ..KeyPress::plain(Key::F(4))
+        },
+    });
     result.push(Binding {
         action: Commands,
         key: KeyPress {

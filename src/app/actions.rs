@@ -76,6 +76,11 @@ impl App {
             self.tab_mut().selected = index;
         }
         match action {
+            Action::FolderSize => {
+                if let Some(path) = self.folder_size_target(false) {
+                    self.open_folder_size(path);
+                }
+            }
             Action::TrashView => self.open_trash(None),
             Action::RestoreTrash
             | Action::RestoreTrashHere
@@ -102,6 +107,7 @@ impl App {
             }
             Action::Home => self.navigate(self.home().to_path_buf(), true),
             Action::Refresh => {
+                self.folder_sizes.invalidate(&self.tab().cwd.clone());
                 self.preview_path = None;
                 self.refresh();
             }
@@ -319,6 +325,9 @@ impl App {
         self.update_preview();
     }
     pub fn cancel_dialog(&mut self) {
+        if matches!(self.dialog, Some(Dialog::FolderSize)) {
+            self.folder_sizes.stop();
+        }
         self.search = None;
         if self.batch_editing() {
             self.batch = None;
@@ -421,6 +430,7 @@ impl App {
             return;
         };
         match dialog {
+            Dialog::FolderSize => self.dialog = Some(Dialog::FolderSize),
             Dialog::HistoryStorage => self.dialog = Some(Dialog::HistoryStorage),
             Dialog::CleanupHistory(selection) => {
                 self.start_operation(Operation::CleanupHistory { selection });

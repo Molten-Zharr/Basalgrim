@@ -1,5 +1,6 @@
 mod actions;
 mod batch;
+mod folder_size;
 mod search;
 pub use batch::BatchRenameView;
 pub use search::SearchView;
@@ -45,6 +46,14 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    FolderMeasure {
+        owner: PathOwner,
+        request: u64,
+        path: PathBuf,
+    },
+    FolderStop(u64),
+    FolderRetry(u64),
+    FolderScroll(isize),
     PathGo {
         owner: PathOwner,
         path: PathBuf,
@@ -147,6 +156,7 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    FolderSize,
     HistoryStorage,
     CleanupHistory(crate::journal::storage::Selection),
     DeleteTrash {
@@ -204,6 +214,9 @@ pub struct App {
     pub history_storage: StorageView,
     pub dialog: Option<Dialog>,
     pub search: Option<SearchView>,
+    pub folder_sizes: crate::folder_size::FolderSizes,
+    pub folder_size_offset: usize,
+    pub folder_size_max: usize,
     search_focus: Option<(u64, PathBuf)>,
     pub batch: Option<BatchRenameView>,
     pub clipboard: Option<Clipboard>,
@@ -316,6 +329,9 @@ impl App {
             history_storage: StorageView::default(),
             dialog: None,
             search: None,
+            folder_sizes: Default::default(),
+            folder_size_offset: 0,
+            folder_size_max: 0,
             search_focus: None,
             batch: None,
             clipboard: None,
@@ -436,6 +452,7 @@ impl App {
             || self.busy
             || self.clipboard_reads_pending()
             || self.history_storage.loading
+            || !self.folder_sizes.result.done
             || self.search.as_ref().is_some_and(|v| !v.worker.results.done)
             || self.batch.as_ref().is_some_and(|v| v.pending)
             || self.trash.as_ref().is_some_and(|t| t.loading)
@@ -540,6 +557,7 @@ impl App {
         }
         self.apply_directory_results();
         self.poll_search();
+        self.folder_sizes.poll();
         self.thumbnails.poll();
         self.refresh_changed_directories();
         self.update_preview();

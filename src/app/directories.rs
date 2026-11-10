@@ -1,4 +1,19 @@
 use super::*;
+use std::hash::{Hash, Hasher};
+
+// Order-independent metadata fingerprint for cache invalidation only. Watch
+// registration/polling also requests scans; those hints are not proof of a change.
+fn fingerprint(entries: &[fs::Entry]) -> (usize, u64, u64) {
+    let (mut sum, mut xor) = (0u64, 0u64);
+    for entry in entries {
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        entry.hash(&mut hash);
+        let hash = hash.finish();
+        sum = sum.wrapping_add(hash);
+        xor ^= hash;
+    }
+    (entries.len(), sum, xor)
+}
 
 impl App {
     pub(super) fn refresh_tab(&mut self, pane: usize, index: usize) {
@@ -91,6 +106,9 @@ impl App {
                 tab.refreshing = false;
                 match result {
                     Ok((cwd, entries)) => {
+                        if fingerprint(&tab.entries) != fingerprint(&entries) {
+                            self.folder_sizes.invalidate(&cwd);
+                        }
                         let focused = tab.entry().map(|e| e.path.clone());
                         let top = tab
                             .visible
@@ -119,6 +137,7 @@ impl App {
                         preview_changed |= pane_index == self.active && index == pane.active;
                     }
                     Err(error) => {
+                        self.folder_sizes.invalidate(&tab.cwd);
                         tab.error = Some(fs::clean(&error));
                         tab.entries.clear();
                         tab.visible.clear();

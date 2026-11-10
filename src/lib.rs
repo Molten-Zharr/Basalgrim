@@ -3,6 +3,7 @@ pub mod batch_rename;
 pub mod clipboard;
 pub mod conflicts;
 pub mod dnd;
+pub mod folder_size;
 pub mod fs;
 pub mod icons;
 pub mod input;
