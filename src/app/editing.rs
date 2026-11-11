@@ -208,6 +208,9 @@ impl App {
                 self.text_paste = None;
             }
             Input::Scroll { delta, .. } => {
+                if self.palette_dialog() && self.editor_menu.is_none() {
+                    self.palette_move(delta as isize * 3);
+                }
                 if self.details_dialog() && self.editor_menu.is_none() {
                     self.details_scroll(delta as isize * 3);
                 }

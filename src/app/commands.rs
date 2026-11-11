@@ -30,8 +30,6 @@ impl App {
             Some(Dialog::Commands(menu)) => menu.context,
             _ => MenuContext::All,
         };
-        let count = self.tab().selection_count();
-        let selection = count > 0;
         let actions: &[Action] = match context {
             MenuContext::Entries if self.in_archive() => {
                 &[Open, OpenWith, Properties, ArchiveExtract]
@@ -50,6 +48,7 @@ impl App {
             MenuContext::Trash => &[RestoreTrash, RestoreTrashHere, DeleteTrash],
             MenuContext::TrashBackground => &[EmptyTrash, Sort, Grid, Refresh],
             MenuContext::All if self.in_trash() => &[
+                Palette,
                 RestoreTrash,
                 RestoreTrashHere,
                 DeleteTrash,
@@ -83,6 +82,7 @@ impl App {
                 Search, SelectAll, CopyPath, Bookmark, Places,
             ],
             MenuContext::All => &[
+                Palette,
                 Open,
                 OpenWith,
                 Properties,
@@ -143,87 +143,89 @@ impl App {
         actions
             .iter()
             .copied()
-            .map(|action| {
-                let enabled = match action {
-                    OpenWith => self.can_open_with(),
-                    Properties => self
-                        .detail_source(context == MenuContext::Directory)
-                        .is_some(),
-                    Bookmark => self.can_bookmark(),
-                    Favorite => self.can_favorite(true),
-                    Unfavorite => self.can_favorite(false),
-                    Places if context != MenuContext::All => self.library.ready,
-                    ArchiveCreate => {
-                        selection
-                            && !self.busy
-                            && !self.in_archive()
-                            && !self.in_trash()
-                            && !self.tab().loading
-                    }
-                    ArchiveExtract => {
-                        self.can_extract()
-                            || (context == MenuContext::Directory
-                                && self.in_archive()
-                                && !self.busy
-                                && !self.tab().loading)
-                    }
-                    FolderSize => {
-                        self.folder_size_target(context == MenuContext::Directory)
-                            .is_some()
-                            && (context != MenuContext::Entries || self.single_folder().is_some())
-                    }
-                    DeleteTrash => {
-                        !self.busy
-                            && self.in_trash()
-                            && self.trash.as_ref().is_some_and(|t| t.can_delete())
-                    }
-                    EmptyTrash => {
-                        !self.busy
-                            && self.in_trash()
-                            && self.trash.as_ref().is_some_and(|t| {
-                                !t.loading && t.error.is_none() && !t.catalog.deletions.is_empty()
-                            })
-                    }
-                    RestoreTrash | RestoreTrashHere => {
-                        !self.busy && self.trash.as_ref().is_some_and(|t| t.can_restore())
-                    }
-                    SelectAll if self.in_trash() => {
-                        !self.trash.as_ref().unwrap().visible.is_empty()
-                    }
-                    Mark if self.in_trash() => self.trash.as_ref().unwrap().entry().is_some(),
-                    Open if context == MenuContext::Entries && count != 1 => false,
-                    Rename if context == MenuContext::Entries && count == 1 => {
-                        self.tab().entry().is_some_and(|entry| {
-                            entry.path.file_name().and_then(|n| n.to_str()).is_some()
-                        })
-                    }
-                    SelectAll => !self.tab().visible.is_empty(),
-                    Open | Mark | Copy | Cut | Rename | Trash => selection,
-                    Paste => self.can_paste(),
-                    NewFolder | NewFile => !self.busy,
-                    CopyToOtherPane | MoveToOtherPane => {
-                        selection && !self.busy && self.other_destination().is_some()
-                    }
-                    Duplicate => selection && !self.busy,
-                    CancelOperation => {
-                        self.busy || self.clipboard_reads_pending() || self.external_drop_reading()
-                    }
-                    Undo => self.replay_candidate(false).is_some(),
-                    Redo => self.replay_candidate(true).is_some(),
-                    HistoryStorage => self.journal_enabled,
-                    CloseTab | NextTab => self.panes[self.active].tabs.len() > 1,
-                    NextPane => self.settings.dual,
-                    Back => !self.tab().back.is_empty(),
-                    Forward => !self.tab().forward.is_empty(),
-                    Parent => self.tab().cwd.parent().is_some(),
-                    Quit => !self.busy,
-                    _ => true,
-                } && (!self.busy || !matches!(action, Rename | Trash))
-                    && !(self.in_archive() && Self::archive_writable_action(action));
-                CommandItem { action, enabled }
+            .map(|action| CommandItem {
+                action,
+                enabled: self.command_enabled(action, context),
             })
             .filter(|item| (context == MenuContext::All && !self.in_trash()) || item.enabled)
             .collect()
+    }
+
+    pub(super) fn command_enabled(&self, action: Action, context: MenuContext) -> bool {
+        use Action::*;
+        let count = self.tab().selection_count();
+        let selection = count > 0;
+        (match action {
+            OpenWith => self.can_open_with(),
+            Properties => self
+                .detail_source(context == MenuContext::Directory)
+                .is_some(),
+            Bookmark => self.can_bookmark(),
+            Favorite => self.can_favorite(true),
+            Unfavorite => self.can_favorite(false),
+            Places if context != MenuContext::All => self.library.ready,
+            ArchiveCreate => {
+                selection
+                    && !self.busy
+                    && !self.in_archive()
+                    && !self.in_trash()
+                    && !self.tab().loading
+            }
+            ArchiveExtract => {
+                self.can_extract()
+                    || (context == MenuContext::Directory
+                        && self.in_archive()
+                        && !self.busy
+                        && !self.tab().loading)
+            }
+            FolderSize => {
+                self.folder_size_target(context == MenuContext::Directory)
+                    .is_some()
+                    && (context != MenuContext::Entries || self.single_folder().is_some())
+            }
+            DeleteTrash => {
+                !self.busy && self.in_trash() && self.trash.as_ref().is_some_and(|t| t.can_delete())
+            }
+            EmptyTrash => {
+                !self.busy
+                    && self.in_trash()
+                    && self.trash.as_ref().is_some_and(|t| {
+                        !t.loading && t.error.is_none() && !t.catalog.deletions.is_empty()
+                    })
+            }
+            RestoreTrash | RestoreTrashHere => {
+                !self.busy && self.trash.as_ref().is_some_and(|t| t.can_restore())
+            }
+            SelectAll if self.in_trash() => !self.trash.as_ref().unwrap().visible.is_empty(),
+            Mark if self.in_trash() => self.trash.as_ref().unwrap().entry().is_some(),
+            Open if context == MenuContext::Entries && count != 1 => false,
+            Rename if context == MenuContext::Entries && count == 1 => self
+                .tab()
+                .entry()
+                .is_some_and(|entry| entry.path.file_name().and_then(|n| n.to_str()).is_some()),
+            SelectAll => !self.tab().visible.is_empty(),
+            Open | Mark | Copy | Cut | Rename | Trash => selection,
+            Paste => self.can_paste(),
+            NewFolder | NewFile => !self.busy,
+            CopyToOtherPane | MoveToOtherPane => {
+                selection && !self.busy && self.other_destination().is_some()
+            }
+            Duplicate => selection && !self.busy,
+            CancelOperation => {
+                self.busy || self.clipboard_reads_pending() || self.external_drop_reading()
+            }
+            Undo => self.replay_candidate(false).is_some(),
+            Redo => self.replay_candidate(true).is_some(),
+            HistoryStorage => self.journal_enabled,
+            CloseTab | NextTab => self.panes[self.active].tabs.len() > 1,
+            NextPane => self.settings.dual,
+            Back => !self.tab().back.is_empty(),
+            Forward => !self.tab().forward.is_empty(),
+            Parent => self.tab().cwd.parent().is_some(),
+            Quit => !self.busy,
+            _ => true,
+        }) && (!self.busy || !matches!(action, Rename | Trash))
+            && !(self.in_archive() && Self::archive_writable_action(action))
     }
 
     pub(crate) fn command_title(&self) -> String {

@@ -8,6 +8,7 @@ mod files;
 mod folder_size;
 mod network;
 mod operations;
+mod palette;
 mod path;
 mod places;
 mod selection;

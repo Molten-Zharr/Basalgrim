@@ -413,7 +413,12 @@ fn trash_keeps_chrome_tabs_other_pane_icons_and_shared_selection() {
     });
     assert_eq!(app.tab().marked.len(), 2);
     app.action(Action::Commands);
-    assert!(app.command_items().len() <= 9);
+    assert!(app.command_items().len() <= 10);
+    assert!(
+        app.command_items()
+            .iter()
+            .any(|item| item.action == Action::Palette)
+    );
     assert!(
         app.command_items()
             .iter()

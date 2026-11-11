@@ -83,6 +83,7 @@ impl App {
             self.tab_mut().selected = index;
         }
         match action {
+            Action::Palette => self.open_palette(),
             Action::Devices => self.open_devices(),
             Action::Properties => self.open_details(false, false),
             Action::OpenWith => self.open_details(false, true),
@@ -346,6 +347,10 @@ impl App {
         self.update_preview();
     }
     pub fn cancel_dialog(&mut self) {
+        if self.palette_dialog() {
+            self.close_palette();
+            return;
+        }
         if self.details_dialog() {
             self.close_details();
             return;
@@ -431,6 +436,10 @@ impl App {
         }
     }
     pub fn confirm_dialog(&mut self) {
+        if self.palette_dialog() {
+            self.confirm_palette();
+            return;
+        }
         if self.details_dialog() {
             if let Some(v) = &self.detail_view {
                 self.detail_control(
@@ -568,7 +577,8 @@ impl App {
                     EditKind::ArchiveCreate { .. } | EditKind::ArchiveExtract { .. } => {
                         unreachable!()
                     }
-                    EditKind::ApplicationFilter
+                    EditKind::CommandFilter
+                    | EditKind::ApplicationFilter
                     | EditKind::Network(_)
                     | EditKind::PlaceFilter
                     | EditKind::PlaceLabel { .. } => {

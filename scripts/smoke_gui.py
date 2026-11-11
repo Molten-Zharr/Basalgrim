@@ -214,6 +214,23 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--palette-only' in sys.argv[2:]:
+            import details_fixture, palette_fixture
+            fixture=details_fixture.Fixture(base);os.environ.update(fixture.env)
+            settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+            process,window,log=launch(fixture.root,config)
+            def palette_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
+            def palette_paste(value):
+                subprocess.run([xclip,'-selection','clipboard','-in'],input=value.encode(),check=True)
+                chord('v','Control_L');time.sleep(.2)
+            try:
+                palette_fixture.exercise(fixture.root,palette_key,type_text,lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-palette-'+name+'.png'),wait_for,palette_paste)
+                x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.3)
+                palette_fixture.compact(fixture.root,palette_key,type_text,lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-palette-'+name+'.png'),wait_for)
+                quit_when_ready(process)
+            finally:
+                stop(process,log);fixture.close()
+            sys.exit(0)
         if '--details-only' in sys.argv[2:]:
             import details_fixture
             fixture=details_fixture.Fixture(base)

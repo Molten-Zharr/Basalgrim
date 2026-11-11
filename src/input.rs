@@ -127,6 +127,7 @@ pub enum Input {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
+    Palette,
     OpenWith,
     Properties,
     Network,
@@ -192,6 +193,7 @@ pub enum Action {
 impl Action {
     pub const ALL: &'static [Self] = &[
         Self::Commands,
+        Self::Palette,
         Self::Back,
         Self::Forward,
         Self::Parent,
@@ -266,6 +268,7 @@ impl Action {
             Self::Unfavorite => "Убрать из избранного",
             Self::ArchiveCreate => "Создать архив…",
             Self::ArchiveExtract => "Распаковать…",
+            Self::Palette => "Поиск команды…",
             Self::Commands => "Меню действий",
             Self::Operations => "Операции",
             Self::HistoryStorage => "Хранилище undo/redo",
@@ -348,6 +351,7 @@ pub fn default_bindings() -> Vec<Binding> {
     })
     .collect();
     for (action, key, alt, shift) in [
+        (Palette, 'p', false, true),
         (Places, 'b', false, false),
         (Devices, 'm', true, false),
         (Network, 'k', true, false),

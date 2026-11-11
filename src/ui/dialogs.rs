@@ -3,6 +3,10 @@ use crate::app::Dialog;
 use ratatui::widgets::{Clear, Wrap};
 
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
+    if app.palette_dialog() {
+        super::palette::render(app, frame, palette);
+        return;
+    }
     if app.details_dialog() {
         super::details::render(app, frame, palette);
         return;

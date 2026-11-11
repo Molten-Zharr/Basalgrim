@@ -135,6 +135,23 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--palette-only' in sys.argv[2:]:
+                import details_fixture, palette_fixture
+                fixture=details_fixture.Fixture(base);env.update(fixture.env)
+                settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+                process=launch(fixture.root)
+                def palette_paste(value):
+                    subprocess.run([commands['wl-copy'],'--type','text/plain;charset=utf-8'],env=env,input=value,text=True,check=True)
+                    key('v','ctrl');time.sleep(.2)
+                try:
+                    palette_fixture.exercise(fixture.root,key,lambda text:run('wtype','-s','100',text,'-s','100'),click,lambda name:run('grim','-g','0,0 1360x860',str(out/('native-wayland-palette-'+name+'.png'))),wait_for,palette_paste)
+                    run('swaymsg',f'[pid={process.pid}] resize set 400 px 360 px, move absolute position 0 px 0 px');time.sleep(.3)
+                    palette_fixture.compact(fixture.root,key,lambda text:run('wtype','-s','100',text,'-s','100'),click,lambda name:run('grim','-g','0,0 400x360',str(out/('native-wayland-palette-'+name+'.png'))),wait_for)
+                    key('q','ctrl');process.wait(timeout=5);assert process.returncode==0
+                finally:
+                    if process.poll() is None:process.terminate();process.wait(timeout=5)
+                    process=None;fixture.close()
+                return
             if '--details-only' in sys.argv[2:]:
                 import details_fixture
                 fixture=details_fixture.Fixture(base)

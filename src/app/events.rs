@@ -202,6 +202,13 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::Palette {
+                        token,
+                        revision,
+                        control,
+                    }) => {
+                        self.palette_control(token, revision, control, double);
+                    }
                     Some(Target::Detail {
                         token,
                         revision,
@@ -690,6 +697,9 @@ impl App {
         self.tab_mut().reset_range();
     }
     fn key(&mut self, press: KeyPress) {
+        if self.palette_key(press.normalized()) {
+            return;
+        }
         if self.details_key(press.normalized()) {
             return;
         }

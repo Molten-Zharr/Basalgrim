@@ -1,4 +1,6 @@
 mod actions;
+mod palette;
+pub use palette::{PaletteControl, PaletteView};
 mod details;
 pub use details::{DetailControl, DetailView};
 mod archive;
@@ -56,6 +58,11 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    Palette {
+        token: u64,
+        revision: u64,
+        control: PaletteControl,
+    },
     Detail {
         token: u64,
         revision: u64,
@@ -180,6 +187,7 @@ pub enum Target {
 
 #[derive(Clone)]
 pub enum EditKind {
+    CommandFilter,
     ApplicationFilter,
     Network(NetworkField),
     PlaceFilter,
@@ -212,6 +220,7 @@ pub enum EditKind {
 impl EditKind {
     pub fn title(&self) -> &'static str {
         match self {
+            Self::CommandFilter => "Поиск команды",
             Self::ApplicationFilter => "Поиск программы",
             Self::Network(_) => "Подключение к серверу",
             Self::PlaceFilter => "Фильтр мест",
@@ -276,6 +285,7 @@ pub struct App {
     pub network_view: NetworkView,
     pub details: crate::details::Service,
     pub detail_view: Option<DetailView>,
+    pub palette_view: Option<PaletteView>,
     pub devices: crate::devices::Monitor,
     pub devices_view: DevicesView,
     device_open: Option<devices::PendingOpen>,
@@ -393,6 +403,7 @@ impl App {
             network_view: Default::default(),
             details: Default::default(),
             detail_view: None,
+            palette_view: None,
             devices: Default::default(),
             devices_view: Default::default(),
             device_open: None,
@@ -640,6 +651,7 @@ impl App {
         self.poll_devices();
         self.poll_network();
         self.poll_details();
+        self.update_palette();
         self.persist_session();
         self.validate_marquee();
         self.observe_directories();
