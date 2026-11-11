@@ -83,6 +83,7 @@ impl Settings {
         // including keys that were free before the commands were introduced.
         for action in [
             Action::Devices,
+            Action::Network,
             Action::Places,
             Action::Bookmark,
             Action::Favorites,

@@ -51,7 +51,7 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
         env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), WLR_BACKENDS="headless",
                    WLR_RENDERER="pixman", WLR_LIBINPUT_NO_DEVICES="1",
                    LIBGL_ALWAYS_SOFTWARE="1", XDG_STATE_HOME=str(base / "state"), XDG_CONFIG_HOME=str(base / "config"),
-                   XDG_DATA_HOME=str(base / "data"), HOME=str(base), GIO_USE_VFS="local")
+                   XDG_DATA_HOME=str(base / "data"), HOME=str(base), GIO_USE_VFS="gvfs" if "--network-only" in sys.argv[2:] else "local")
         for name in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "SWAYSOCK"):
             env.pop(name, None)
         server_log = open(out / "native-wayland-server.log", "w")
@@ -135,6 +135,21 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--network-only' in sys.argv[2:]:
+                import network_fixture
+                with network_fixture.Fixture(base) as fixture:
+                    env.update(fixture.env)
+                    settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+                    process=launch(fixture.local)
+                    try:
+                        network_fixture.exercise(fixture,key,lambda text:run('wtype','-s','100',text,'-s','100'),click,lambda name:run('grim','-g','0,0 1360x860',str(out/('native-wayland-network-'+name+'.png'))),wait_for)
+                        run('swaymsg',f'[pid={process.pid}] resize set 400 px 360 px, move absolute position 0 px 0 px');time.sleep(.3)
+                        network_fixture.compact(fixture,key,lambda text:run('wtype','-s','100',text,'-s','100'),click,lambda name:run('grim','-g','0,0 400x360',str(out/('native-wayland-network-'+name+'.png'))),wait_for)
+                        key('q','ctrl');process.wait(timeout=5);assert process.returncode==0
+                    finally:
+                        if process.poll() is None:process.terminate();process.wait(timeout=5)
+                        process=None
+                return
             if '--devices-only' in sys.argv[2:]:
                 import devices_fixture
                 with devices_fixture.Fixture(base) as fixture:

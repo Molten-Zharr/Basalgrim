@@ -44,7 +44,7 @@ impl App {
             return;
         }
         if matches!(action, Action::Quit) {
-            if self.busy || self.devices.working.is_some() {
+            if self.busy || self.devices.working.is_some() || self.network.working.is_some() {
                 self.message("Перед выходом дождитесь завершения операции", true);
             } else {
                 self.cancel_clipboard_read();
@@ -84,6 +84,7 @@ impl App {
         }
         match action {
             Action::Devices => self.open_devices(),
+            Action::Network => self.open_network(),
             Action::Places => self.open_places(crate::places::Section::Bookmarks),
             Action::Favorites => self.open_places(crate::places::Section::Favorites),
             Action::Recent => self.open_places(crate::places::Section::Recent),
@@ -343,6 +344,10 @@ impl App {
         self.update_preview();
     }
     pub fn cancel_dialog(&mut self) {
+        if self.network_dialog() {
+            self.cancel_network();
+            return;
+        }
         self.device_open = None;
         if matches!(self.dialog, Some(Dialog::Devices))
             && self.devices_view.confirm.take().is_some()
@@ -420,6 +425,10 @@ impl App {
         }
     }
     pub fn confirm_dialog(&mut self) {
+        if self.network_dialog() {
+            self.submit_network(false);
+            return;
+        }
         // A prior worker may have published its filesystem result without yet
         // delivering completion. Keep entered data until a new operation can
         // actually start, rather than closing a dialog and losing the command.
@@ -486,6 +495,7 @@ impl App {
             Dialog::Settings | Dialog::CaptureBinding { .. } => {
                 self.dialog = Some(Dialog::Settings)
             }
+            Dialog::Network => {}
             Dialog::Devices => {
                 self.dialog = Some(Dialog::Devices);
                 self.device_control(self.devices_view.revision, DeviceControl::Open);
@@ -538,7 +548,9 @@ impl App {
                     EditKind::ArchiveCreate { .. } | EditKind::ArchiveExtract { .. } => {
                         unreachable!()
                     }
-                    EditKind::PlaceFilter | EditKind::PlaceLabel { .. } => unreachable!(),
+                    EditKind::Network(_) | EditKind::PlaceFilter | EditKind::PlaceLabel { .. } => {
+                        unreachable!()
+                    }
                     EditKind::RecursiveSearch => unreachable!(),
                     EditKind::BatchRename => unreachable!(),
                     EditKind::Setting(_) => unreachable!(),
@@ -546,6 +558,10 @@ impl App {
                     EditKind::Path(original) => {
                         if text == "trash:///" {
                             self.open_trash(None);
+                            return;
+                        }
+                        if text.contains("://") {
+                            self.connect_address(text);
                             return;
                         }
                         let path = if text == original.to_string_lossy() {

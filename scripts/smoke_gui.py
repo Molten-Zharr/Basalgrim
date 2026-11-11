@@ -162,7 +162,8 @@ def quit_when_ready(process):
 def type_text(text):
     for c in text:
         name = {'/':'slash', '.':'period', '-':'minus', '_':'underscore', ' ':'space'}.get(c,c)
-        if c == '_': chord('minus', 'Shift_L')
+        if c == ':': chord('semicolon', 'Shift_L')
+        elif c == '_': chord('minus', 'Shift_L')
         elif c.isascii() and c.isupper(): chord(c.lower(), 'Shift_L')
         else: key(name)
 
@@ -173,7 +174,7 @@ def search(name):
     key('slash'); type_text(name); key('Return'); time.sleep(.2)
 
 def launch(path, config):
-    env = dict(os.environ, HOME=str(config.parent), GIO_USE_VFS='local', XDG_CONFIG_HOME=str(config), XDG_DATA_HOME=str(config.parent/'data'), XDG_STATE_HOME=str(config.parent/'state'), LIBGL_ALWAYS_SOFTWARE='1', WINIT_X11_SCALE_FACTOR='1')
+    env = dict(os.environ, HOME=str(config.parent), GIO_USE_VFS='gvfs' if '--network-only' in sys.argv[2:] else 'local', XDG_CONFIG_HOME=str(config), XDG_DATA_HOME=str(config.parent/'data'), XDG_STATE_HOME=str(config.parent/'state'), LIBGL_ALWAYS_SOFTWARE='1', WINIT_X11_SCALE_FACTOR='1')
     for n in ('WAYLAND_DISPLAY','WAYLAND_SOCKET'): env.pop(n, None)
     log = open('target/preview/native-gui.log', 'w')
     process = subprocess.Popen([str(binary), '--trash-home-only', *([] if path is None else [str(path)])], env=env, stdout=log, stderr=log)
@@ -213,6 +214,20 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--network-only' in sys.argv[2:]:
+            import network_fixture
+            with network_fixture.Fixture(base) as fixture:
+                os.environ.update(fixture.env)
+                settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+                process,window,log=launch(fixture.local,config)
+                def network_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
+                try:
+                    network_fixture.exercise(fixture,network_key,type_text,lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-network-'+name+'.png'),wait_for)
+                    x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.3)
+                    network_fixture.compact(fixture,network_key,type_text,lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-network-'+name+'.png'),wait_for)
+                    quit_when_ready(process)
+                finally:stop(process,log)
+            sys.exit(0)
         if '--devices-only' in sys.argv[2:]:
             import devices_fixture
             with devices_fixture.Fixture(base) as fixture:
@@ -1028,7 +1043,7 @@ try:
         finally:stop(process,log)
         trash_dir=base/'trash-native';trash_dir.mkdir();a=trash_dir/'a.txt';tree=trash_dir/'b-tree'
         a.write_text('native restore');tree.mkdir();(tree/'nested').write_text('native tree')
-        trash_env=dict(os.environ,HOME=str(base),XDG_DATA_HOME=str(base/'data'),GIO_USE_VFS='local')
+        trash_env=dict(os.environ,HOME=str(base),XDG_DATA_HOME=str(base/'data'),GIO_USE_VFS='gvfs' if '--network-only' in sys.argv[2:] else 'local')
         subprocess.run(['gio','trash','--',str(a),str(tree)],env=trash_env,check=True)
         settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'light'}))
         process,window,log=launch(trash_dir,config)

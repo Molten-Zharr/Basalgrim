@@ -57,7 +57,7 @@ impl App {
         self.dialog = Some(Dialog::Devices);
         self.devices.refresh();
     }
-    fn disconnect_tabs(&mut self, roots: &[PathBuf]) {
+    pub(super) fn disconnect_tabs(&mut self, roots: &[PathBuf]) {
         if roots.is_empty() {
             return;
         }
@@ -129,7 +129,11 @@ impl App {
         }
     }
     fn run_device(&mut self, plan: Plan) {
-        if self.busy || self.devices.working.is_some() || !self.devices.ready {
+        if self.busy
+            || self.network.working.is_some()
+            || self.devices.working.is_some()
+            || !self.devices.ready
+        {
             self.message("Дождитесь завершения текущей операции", true);
             return;
         }
@@ -218,7 +222,11 @@ impl App {
                 let Some(device) = self.devices_view.rows.get(self.devices_view.selected) else {
                     return;
                 };
-                if self.busy || self.devices.working.is_some() || !self.devices.ready {
+                if self.busy
+                    || self.network.working.is_some()
+                    || self.devices.working.is_some()
+                    || !self.devices.ready
+                {
                     return;
                 }
                 let kind = match control {

@@ -64,6 +64,14 @@ impl App {
         self.message("Копирование текста…", false);
     }
     pub fn copy_path(&mut self, path: &Path) {
+        if let Some(uri) = self
+            .network
+            .location(path)
+            .and_then(|l| l.address_for(path))
+        {
+            self.request_text_copy(uri);
+            return;
+        }
         let Some(text) = path.to_str() else {
             self.text_copy_token = self.token();
             self.text_copy = None;
@@ -97,7 +105,10 @@ impl App {
         let text = if self.in_trash() {
             "trash:///".into()
         } else {
-            owner.cwd.to_string_lossy().into_owned()
+            self.network
+                .location(&owner.cwd)
+                .and_then(|l| l.address_for(&owner.cwd))
+                .unwrap_or_else(|| owner.cwd.to_string_lossy().into_owned())
         };
         let len = text.len();
         self.begin_edit(EditKind::Path(owner.cwd.clone()), text, 0..len);
@@ -123,6 +134,9 @@ impl App {
             .skip(1)
             .map(Path::to_path_buf)
             .collect();
+        if let Some(location) = self.network.location(&owner.cwd) {
+            parents.retain(|p| p.starts_with(&location.root));
+        }
         parents.reverse();
         let selected = parents.len().saturating_sub(1);
         self.dialog = Some(Dialog::Paths(PathMenu {

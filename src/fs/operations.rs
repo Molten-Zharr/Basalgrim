@@ -376,7 +376,8 @@ fn copy_tree(source: &Path, destination: &Path, control: &mut Control<'_, '_>) -
             copy_tree(&entry.path(), &destination.join(entry.file_name()), control)?;
         }
         control.checkpoint()?;
-        fs::set_permissions(destination, meta.permissions())?;
+        fs::set_permissions(destination, meta.permissions())
+            .context("Не удалось сохранить права копируемой папки; файловая система может не поддерживать Unix-права")?;
     } else if meta.is_file() {
         copy_file(source, destination, &meta, control, None)?;
     } else {
@@ -478,7 +479,8 @@ fn copy_file(
     }
     control.checkpoint()?;
     output.flush()?;
-    fs::set_permissions(destination, meta.permissions())?;
+    fs::set_permissions(destination, meta.permissions())
+        .context("Не удалось сохранить права копируемого файла; файловая система может не поддерживать Unix-права")?;
     Ok(())
 }
 

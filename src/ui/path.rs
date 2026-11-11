@@ -8,7 +8,24 @@ struct Crumb {
     label: String,
     path: PathBuf,
 }
-fn crumbs(cwd: &Path) -> Vec<Crumb> {
+fn crumbs(cwd: &Path, location: Option<&crate::network::Location>) -> Vec<Crumb> {
+    if let Some(location) = location
+        && let Ok(relative) = cwd.strip_prefix(&location.root)
+    {
+        let mut result = vec![Crumb {
+            label: location.label.clone(),
+            path: location.root.clone(),
+        }];
+        let mut path = location.root.clone();
+        for part in relative.components() {
+            path.push(part.as_os_str());
+            result.push(Crumb {
+                label: fs::clean(&part.as_os_str().to_string_lossy()),
+                path: path.clone(),
+            });
+        }
+        return result;
+    }
     let mut path = PathBuf::new();
     let mut result = Vec::new();
     for component in cwd.components() {
@@ -122,7 +139,10 @@ pub fn bar(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Pa
         );
         return;
     }
-    let items = crumbs(&owner.cwd);
+    let items = crumbs(&owner.cwd, app.network.location(&owner.cwd));
+    let root_width = ((items[0].label.width() + 2) as u16)
+        .min(available / 3)
+        .max(3);
     let total =
         items.iter().map(|p| p.label.width() + 2).sum::<usize>() + items.len().saturating_sub(1);
     let mut x = row.x;
@@ -146,7 +166,7 @@ pub fn bar(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Pa
             x += crumb(
                 app,
                 frame,
-                Rect::new(x, row.y, 3, 1),
+                Rect::new(x, row.y, root_width, 1),
                 &items[0],
                 &owner,
                 false,
@@ -168,7 +188,7 @@ pub fn bar(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Pa
         x += crumb(
             app,
             frame,
-            Rect::new(x, row.y, 3, 1),
+            Rect::new(x, row.y, root_width, 1),
             &items[0],
             &owner,
             false,
@@ -259,7 +279,15 @@ pub fn menu(app: &mut App, frame: &mut Frame, palette: Palette) {
         .enumerate()
         .skip(menu.offset)
         .take(menu.capacity)
-        .map(|(index, p)| (index, fs::clean(&p.to_string_lossy())))
+        .map(|(index, p)| {
+            (
+                index,
+                app.network
+                    .location(p)
+                    .and_then(|l| l.address_for(p))
+                    .unwrap_or_else(|| fs::clean(&p.to_string_lossy())),
+            )
+        })
         .collect();
     let selected = menu.selected;
     let capacity = menu.capacity as isize;

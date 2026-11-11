@@ -24,6 +24,8 @@ mod operations;
 mod path;
 pub use path::{PathMenu, PathOwner};
 mod devices;
+mod network;
+pub use network::{NetworkControl, NetworkField, NetworkView};
 mod places;
 pub use devices::{DeviceControl, DevicesView};
 mod selection;
@@ -52,6 +54,10 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    Network {
+        revision: u64,
+        control: NetworkControl,
+    },
     DeviceRow {
         revision: u64,
         index: usize,
@@ -167,6 +173,7 @@ pub enum Target {
 
 #[derive(Clone)]
 pub enum EditKind {
+    Network(NetworkField),
     PlaceFilter,
     PlaceLabel {
         section: crate::places::Section,
@@ -197,6 +204,7 @@ pub enum EditKind {
 impl EditKind {
     pub fn title(&self) -> &'static str {
         match self {
+            Self::Network(_) => "Подключение к серверу",
             Self::PlaceFilter => "Фильтр мест",
             Self::PlaceLabel { .. } => "Название места",
             Self::ArchiveCreate { .. } => "Создать архив",
@@ -214,6 +222,7 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    Network,
     Devices,
     Places,
     CloseTerminal,
@@ -253,6 +262,8 @@ pub struct Place {
 }
 
 pub struct App {
+    pub network: crate::network::Network,
+    pub network_view: NetworkView,
     pub devices: crate::devices::Monitor,
     pub devices_view: DevicesView,
     device_open: Option<devices::PendingOpen>,
@@ -366,6 +377,8 @@ impl App {
             path: PathBuf::from("/"),
         });
         let mut app = Self {
+            network: Default::default(),
+            network_view: Default::default(),
             devices: Default::default(),
             devices_view: Default::default(),
             device_open: None,
@@ -530,6 +543,7 @@ impl App {
             || self.preview_loading
             || self.busy
             || self.devices.working.is_some()
+            || self.network.working.is_some()
             || self.clipboard_reads_pending()
             || self.history_storage.loading
             || !self.folder_sizes.result.done
@@ -609,6 +623,7 @@ impl App {
         }
         self.poll_places();
         self.poll_devices();
+        self.poll_network();
         self.persist_session();
         self.validate_marquee();
         self.observe_directories();

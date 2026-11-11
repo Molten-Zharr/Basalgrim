@@ -202,6 +202,9 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::Network { revision, control }) => {
+                        self.network_control(revision, control)
+                    }
                     Some(Target::DeviceRow { revision, index }) => {
                         self.device_select(revision, index, double)
                     }
@@ -475,6 +478,9 @@ impl App {
                     _ => {}
                 }
             }
+            Input::Scroll { delta, .. } if self.network_dialog() => {
+                self.network_scroll(delta as isize * 3);
+            }
             Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::Devices)) => {
                 self.device_move(delta as isize * 3)
             }
@@ -666,6 +672,9 @@ impl App {
         self.tab_mut().reset_range();
     }
     fn key(&mut self, press: KeyPress) {
+        if self.network_key(press.normalized()) {
+            return;
+        }
         if matches!(self.dialog, Some(Dialog::Devices)) {
             self.devices_key(press);
             return;

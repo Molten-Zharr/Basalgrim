@@ -1,0 +1,5 @@
+pyftpdlib==2.2.0
+paramiko==5.1.0
+impacket==0.13.1
+wsgidav==4.4.0
+cheroot==11.1.2

@@ -265,6 +265,10 @@ fn tabs(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Palet
                 .is_some_and(|v| v.owner.pane == pane && v.owner.tab == i)
             {
                 "Корзина".into()
+            } else if let Some(location) =
+                app.network.location(&tab.cwd).filter(|l| l.root == tab.cwd)
+            {
+                location.label.clone()
             } else {
                 fs::clean(
                     &tab.cwd

@@ -16,7 +16,11 @@ pub fn field(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
         .filter(|p| p[0] >= start)
     {
         spans.push(Span::styled(
-            fs::clean(&text[pair[0]..pair[1]]),
+            if app.secret_text() {
+                "*".repeat(crate::text_edit::width(&text[pair[0]..pair[1]]))
+            } else {
+                fs::clean(&text[pair[0]..pair[1]])
+            },
             if pair[0] >= selected.start && pair[0] < selected.end {
                 palette.selection()
             } else {
@@ -107,7 +111,8 @@ pub fn menu(app: &mut App, frame: &mut Frame, palette: Palette) {
         .take(usize::from(inner.height))
     {
         let row = Rect::new(inner.x, inner.y + i as u16, inner.width, 1);
-        let enabled = selection || matches!(command, TextCommand::Paste | TextCommand::SelectAll);
+        let enabled = (selection && !app.secret_text())
+            || matches!(command, TextCommand::Paste | TextCommand::SelectAll);
         frame.render_widget(
             Paragraph::new(format!(" {}", command.label())).style(if !enabled {
                 palette.muted()

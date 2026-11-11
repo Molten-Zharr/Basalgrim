@@ -5,6 +5,7 @@ mod devices;
 mod dialogs;
 mod files;
 mod folder_size;
+mod network;
 mod operations;
 mod path;
 mod places;
@@ -586,6 +587,12 @@ fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
             rect,
         );
         hit(app, rect, Target::Action(Action::Devices));
+        y += 1;
+    }
+    if y < inner.bottom().saturating_sub(5) {
+        let rect = Rect::new(inner.x, y, inner.width, 1);
+        frame.render_widget(Paragraph::new("    Сеть").style(palette.accent()), rect);
+        hit(app, rect, Target::Action(Action::Network));
         y += 1;
     }
     let devices: Vec<_> = app

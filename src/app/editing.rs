@@ -208,6 +208,9 @@ impl App {
                 self.text_paste = None;
             }
             Input::Scroll { delta, .. } => {
+                if self.network_dialog() && self.editor_menu.is_none() {
+                    self.network_scroll(delta as isize * 3);
+                }
                 if self.recursive_editing() && self.editor_menu.is_none() {
                     self.search_move(delta as isize * 3);
                 }
@@ -222,6 +225,9 @@ impl App {
     }
     pub(super) fn editor_command(&mut self, command: TextCommand) {
         self.editor_menu = None;
+        if self.secret_text() && matches!(command, TextCommand::Copy | TextCommand::Cut) {
+            return;
+        }
         let Some(Dialog::Edit { kind, text, .. }) = &self.dialog else {
             return;
         };

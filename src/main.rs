@@ -79,7 +79,7 @@ fn run() -> Result<()> {
             app.pump_clipboard(clipboard);
         }
         if ctx.input(|i| i.viewport().close_requested())
-            && (app.busy || app.devices.working.is_some())
+            && (app.busy || app.devices.working.is_some() || app.network.working.is_some())
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             app.message("Перед выходом дождитесь завершения операции", true);
