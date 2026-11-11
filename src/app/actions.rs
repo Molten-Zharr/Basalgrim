@@ -84,6 +84,8 @@ impl App {
         }
         match action {
             Action::Devices => self.open_devices(),
+            Action::Properties => self.open_details(false, false),
+            Action::OpenWith => self.open_details(false, true),
             Action::Network => self.open_network(),
             Action::Places => self.open_places(crate::places::Section::Bookmarks),
             Action::Favorites => self.open_places(crate::places::Section::Favorites),
@@ -344,6 +346,10 @@ impl App {
         self.update_preview();
     }
     pub fn cancel_dialog(&mut self) {
+        if self.details_dialog() {
+            self.close_details();
+            return;
+        }
         if self.network_dialog() {
             self.cancel_network();
             return;
@@ -425,6 +431,19 @@ impl App {
         }
     }
     pub fn confirm_dialog(&mut self) {
+        if self.details_dialog() {
+            if let Some(v) = &self.detail_view {
+                self.detail_control(
+                    v.revision,
+                    if v.chooser {
+                        DetailControl::Launch
+                    } else {
+                        DetailControl::Apply
+                    },
+                );
+            }
+            return;
+        }
         if self.network_dialog() {
             self.submit_network(false);
             return;
@@ -495,6 +514,7 @@ impl App {
             Dialog::Settings | Dialog::CaptureBinding { .. } => {
                 self.dialog = Some(Dialog::Settings)
             }
+            Dialog::Details => {}
             Dialog::Network => {}
             Dialog::Devices => {
                 self.dialog = Some(Dialog::Devices);
@@ -548,7 +568,10 @@ impl App {
                     EditKind::ArchiveCreate { .. } | EditKind::ArchiveExtract { .. } => {
                         unreachable!()
                     }
-                    EditKind::Network(_) | EditKind::PlaceFilter | EditKind::PlaceLabel { .. } => {
+                    EditKind::ApplicationFilter
+                    | EditKind::Network(_)
+                    | EditKind::PlaceFilter
+                    | EditKind::PlaceLabel { .. } => {
                         unreachable!()
                     }
                     EditKind::RecursiveSearch => unreachable!(),

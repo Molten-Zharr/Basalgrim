@@ -195,7 +195,15 @@ fn archive_navigation_reuses_tabs_breadcrumbs_preview_contexts_and_readonly_comm
     let r = hit(&app, |t| matches!(t, Target::Entry { index: 0, .. }));
     app.handle(Input::SecondaryClick { x: r.x, y: r.y });
     let commands: Vec<_> = app.command_items().iter().map(|c| c.action).collect();
-    assert_eq!(commands, vec![Action::Open, Action::ArchiveExtract]);
+    assert_eq!(
+        commands,
+        vec![
+            Action::Open,
+            Action::OpenWith,
+            Action::Properties,
+            Action::ArchiveExtract
+        ]
+    );
     app.cancel_dialog();
     app.action(Action::ArchiveExtract);
     let out = temp.path().join("chosen");

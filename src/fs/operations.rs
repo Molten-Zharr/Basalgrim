@@ -26,6 +26,7 @@ pub struct RetainedCopy {
 
 #[derive(Debug, Clone)]
 pub enum Operation {
+    Permissions(crate::details::PermissionChange),
     ArchiveCreate {
         sources: Vec<PathBuf>,
         destination: PathBuf,
@@ -77,6 +78,7 @@ pub enum Operation {
 impl Operation {
     pub fn title(&self) -> &'static str {
         match self {
+            Self::Permissions(_) => "Изменение прав доступа",
             Self::ArchiveCreate { .. } => "Создание архива",
             Self::ArchiveExtract { .. } => "Распаковка архива",
             Self::CleanupHistory { .. } => "Очистка undo/redo",
@@ -112,6 +114,7 @@ impl Operation {
     }
     pub fn destination(&self) -> Option<PathBuf> {
         match self {
+            Self::Permissions(change) => Some(change.path.clone()),
             Self::ArchiveCreate { destination, .. } | Self::ArchiveExtract { destination, .. } => {
                 Some(destination.clone())
             }
@@ -711,6 +714,22 @@ fn operate_inner(
             control.emit();
         };
         match operation {
+            Operation::Permissions(change) => {
+                control.current(&change.path)?;
+                let pinned = change.pin()?;
+                control.begin_item(0)?;
+                let kind = format!("chmod:{:04o}", change.requested_mode());
+                let step = control.before_step(&kind, Some(&change.path), Some(&change.path))?;
+                control.checkpoint()?;
+                let result = pinned.apply(&change);
+                control.after_step(step, &kind, Some(&change.path), &result);
+                let completed = result.is_ok();
+                if completed {
+                    control.entry_done(&change.path);
+                    complete(change.path.clone(), &mut control);
+                }
+                control.conclude_item(result, completed, false)?;
+            }
             Operation::ArchiveCreate { .. } | Operation::ArchiveExtract { .. } => {
                 let destination = operation.destination().unwrap();
                 control.current(&destination)?;

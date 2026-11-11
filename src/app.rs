@@ -1,4 +1,6 @@
 mod actions;
+mod details;
+pub use details::{DetailControl, DetailView};
 mod archive;
 mod batch;
 mod folder_size;
@@ -54,6 +56,11 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    Detail {
+        token: u64,
+        revision: u64,
+        control: DetailControl,
+    },
     Network {
         revision: u64,
         control: NetworkControl,
@@ -173,6 +180,7 @@ pub enum Target {
 
 #[derive(Clone)]
 pub enum EditKind {
+    ApplicationFilter,
     Network(NetworkField),
     PlaceFilter,
     PlaceLabel {
@@ -204,6 +212,7 @@ pub enum EditKind {
 impl EditKind {
     pub fn title(&self) -> &'static str {
         match self {
+            Self::ApplicationFilter => "Поиск программы",
             Self::Network(_) => "Подключение к серверу",
             Self::PlaceFilter => "Фильтр мест",
             Self::PlaceLabel { .. } => "Название места",
@@ -222,6 +231,7 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    Details,
     Network,
     Devices,
     Places,
@@ -264,6 +274,8 @@ pub struct Place {
 pub struct App {
     pub network: crate::network::Network,
     pub network_view: NetworkView,
+    pub details: crate::details::Service,
+    pub detail_view: Option<DetailView>,
     pub devices: crate::devices::Monitor,
     pub devices_view: DevicesView,
     device_open: Option<devices::PendingOpen>,
@@ -379,6 +391,8 @@ impl App {
         let mut app = Self {
             network: Default::default(),
             network_view: Default::default(),
+            details: Default::default(),
+            detail_view: None,
             devices: Default::default(),
             devices_view: Default::default(),
             device_open: None,
@@ -544,6 +558,7 @@ impl App {
             || self.busy
             || self.devices.working.is_some()
             || self.network.working.is_some()
+            || self.detail_view.as_ref().is_some_and(|v| v.loading)
             || self.clipboard_reads_pending()
             || self.history_storage.loading
             || !self.folder_sizes.result.done
@@ -624,6 +639,7 @@ impl App {
         self.poll_places();
         self.poll_devices();
         self.poll_network();
+        self.poll_details();
         self.persist_session();
         self.validate_marquee();
         self.observe_directories();

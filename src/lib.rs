@@ -32,4 +32,5 @@ pub mod thumbnails;
 pub mod devices;
 pub mod places;
 
+pub mod details;
 pub mod network;

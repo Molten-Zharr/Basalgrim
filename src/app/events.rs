@@ -202,6 +202,21 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::Detail {
+                        token,
+                        revision,
+                        control,
+                    }) => {
+                        if self.detail_view.as_ref().is_some_and(|v| v.token == token) {
+                            let control = match control {
+                                DetailControl::Row(index) if double => {
+                                    DetailControl::OpenRow(index)
+                                }
+                                other => other,
+                            };
+                            self.detail_control(revision, control);
+                        }
+                    }
                     Some(Target::Network { revision, control }) => {
                         self.network_control(revision, control)
                     }
@@ -478,6 +493,9 @@ impl App {
                     _ => {}
                 }
             }
+            Input::Scroll { delta, .. } if self.details_dialog() => {
+                self.details_scroll(delta as isize * 3);
+            }
             Input::Scroll { delta, .. } if self.network_dialog() => {
                 self.network_scroll(delta as isize * 3);
             }
@@ -672,6 +690,9 @@ impl App {
         self.tab_mut().reset_range();
     }
     fn key(&mut self, press: KeyPress) {
+        if self.details_key(press.normalized()) {
+            return;
+        }
         if self.network_key(press.normalized()) {
             return;
         }

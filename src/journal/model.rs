@@ -87,6 +87,11 @@ pub struct Spec {
 }
 pub fn specs(operation: &Operation) -> Vec<Spec> {
     match operation {
+        Operation::Permissions(change) => vec![Spec {
+            kind: "permissions",
+            source: change.path.clone(),
+            target: Some(change.path.clone()),
+        }],
         Operation::ArchiveCreate {
             sources,
             destination,

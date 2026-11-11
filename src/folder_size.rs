@@ -540,13 +540,25 @@ mod tests {
             Cancellation::default(),
         )
         .unwrap();
-        scan.step().unwrap();
-        let bytes: Vec<u8> = scan
-            .db
-            .query_row("SELECT path FROM queue ORDER BY id LIMIT 1", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
+        // A timed step may yield before enqueueing the first child on a busy
+        // machine. Wait for the race's actual precondition, not one time slice.
+        let bytes: Vec<u8> = loop {
+            scan.step().unwrap();
+            if let Some(path) = scan
+                .db
+                .query_row("SELECT path FROM queue ORDER BY id LIMIT 1", [], |r| {
+                    r.get(0)
+                })
+                .optional()
+                .unwrap()
+            {
+                break path;
+            }
+            assert!(
+                !scan.result.done,
+                "scan finished before a directory was queued"
+            );
+        };
         let path = root.path().join(OsString::from_vec(bytes));
         disk::remove_dir(&path).unwrap();
         std::os::unix::fs::symlink(outside.path(), &path).unwrap();

@@ -127,6 +127,8 @@ pub enum Input {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
+    OpenWith,
+    Properties,
     Network,
     Devices,
     Places,
@@ -247,10 +249,14 @@ impl Action {
         Self::Unfavorite,
         Self::Devices,
         Self::Network,
+        Self::Properties,
+        Self::OpenWith,
     ];
     pub fn name(self) -> &'static str {
         match self {
             Self::Devices => "Накопители",
+            Self::Properties => "Свойства",
+            Self::OpenWith => "Открыть с помощью…",
             Self::Network => "Сеть / подключиться к серверу",
             Self::Places => "Места / закладки",
             Self::Bookmark => "Добавить папку в закладки",
@@ -370,6 +376,22 @@ pub fn default_bindings() -> Vec<Binding> {
             },
         });
     }
+    result.push(Binding {
+        action: Properties,
+        key: KeyPress {
+            alt: true,
+            ..KeyPress::plain(Key::Enter)
+        },
+    });
+    result.push(Binding {
+        action: OpenWith,
+        key: KeyPress {
+            ctrl: true,
+            alt: false,
+            shift: false,
+            key: Key::Enter,
+        },
+    });
     result.push(Binding {
         action: FolderSize,
         key: KeyPress {

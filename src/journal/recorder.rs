@@ -116,6 +116,7 @@ impl<'a> Recorder<'a> {
             params![self.id, index as i64, serde_json::to_vec(&before)?],
         )?;
         let irreversible = matches!(spec.kind, "delete_trash" | "cleanup_history");
+        let permissions = spec.kind == "permissions";
         self.current = Some(Current {
             index,
             target: spec.target.clone(),
@@ -127,7 +128,13 @@ impl<'a> Recorder<'a> {
             origin: None,
             backup: None,
             trash: None,
-            undo_issue: irreversible.then(|| "Безвозвратное удаление не отменяется".into()),
+            undo_issue: if irreversible {
+                Some("Безвозвратное удаление не отменяется".into())
+            } else if permissions {
+                Some("Изменение прав: автоматическая отмена и повтор недоступны".into())
+            } else {
+                None
+            },
             restore: None,
         });
         Ok(())
@@ -228,7 +235,7 @@ impl<'a> Recorder<'a> {
         destination: Option<&Path>,
         result: &Result<()>,
     ) {
-        if kind == "publish"
+        if (kind == "publish" || kind.starts_with("chmod:"))
             && result.is_ok()
             && let Some(current) = &mut self.current
         {
@@ -364,6 +371,7 @@ impl<'a> Recorder<'a> {
             let blocked = current.undo_issue.clone();
             Some(Inverse {
                 action: match current.spec.kind {
+                    "permissions" => "restore_permissions",
                     "move" | "rename" | "restore" => "move_back",
                     "trash" => "restore_trash",
                     "delete_trash" => "permanent_delete",

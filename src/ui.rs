@@ -1,6 +1,7 @@
 mod batch;
 mod commands;
 mod conflicts;
+mod details;
 mod devices;
 mod dialogs;
 mod files;

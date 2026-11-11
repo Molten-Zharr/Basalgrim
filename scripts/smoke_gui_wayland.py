@@ -135,6 +135,21 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--details-only' in sys.argv[2:]:
+                import details_fixture
+                fixture=details_fixture.Fixture(base)
+                env.update(fixture.env)
+                settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+                process=launch(fixture.root)
+                try:
+                    details_fixture.exercise(fixture,key,lambda text:run('wtype','-s','100',text,'-s','100'),click,lambda name:run('grim','-g','0,0 1360x860',str(out/('native-wayland-details-'+name+'.png'))),wait_for)
+                    run('swaymsg',f'[pid={process.pid}] resize set 400 px 360 px, move absolute position 0 px 0 px');time.sleep(.3)
+                    details_fixture.compact(fixture,key,click,lambda name:run('grim','-g','0,0 400x360',str(out/('native-wayland-details-'+name+'.png'))),wait_for)
+                    key('q','ctrl');process.wait(timeout=5);assert process.returncode==0
+                finally:
+                    if process.poll() is None:process.terminate();process.wait(timeout=5)
+                    process=None;fixture.close()
+                return
             if '--network-only' in sys.argv[2:]:
                 import network_fixture
                 with network_fixture.Fixture(base) as fixture:

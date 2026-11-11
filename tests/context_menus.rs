@@ -78,6 +78,10 @@ fn right_click_offers_only_commands_for_one_entry_or_the_marked_group() {
             if index == 0 {
                 expected.insert(5, Action::FolderSize);
             }
+            expected.insert(1, Action::Properties);
+            if index == 1 {
+                expected.insert(1, Action::OpenWith);
+            }
             assert_eq!(actions(&app), expected);
             assert!(app.command_items().iter().all(|i| i.enabled));
             let text: String = render(&mut app)
@@ -165,7 +169,8 @@ fn background_menu_uses_the_directory_even_when_files_are_marked() {
     ] {
         assert!(!items.contains(&a));
     }
-    assert!(items.len() <= 10);
+    assert!(items.contains(&Action::Properties));
+    assert!(items.len() <= 11);
     assert_eq!(app.tab().marked.len(), 2);
     app.cancel_dialog();
     app.clipboard = Some(Clipboard {

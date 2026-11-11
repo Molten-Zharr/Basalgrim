@@ -214,6 +214,21 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--details-only' in sys.argv[2:]:
+            import details_fixture
+            fixture=details_fixture.Fixture(base)
+            os.environ.update(fixture.env)
+            settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+            process,window,log=launch(fixture.root,config)
+            def details_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
+            try:
+                details_fixture.exercise(fixture,details_key,type_text,lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-details-'+name+'.png'),wait_for)
+                x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.3)
+                details_fixture.compact(fixture,details_key,lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-details-'+name+'.png'),wait_for)
+                quit_when_ready(process)
+            finally:
+                stop(process,log);fixture.close()
+            sys.exit(0)
         if '--network-only' in sys.argv[2:]:
             import network_fixture
             with network_fixture.Fixture(base) as fixture:

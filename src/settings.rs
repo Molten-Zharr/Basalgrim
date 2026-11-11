@@ -84,6 +84,8 @@ impl Settings {
         for action in [
             Action::Devices,
             Action::Network,
+            Action::Properties,
+            Action::OpenWith,
             Action::Places,
             Action::Bookmark,
             Action::Favorites,

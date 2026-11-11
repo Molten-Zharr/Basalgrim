@@ -33,9 +33,12 @@ impl App {
         let count = self.tab().selection_count();
         let selection = count > 0;
         let actions: &[Action] = match context {
-            MenuContext::Entries if self.in_archive() => &[Open, ArchiveExtract],
+            MenuContext::Entries if self.in_archive() => {
+                &[Open, OpenWith, Properties, ArchiveExtract]
+            }
             MenuContext::Directory if self.in_archive() => &[
                 ArchiveExtract,
+                Properties,
                 Sort,
                 Grid,
                 Hidden,
@@ -60,6 +63,8 @@ impl App {
             ],
             MenuContext::Entries => &[
                 Open,
+                OpenWith,
+                Properties,
                 Copy,
                 Cut,
                 Rename,
@@ -74,11 +79,13 @@ impl App {
                 Unfavorite,
             ],
             MenuContext::Directory => &[
-                NewFile, NewFolder, Paste, FolderSize, Sort, Grid, Hidden, Refresh, Search,
-                SelectAll, CopyPath, Bookmark, Places,
+                NewFile, NewFolder, Paste, Properties, FolderSize, Sort, Grid, Hidden, Refresh,
+                Search, SelectAll, CopyPath, Bookmark, Places,
             ],
             MenuContext::All => &[
                 Open,
+                OpenWith,
+                Properties,
                 ArchiveCreate,
                 ArchiveExtract,
                 Mark,
@@ -138,6 +145,10 @@ impl App {
             .copied()
             .map(|action| {
                 let enabled = match action {
+                    OpenWith => self.can_open_with(),
+                    Properties => self
+                        .detail_source(context == MenuContext::Directory)
+                        .is_some(),
                     Bookmark => self.can_bookmark(),
                     Favorite => self.can_favorite(true),
                     Unfavorite => self.can_favorite(false),
@@ -256,6 +267,10 @@ impl App {
             let archive_background = matches!(&self.dialog, Some(Dialog::Commands(menu)) if menu.context == MenuContext::Directory);
             let folder = (action == Action::FolderSize).then(|| self.folder_size_target(matches!(&self.dialog, Some(Dialog::Commands(menu)) if menu.context == MenuContext::Directory))).flatten();
             self.dialog = None;
+            if action == Action::Properties {
+                self.open_details(archive_background, false);
+                return;
+            }
             if action == Action::ArchiveExtract {
                 self.begin_extract(archive_background);
                 return;

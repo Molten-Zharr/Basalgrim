@@ -3,6 +3,10 @@ use crate::app::Dialog;
 use ratatui::widgets::{Clear, Wrap};
 
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
+    if app.details_dialog() {
+        super::details::render(app, frame, palette);
+        return;
+    }
     if app.network_dialog() {
         super::network::render(app, frame, palette);
         return;
@@ -121,7 +125,8 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Dialog::Help => "Управление · basalgrim",
         Dialog::CloseTerminal => "Завершить терминал?",
         Dialog::CleanupHistory(_) => "Очистить данные undo/redo?",
-        Dialog::Network
+        Dialog::Details
+        | Dialog::Network
         | Dialog::Devices
         | Dialog::Places
         | Dialog::Settings
@@ -137,7 +142,8 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     frame.render_widget(block, rect);
     let mut lines = vec![Line::raw("")];
     match dialog {
-        Dialog::Network
+        Dialog::Details
+        | Dialog::Network
         | Dialog::Devices
         | Dialog::Places
         | Dialog::Settings
