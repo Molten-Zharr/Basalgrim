@@ -78,9 +78,11 @@ fn run() -> Result<()> {
         if let Some(clipboard) = &clipboard {
             app.pump_clipboard(clipboard);
         }
-        if ctx.input(|i| i.viewport().close_requested()) && app.busy {
+        if ctx.input(|i| i.viewport().close_requested())
+            && (app.busy || app.devices.working.is_some())
+        {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            app.message("Перед выходом дождитесь завершения файловой операции", true);
+            app.message("Перед выходом дождитесь завершения операции", true);
         }
         app.tick();
         ctx.request_repaint_after(Duration::from_millis(if app.loading() { 30 } else { 250 }));

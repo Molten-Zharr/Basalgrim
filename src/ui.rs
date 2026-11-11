@@ -1,6 +1,7 @@
 mod batch;
 mod commands;
 mod conflicts;
+mod devices;
 mod dialogs;
 mod files;
 mod folder_size;
@@ -571,6 +572,50 @@ fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
             rect,
         );
         hit(app, rect, Target::PlacesSection(section));
+        y += 1;
+    }
+    if y < inner.bottom().saturating_sub(5) {
+        let rect = Rect::new(inner.x, y, inner.width, 1);
+        frame.render_widget(
+            Paragraph::new(if app.devices.working.is_some() {
+                "    Накопители…"
+            } else {
+                "    Накопители"
+            })
+            .style(palette.accent()),
+            rect,
+        );
+        hit(app, rect, Target::Action(Action::Devices));
+        y += 1;
+    }
+    let devices: Vec<_> = app
+        .devices
+        .snapshot
+        .devices()
+        .into_iter()
+        .take(usize::from(inner.height))
+        .collect();
+    for device in devices {
+        if y >= inner.bottom().saturating_sub(6) {
+            break;
+        }
+        let rect = Rect::new(inner.x, y, inner.width, 1);
+        frame.render_widget(
+            Paragraph::new(files::shorten_name(
+                &format!("  {}", device.label),
+                inner.width as usize,
+            ))
+            .style(palette.text()),
+            rect,
+        );
+        hit(
+            app,
+            rect,
+            Target::DeviceOpen {
+                revision: app.devices.revision,
+                key: device.key,
+            },
+        );
         y += 1;
     }
     if y + 2 < inner.bottom().saturating_sub(5) && !bookmarks.is_empty() {

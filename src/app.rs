@@ -23,7 +23,9 @@ pub use storage::StorageView;
 mod operations;
 mod path;
 pub use path::{PathMenu, PathOwner};
+mod devices;
 mod places;
+pub use devices::{DeviceControl, DevicesView};
 mod selection;
 mod session;
 pub use places::{PlaceControl, PlacesView};
@@ -50,6 +52,18 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    DeviceRow {
+        revision: u64,
+        index: usize,
+    },
+    DeviceControl {
+        revision: u64,
+        control: DeviceControl,
+    },
+    DeviceOpen {
+        revision: u64,
+        key: String,
+    },
     PlacesSection(crate::places::Section),
     SavedPlace(PathBuf),
     PlacesRow {
@@ -200,6 +214,7 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    Devices,
     Places,
     CloseTerminal,
     FolderSize,
@@ -238,6 +253,9 @@ pub struct Place {
 }
 
 pub struct App {
+    pub devices: crate::devices::Monitor,
+    pub devices_view: DevicesView,
+    device_open: Option<devices::PendingOpen>,
     pub library: crate::places::Library,
     pub places_view: PlacesView,
     place_open: Option<places::PendingOpen>,
@@ -348,6 +366,9 @@ impl App {
             path: PathBuf::from("/"),
         });
         let mut app = Self {
+            devices: Default::default(),
+            devices_view: Default::default(),
+            device_open: None,
             library: Default::default(),
             places_view: Default::default(),
             place_open: None,
@@ -508,6 +529,7 @@ impl App {
             || self.thumbnails.loading()
             || self.preview_loading
             || self.busy
+            || self.devices.working.is_some()
             || self.clipboard_reads_pending()
             || self.history_storage.loading
             || !self.folder_sizes.result.done
@@ -547,7 +569,11 @@ impl App {
         if self.in_trash() {
             self.close_trash();
         }
-        let tab = self.tab_mut();
+        self.navigate_tab(self.active, self.panes[self.active].active, path, history);
+        self.update_preview();
+    }
+    pub(super) fn navigate_tab(&mut self, pane: usize, index: usize, path: PathBuf, history: bool) {
+        let tab = &mut self.panes[pane].tabs[index];
         if history && tab.cwd != path {
             tab.back.push(tab.cwd.clone());
             tab.forward.clear();
@@ -569,8 +595,7 @@ impl App {
         tab.reset_range();
         tab.offset = 0;
         tab.follow_selection = true;
-        self.refresh();
-        self.update_preview();
+        self.reload(pane, index);
     }
     pub fn tick(&mut self) {
         if self.terminal.poll() && matches!(self.dialog, Some(Dialog::CloseTerminal)) {
@@ -583,6 +608,7 @@ impl App {
             self.hits.clear();
         }
         self.poll_places();
+        self.poll_devices();
         self.persist_session();
         self.validate_marquee();
         self.observe_directories();

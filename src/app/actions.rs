@@ -44,8 +44,8 @@ impl App {
             return;
         }
         if matches!(action, Action::Quit) {
-            if self.busy {
-                self.message("Перед выходом дождитесь завершения файловой операции", true);
+            if self.busy || self.devices.working.is_some() {
+                self.message("Перед выходом дождитесь завершения операции", true);
             } else {
                 self.cancel_clipboard_read();
                 self.quit = true;
@@ -83,6 +83,7 @@ impl App {
             self.tab_mut().selected = index;
         }
         match action {
+            Action::Devices => self.open_devices(),
             Action::Places => self.open_places(crate::places::Section::Bookmarks),
             Action::Favorites => self.open_places(crate::places::Section::Favorites),
             Action::Recent => self.open_places(crate::places::Section::Recent),
@@ -342,6 +343,13 @@ impl App {
         self.update_preview();
     }
     pub fn cancel_dialog(&mut self) {
+        self.device_open = None;
+        if matches!(self.dialog, Some(Dialog::Devices))
+            && self.devices_view.confirm.take().is_some()
+        {
+            self.devices_view.revision += 1;
+            return;
+        }
         self.place_open = None;
         if self.places_editing() {
             self.editor_menu = None;
@@ -477,6 +485,10 @@ impl App {
             Dialog::Conflict(_) => unreachable!(),
             Dialog::Settings | Dialog::CaptureBinding { .. } => {
                 self.dialog = Some(Dialog::Settings)
+            }
+            Dialog::Devices => {
+                self.dialog = Some(Dialog::Devices);
+                self.device_control(self.devices_view.revision, DeviceControl::Open);
             }
             Dialog::Places => {
                 self.dialog = Some(Dialog::Places);

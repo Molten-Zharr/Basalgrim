@@ -8,6 +8,8 @@ impl App {
     pub fn startup(options: Options, settings: Settings, warning: Option<String>) -> Self {
         let mut app = Self::startup_with_session(options, settings, warning, State::path());
         app.configure_journal(crate::journal::Database::path());
+        app.devices
+            .attach(Box::new(crate::devices::UDisks::default()));
         if let Some(config) = crate::places::Config::desktop() {
             app.configure_places(config);
         }

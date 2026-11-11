@@ -97,7 +97,7 @@ impl App {
         self.operations.iter().find(|record| record.id == id)
     }
     pub fn start_operation(&mut self, operation: Operation) {
-        if self.busy || self.clipboard_reads_pending() {
+        if self.busy || self.clipboard_reads_pending() || self.devices.working.is_some() {
             self.message("Дождитесь завершения или отмените текущую операцию", true);
             return;
         }

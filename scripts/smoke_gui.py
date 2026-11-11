@@ -213,6 +213,18 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--devices-only' in sys.argv[2:]:
+            import devices_fixture
+            with devices_fixture.Fixture(base) as fixture:
+                os.environ['DBUS_SYSTEM_BUS_ADDRESS']=fixture.address
+                settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+                process,window,log=launch(fixture.root,config)
+                def device_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
+                try:
+                    devices_fixture.exercise(fixture,device_key,lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-devices-'+name+'.png'),wait_for)
+                    quit_when_ready(process)
+                finally:stop(process,log)
+            sys.exit(0)
         if '--places-only' in sys.argv[2:]:
             import places_fixture
             source=places_fixture.prepare(base)

@@ -57,6 +57,7 @@ impl App {
                 Refresh,
                 Operations,
                 HistoryStorage,
+                Devices,
             ],
             MenuContext::Entries => &[
                 Open,
@@ -129,6 +130,7 @@ impl App {
                 Recent,
                 Favorite,
                 Unfavorite,
+                Devices,
             ],
         };
         actions

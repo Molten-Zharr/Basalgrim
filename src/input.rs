@@ -127,6 +127,7 @@ pub enum Input {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
+    Devices,
     Places,
     Bookmark,
     Favorites,
@@ -243,9 +244,11 @@ impl Action {
         Self::Recent,
         Self::Favorite,
         Self::Unfavorite,
+        Self::Devices,
     ];
     pub fn name(self) -> &'static str {
         match self {
+            Self::Devices => "Накопители",
             Self::Places => "Места / закладки",
             Self::Bookmark => "Добавить папку в закладки",
             Self::Favorites => "Избранное",
@@ -337,6 +340,7 @@ pub fn default_bindings() -> Vec<Binding> {
     .collect();
     for (action, key, alt, shift) in [
         (Places, 'b', false, false),
+        (Devices, 'm', true, false),
         (Bookmark, 'b', true, false),
         (Favorites, 's', true, false),
         (Recent, 'n', true, false),

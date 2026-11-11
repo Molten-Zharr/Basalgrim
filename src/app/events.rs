@@ -202,6 +202,15 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::DeviceRow { revision, index }) => {
+                        self.device_select(revision, index, double)
+                    }
+                    Some(Target::DeviceControl { revision, control }) => {
+                        self.device_control(revision, control)
+                    }
+                    Some(Target::DeviceOpen { revision, key }) if self.dialog.is_none() => {
+                        self.open_device(revision, key)
+                    }
                     Some(Target::PlacesSection(section))
                         if matches!(self.dialog, None | Some(Dialog::Places)) =>
                     {
@@ -466,6 +475,9 @@ impl App {
                     _ => {}
                 }
             }
+            Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::Devices)) => {
+                self.device_move(delta as isize * 3)
+            }
             Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::Places)) => {
                 self.place_move(delta as isize * 3)
             }
@@ -654,6 +666,10 @@ impl App {
         self.tab_mut().reset_range();
     }
     fn key(&mut self, press: KeyPress) {
+        if matches!(self.dialog, Some(Dialog::Devices)) {
+            self.devices_key(press);
+            return;
+        }
         if matches!(self.dialog, Some(Dialog::Places)) {
             self.places_key(press);
             return;

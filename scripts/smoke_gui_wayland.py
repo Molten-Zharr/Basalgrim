@@ -135,6 +135,19 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--devices-only' in sys.argv[2:]:
+                import devices_fixture
+                with devices_fixture.Fixture(base) as fixture:
+                    env['DBUS_SYSTEM_BUS_ADDRESS']=fixture.address
+                    settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+                    process=launch(fixture.root)
+                    try:
+                        devices_fixture.exercise(fixture,key,click,lambda name:run('grim','-g','0,0 1360x860',str(out/('native-wayland-devices-'+name+'.png'))),wait_for)
+                        key('q','ctrl');process.wait(timeout=5);assert process.returncode==0
+                    finally:
+                        if process.poll() is None:process.terminate();process.wait(timeout=5)
+                        process=None
+                return
             if '--places-only' in sys.argv[2:]:
                 import places_fixture
                 source=places_fixture.prepare(base)
