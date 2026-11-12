@@ -30,6 +30,7 @@ pub struct Tab {
     pub explicit_selection: bool,
     pub(crate) range: RangeSelection,
     pub filter: String,
+    pub(crate) revealed: BTreeSet<PathBuf>,
     pub sort: Sort,
     pub back: Vec<PathBuf>,
     pub forward: Vec<PathBuf>,
@@ -64,6 +65,7 @@ impl Tab {
             explicit_selection: false,
             range: RangeSelection::default(),
             filter: String::new(),
+            revealed: BTreeSet::new(),
             sort: Sort::Name,
             back: vec![],
             forward: vec![],
@@ -183,7 +185,10 @@ impl Tab {
             .entries
             .iter()
             .enumerate()
-            .filter(|(_, e)| (hidden || !e.hidden) && e.name.to_lowercase().contains(&query))
+            .filter(|(_, e)| {
+                (hidden || !e.hidden || self.revealed.contains(&e.path))
+                    && e.name.to_lowercase().contains(&query)
+            })
             .map(|(i, _)| i)
             .collect();
         self.selected = selected

@@ -46,11 +46,21 @@ fn main() {
     }
 }
 fn run() -> Result<()> {
-    let Some(options) = Options::parse()? else {
+    let Some(mut options) = Options::parse()? else {
+        return Ok(());
+    };
+    let Some(desktop) = basalgrim::desktop::Runtime::start(
+        false,
+        options.desktop,
+        options.file_manager,
+        options.request.take(),
+    )?
+    else {
         return Ok(());
     };
     let (settings, settings_path, warning) = Settings::startup();
     let mut app = App::startup(options, settings, warning);
+    app.attach_desktop(desktop);
     enable_raw_mode()?;
     let _session = Session;
     execute!(stdout(), EnterAlternateScreen)?;

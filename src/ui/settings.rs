@@ -71,7 +71,12 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Rect::new(menu.x, menu.y, menu.width, 1),
     );
     for (i, section) in SettingsSection::ALL.into_iter().enumerate() {
-        let rect = Rect::new(menu.x, menu.y + 2 + i as u16 * 2, menu.width, 1);
+        let rect = Rect::new(
+            menu.x,
+            menu.y + 2 + i as u16 * if menu.height < 10 { 1 } else { 2 },
+            menu.width,
+            1,
+        );
         if rect.bottom() > menu.bottom() {
             break;
         }
@@ -123,7 +128,9 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         content.height -= height;
     } else {
         frame.render_widget(
-            Paragraph::new(if app.settings_view.section == SettingsSection::Session {
+            Paragraph::new(if app.settings_view.section == SettingsSection::Desktop {
+                "РАБОЧИЙ СТОЛ"
+            } else if app.settings_view.section == SettingsSection::Session {
                 "СЕССИЯ"
             } else {
                 "ГОРЯЧИЕ КЛАВИШИ"
@@ -264,11 +271,22 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     let description = rows
         .get(app.settings_view.selected)
         .map_or("", |r| r.description.as_str());
+    let desktop_status =
+        app.settings_view.section == SettingsSection::Desktop && !app.desktop.status.is_empty();
     frame.render_widget(
-        Paragraph::new(description)
-            .wrap(Wrap { trim: false })
-            .style(palette.muted()),
-        Rect::new(footer.x, footer.y, footer.width, 2),
+        Paragraph::new(if desktop_status {
+            app.desktop.status.as_str()
+        } else {
+            description
+        })
+        .wrap(Wrap { trim: false })
+        .style(palette.muted()),
+        Rect::new(
+            footer.x,
+            footer.y,
+            footer.width,
+            if desktop_status { 3 } else { 2 },
+        ),
     );
     let status = if let Some(error) = &app.settings_save_error {
         format!("{error} · Ctrl+S — повторить")
@@ -279,15 +297,17 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     } else {
         "Сохранено · изменения применяются сразу".into()
     };
-    frame.render_widget(
-        Paragraph::new(status).style(if app.settings_save_error.is_some() {
-            palette.text().fg(palette.color("error"))
-        } else {
-            palette.muted()
-        }),
-        Rect::new(footer.x, footer.y + 2, footer.width, 1),
-    );
-    if app.settings_save_error.is_some() {
+    if !desktop_status {
+        frame.render_widget(
+            Paragraph::new(status).style(if app.settings_save_error.is_some() {
+                palette.text().fg(palette.color("error"))
+            } else {
+                palette.muted()
+            }),
+            Rect::new(footer.x, footer.y + 2, footer.width, 1),
+        );
+    }
+    if !desktop_status && app.settings_save_error.is_some() {
         hit(
             app,
             Rect::new(footer.x, footer.y + 2, footer.width, 1),

@@ -34,3 +34,5 @@ pub mod places;
 
 pub mod details;
 pub mod network;
+
+pub mod desktop;

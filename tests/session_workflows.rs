@@ -29,6 +29,9 @@ fn settle(app: &mut App) {
 }
 fn options(directory: &Path, explicit: bool, no_session: bool) -> Options {
     Options {
+        desktop: false,
+        file_manager: false,
+        request: None,
         directory: directory.into(),
         explicit_directory: explicit,
         no_session,

@@ -144,6 +144,9 @@ impl App {
     }
     fn palette_reason(&self, action: Action) -> Option<&'static str> {
         use Action::*;
+        if action == Quit && self.desktop.working {
+            return Some("Дождитесь регистрации приложения");
+        }
         let mutation = matches!(
             action,
             Paste

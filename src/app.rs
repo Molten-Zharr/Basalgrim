@@ -1,4 +1,6 @@
 mod actions;
+mod desktop;
+pub use desktop::DesktopState;
 mod palette;
 pub use palette::{PaletteControl, PaletteView};
 mod details;
@@ -281,6 +283,7 @@ pub struct Place {
 }
 
 pub struct App {
+    pub desktop: DesktopState,
     pub network: crate::network::Network,
     pub network_view: NetworkView,
     pub details: crate::details::Service,
@@ -399,6 +402,7 @@ impl App {
             path: PathBuf::from("/"),
         });
         let mut app = Self {
+            desktop: Default::default(),
             network: Default::default(),
             network_view: Default::default(),
             details: Default::default(),
@@ -631,6 +635,7 @@ impl App {
         tab.marked.clear();
         tab.explicit_selection = false;
         tab.filter.clear();
+        tab.revealed.clear();
         tab.selected = 0;
         tab.reset_range();
         tab.offset = 0;
@@ -651,6 +656,7 @@ impl App {
         self.poll_devices();
         self.poll_network();
         self.poll_details();
+        self.poll_desktop();
         self.update_palette();
         self.persist_session();
         self.validate_marquee();

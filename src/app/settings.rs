@@ -13,14 +13,16 @@ pub enum SettingsSection {
     Themes,
     Shortcuts,
     Session,
+    Desktop,
 }
 impl SettingsSection {
-    pub const ALL: [Self; 3] = [Self::Themes, Self::Shortcuts, Self::Session];
+    pub const ALL: [Self; 4] = [Self::Themes, Self::Shortcuts, Self::Session, Self::Desktop];
     pub fn name(self) -> &'static str {
         match self {
             Self::Themes => "Темы",
             Self::Shortcuts => "Клавиши",
             Self::Session => "Сессия",
+            Self::Desktop => "Система",
         }
     }
 }
@@ -79,6 +81,7 @@ impl SettingsEdit {
 }
 #[derive(Clone)]
 pub enum SettingControl {
+    Desktop(crate::desktop::InstallAction),
     RestoreSession,
     RetrySessionSave,
     IconMode,
@@ -139,6 +142,38 @@ impl App {
                         binding.action.name()
                     ),
                     SettingControl::Binding(index),
+                    false,
+                    None,
+                );
+            }
+        } else if self.settings_view.section == SettingsSection::Desktop {
+            for (label, action, help) in [
+                (
+                    "Ярлык приложения",
+                    crate::desktop::InstallAction::Install,
+                    "Установить ярлык GUI Basalgrim в меню приложений. Используется текущая сборка, путь к ней должен оставаться доступным.",
+                ),
+                (
+                    "Менеджер по умолчанию",
+                    crate::desktop::InstallAction::Default,
+                    "Назначить Basalgrim для открытия папок и запросов «Показать в папке». Если FileManager1 занят, потребуется новый сеанс рабочего стола.",
+                ),
+                (
+                    "Вернуть прежний",
+                    crate::desktop::InstallAction::Restore,
+                    "Восстановить сохранённый предыдущий менеджер. Позднейший выбор другого приложения не перезаписывается.",
+                ),
+            ] {
+                push(
+                    label.into(),
+                    if self.desktop.working {
+                        "Подождите"
+                    } else {
+                        "Применить"
+                    }
+                    .into(),
+                    format!("{help}\n{}", self.desktop.status),
+                    SettingControl::Desktop(action),
                     false,
                     None,
                 );
@@ -282,6 +317,10 @@ impl App {
         }
         let appearance = &mut self.settings.appearance;
         match row.control {
+            SettingControl::Desktop(action) => {
+                self.desktop_install(action);
+                return;
+            }
             SettingControl::RestoreSession => {
                 self.settings.restore_session = !self.settings.restore_session
             }

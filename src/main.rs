@@ -25,11 +25,21 @@ fn main() {
     }
 }
 fn run() -> Result<()> {
-    let Some(options) = Options::parse()? else {
+    let Some(mut options) = Options::parse()? else {
+        return Ok(());
+    };
+    let Some(desktop) = basalgrim::desktop::Runtime::start(
+        true,
+        options.desktop,
+        options.file_manager,
+        options.request.take(),
+    )?
+    else {
         return Ok(());
     };
     let (settings, settings_path, warning) = Settings::startup();
     let mut app = App::startup(options, settings, warning);
+    app.attach_desktop(desktop);
     app.icon_backend = basalgrim::icons::IconBackend::Gui;
     app.settings_save_available = settings_path.is_some();
     let mut font_settings = (
@@ -79,12 +89,19 @@ fn run() -> Result<()> {
             app.pump_clipboard(clipboard);
         }
         if ctx.input(|i| i.viewport().close_requested())
-            && (app.busy || app.devices.working.is_some() || app.network.working.is_some())
+            && (app.busy
+                || app.devices.working.is_some()
+                || app.network.working.is_some()
+                || app.desktop.working)
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             app.message("Перед выходом дождитесь завершения операции", true);
         }
         app.tick();
+        if std::mem::take(&mut app.desktop.focus) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
         ctx.request_repaint_after(Duration::from_millis(if app.loading() { 30 } else { 250 }));
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)

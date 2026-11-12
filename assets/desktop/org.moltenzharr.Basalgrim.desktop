@@ -1,0 +1,15 @@
+# Basalgrim-managed v1
+[Desktop Entry]
+Type=Application
+Name=Basalgrim
+GenericName=File Manager
+GenericName[ru]=Файловый менеджер
+Comment=Browse and manage files with Molten-Zharr
+Comment[ru]=Файловый менеджер Molten-Zharr
+Exec=basalgrim --desktop -- %U
+Icon=org.moltenzharr.Basalgrim
+Terminal=false
+StartupNotify=false
+Categories=System;FileTools;FileManager;
+MimeType=inode/directory;
+Keywords=files;folders;файлы;папки;

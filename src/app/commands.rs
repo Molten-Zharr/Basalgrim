@@ -222,7 +222,7 @@ impl App {
             Back => !self.tab().back.is_empty(),
             Forward => !self.tab().forward.is_empty(),
             Parent => self.tab().cwd.parent().is_some(),
-            Quit => !self.busy,
+            Quit => !self.busy && !self.desktop.working,
             _ => true,
         }) && (!self.busy || !matches!(action, Rename | Trash))
             && !(self.in_archive() && Self::archive_writable_action(action))

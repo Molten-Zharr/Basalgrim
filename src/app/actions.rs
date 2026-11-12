@@ -44,7 +44,11 @@ impl App {
             return;
         }
         if matches!(action, Action::Quit) {
-            if self.busy || self.devices.working.is_some() || self.network.working.is_some() {
+            if self.busy
+                || self.devices.working.is_some()
+                || self.network.working.is_some()
+                || self.desktop.working
+            {
                 self.message("Перед выходом дождитесь завершения операции", true);
             } else {
                 self.cancel_clipboard_read();
