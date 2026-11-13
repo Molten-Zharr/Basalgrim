@@ -109,6 +109,9 @@ pub struct Appearance {
     pub corners: Corners,
     pub icon_mode: IconMode,
     pub thumbnails: bool,
+    pub sidebar_mode: PanelMode,
+    pub preview_mode: PanelMode,
+    pub animations: bool,
     pub colors: BTreeMap<Theme, BTreeMap<String, [u8; 3]>>,
 }
 impl Default for Appearance {
@@ -121,7 +124,29 @@ impl Default for Appearance {
             corners: Corners::default(),
             icon_mode: IconMode::default(),
             thumbnails: true,
+            sidebar_mode: PanelMode::Auto,
+            preview_mode: PanelMode::Auto,
+            animations: false,
             colors: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PanelMode {
+    #[default]
+    Auto,
+    Always,
+    Hidden,
+}
+impl PanelMode {
+    pub const ALL: [Self; 3] = [Self::Auto, Self::Always, Self::Hidden];
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Auto => "Автоматически",
+            Self::Always => "Показывать",
+            Self::Hidden => "Скрывать",
         }
     }
 }

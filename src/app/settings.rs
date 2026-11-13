@@ -3,7 +3,7 @@ use crate::{
     input::{self, Key, KeyPress},
     preferences::{
         self, Appearance, BorderWeight, Corners, FontFace, IconMode, MAX_FONT_SIZE, MIN_FONT_SIZE,
-        Theme,
+        PanelMode, Theme,
     },
 };
 
@@ -14,15 +14,26 @@ pub enum SettingsSection {
     Shortcuts,
     Session,
     Desktop,
+    Panels,
+    Profiles,
 }
 impl SettingsSection {
-    pub const ALL: [Self; 4] = [Self::Themes, Self::Shortcuts, Self::Session, Self::Desktop];
+    pub const ALL: [Self; 6] = [
+        Self::Themes,
+        Self::Shortcuts,
+        Self::Session,
+        Self::Desktop,
+        Self::Panels,
+        Self::Profiles,
+    ];
     pub fn name(self) -> &'static str {
         match self {
             Self::Themes => "Темы",
             Self::Shortcuts => "Клавиши",
             Self::Session => "Сессия",
             Self::Desktop => "Система",
+            Self::Panels => "Панели",
+            Self::Profiles => "Свои темы",
         }
     }
 }
@@ -68,12 +79,20 @@ pub struct SettingsView {
 }
 #[derive(Clone)]
 pub enum SettingsEdit {
+    PresetSave(Appearance),
+    PresetRename(u64),
+    PaletteImport(Theme),
+    PaletteExport(crate::appearance::PaletteFile),
     FontSize,
     Color { theme: Theme, token: String },
 }
 impl SettingsEdit {
     pub fn title(&self) -> &'static str {
         match self {
+            Self::PresetSave(_) => "Сохранить оформление · название",
+            Self::PresetRename(_) => "Переименовать пресет",
+            Self::PaletteImport(_) => "Импорт палитры · полный путь JSON",
+            Self::PaletteExport(_) => "Экспорт палитры · новый JSON-файл",
             Self::FontSize => "Размер шрифта · 10–32",
             Self::Color { .. } => "Цвет · #RRGGBB",
         }
@@ -81,6 +100,10 @@ impl SettingsEdit {
 }
 #[derive(Clone)]
 pub enum SettingControl {
+    Profile(ProfileControl),
+    SidebarMode,
+    PreviewMode,
+    Animations,
     Extensions,
     Desktop(crate::desktop::InstallAction),
     RestoreSession,
@@ -124,7 +147,79 @@ impl App {
                     color,
                 })
             };
-        if self.settings_view.section == SettingsSection::Shortcuts {
+        if self.settings_view.section == SettingsSection::Profiles {
+            for (label, value, control, help) in [
+                (
+                    "Сохранить оформление",
+                    "Сохранить…",
+                    ProfileControl::Save,
+                    "Сохранить цвета текущей темы, шрифт, рамки, иконки и настройки панелей под своим именем.",
+                ),
+                (
+                    "Импорт палитры",
+                    "Указать файл…",
+                    ProfileControl::Import,
+                    "Применить цвета из JSON к текущей теме. Остальные настройки сохраняются.",
+                ),
+                (
+                    "Экспорт палитры",
+                    "Новый файл…",
+                    ProfileControl::Export,
+                    "Сохранить цвета текущей темы в новый JSON-файл. Существующие файлы не перезаписываются.",
+                ),
+            ] {
+                push(
+                    label.into(),
+                    value.into(),
+                    help.into(),
+                    SettingControl::Profile(control),
+                    false,
+                    None,
+                );
+            }
+            for p in &self.settings.appearance_presets {
+                push(
+                    p.name.clone(),
+                    "Применить".into(),
+                    format!(
+                        "{} · {} · {}\nF2 — переименовать, Delete — удалить пресет",
+                        p.name,
+                        p.appearance.theme.name(),
+                        p.appearance.font.name()
+                    ),
+                    SettingControl::Profile(ProfileControl::Apply(p.id)),
+                    false,
+                    None,
+                );
+            }
+        } else if self.settings_view.section == SettingsSection::Panels {
+            for (label, value, control, help) in [
+                (
+                    "Боковая панель",
+                    self.settings.appearance.sidebar_mode.name(),
+                    SettingControl::SidebarMode,
+                    "Автоматически: скрывать при нехватке ширины. Кнопка «Места» открывает скрытую панель поверх списка.",
+                ),
+                (
+                    "Предпросмотр",
+                    self.settings.appearance.preview_mode.name(),
+                    SettingControl::PreviewMode,
+                    "Автоматически: скрывать при нехватке ширины. Кнопка «Превью» открывает скрытую панель. F3 включает и выключает предпросмотр.",
+                ),
+                (
+                    "Анимации индикаторов",
+                    if self.settings.appearance.animations {
+                        "Включены"
+                    } else {
+                        "Выключены"
+                    },
+                    SettingControl::Animations,
+                    "Движение индикаторов занятости. Файлы и панели остаются на месте; наведение не меняет расположение.",
+                ),
+            ] {
+                push(label.into(), value.into(), help.into(), control, true, None);
+            }
+        } else if self.settings_view.section == SettingsSection::Shortcuts {
             push(
                 "Сбросить все сочетания".into(),
                 "Восстановить".into(),
@@ -295,6 +390,7 @@ impl App {
         rows
     }
     pub fn preferences_changed(&mut self) {
+        self.design.revision = self.design.revision.wrapping_add(1);
         if let Some(session) = &mut self.session {
             session.set_enabled(self.settings.restore_session);
         }
@@ -303,12 +399,15 @@ impl App {
         self.message("Настройки изменены", false);
     }
     pub fn settings_section(&mut self, section: SettingsSection) {
+        self.design.revision = self.design.revision.wrapping_add(1);
+        self.design.status.clear();
         self.settings_view.section = section;
         self.settings_view.focus = SettingsFocus::Menu;
         self.settings_view.selected = 0;
         self.settings_view.offset = 0;
     }
     pub fn settings_tab(&mut self, tab: SettingsTab) {
+        self.design.revision = self.design.revision.wrapping_add(1);
         self.settings_view.tab = tab;
         self.settings_view.section = SettingsSection::Themes;
         self.settings_view.focus = SettingsFocus::Tabs;
@@ -326,6 +425,17 @@ impl App {
         }
         let appearance = &mut self.settings.appearance;
         match row.control {
+            SettingControl::Profile(control) => {
+                self.profile_control(self.design.revision, control);
+                return;
+            }
+            SettingControl::SidebarMode => {
+                appearance.sidebar_mode = cycle(appearance.sidebar_mode, &PanelMode::ALL, direction)
+            }
+            SettingControl::PreviewMode => {
+                appearance.preview_mode = cycle(appearance.preview_mode, &PanelMode::ALL, direction)
+            }
+            SettingControl::Animations => appearance.animations = !appearance.animations,
             SettingControl::Extensions => {
                 self.open_extensions(false, false);
                 return;
@@ -393,6 +503,23 @@ impl App {
     }
     pub(super) fn submit_setting(&mut self, edit: SettingsEdit, text: &str) -> anyhow::Result<()> {
         match edit {
+            SettingsEdit::PresetSave(saved) => self.save_preset(None, Some(saved), text)?,
+            SettingsEdit::PresetRename(id) => self.save_preset(Some(id), None, text)?,
+            SettingsEdit::PaletteImport(theme) => {
+                return self.palette_file(
+                    crate::appearance::Request::Import(crate::appearance::palette_path(text)?),
+                    theme,
+                );
+            }
+            SettingsEdit::PaletteExport(palette) => {
+                return self.palette_file(
+                    crate::appearance::Request::Export {
+                        path: crate::appearance::palette_path(text)?,
+                        palette,
+                    },
+                    self.settings.appearance.theme,
+                );
+            }
             SettingsEdit::FontSize => {
                 let size = text
                     .trim()
@@ -483,6 +610,24 @@ impl App {
             return;
         }
         let focus = self.settings_view.focus;
+        if self.settings_view.section == SettingsSection::Profiles
+            && focus == SettingsFocus::Parameters
+            && matches!(key, Key::F(2) | Key::Delete)
+            && let Some(SettingRow {
+                control: SettingControl::Profile(ProfileControl::Apply(id)),
+                ..
+            }) = self.settings_rows().get(self.settings_view.selected)
+        {
+            self.profile_control(
+                self.design.revision,
+                if key == Key::Delete {
+                    ProfileControl::Remove(*id)
+                } else {
+                    ProfileControl::Rename(*id)
+                },
+            );
+            return;
+        }
         match key {
             Key::Tab => {
                 let focuses = if self.settings_view.section == SettingsSection::Themes {

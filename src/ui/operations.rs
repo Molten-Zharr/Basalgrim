@@ -72,6 +72,11 @@ pub fn status(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
         }
         _ => summary(record),
     };
+    let text = if app.settings.appearance.animations {
+        format!("{}{text}", app.activity())
+    } else {
+        text
+    };
     progress_bar(frame, bar, record.progress.fraction(), text, palette);
     hit(app, bar, Target::Action(Action::Operations));
     if !requested {

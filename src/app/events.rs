@@ -202,6 +202,36 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::Profile { revision, control }) => {
+                        self.profile_control(revision, control)
+                    }
+                    Some(Target::PanelOpen(kind)) if self.dialog.is_none() => self.open_panel(kind),
+                    Some(Target::PanelClose(token))
+                        if matches!(self.dialog, Some(Dialog::Panel(_)))
+                            && token == self.design.panel_token =>
+                    {
+                        self.cancel_dialog()
+                    }
+                    Some(Target::PanelScroll { token, delta })
+                        if matches!(self.dialog, Some(Dialog::Panel(_)))
+                            && token == self.design.panel_token =>
+                    {
+                        self.panel_scroll(delta)
+                    }
+                    Some(Target::PanelLink { token, target })
+                        if matches!(self.dialog, Some(Dialog::Panel(_)))
+                            && token == self.design.panel_token =>
+                    {
+                        self.dialog = None;
+                        self.hits.clear();
+                        self.hits.push((Rect::new(x, y, 1, 1), *target));
+                        self.handle(Input::Click {
+                            x,
+                            y,
+                            double,
+                            toggle,
+                        });
+                    }
                     Some(Target::ExtensionStop(id)) => {
                         if let Some((expected, cancel)) = &self.extensions.working
                             && *expected == id
@@ -360,7 +390,12 @@ impl App {
                     Some(Target::DismissMenu)
                         if matches!(
                             self.dialog,
-                            Some(Dialog::Commands(_) | Dialog::Paths(_) | Dialog::Edit { .. })
+                            Some(
+                                Dialog::Commands(_)
+                                    | Dialog::Paths(_)
+                                    | Dialog::Edit { .. }
+                                    | Dialog::Panel(_)
+                            )
                         ) =>
                     {
                         self.cancel_dialog()
@@ -511,6 +546,9 @@ impl App {
                     }
                     _ => {}
                 }
+            }
+            Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::Panel(_))) => {
+                self.panel_scroll(delta as isize * 3)
             }
             Input::Scroll { delta, .. } if self.details_dialog() => {
                 self.details_scroll(delta as isize * 3);
@@ -719,6 +757,9 @@ impl App {
         self.tab_mut().reset_range();
     }
     fn key(&mut self, press: KeyPress) {
+        if self.panel_key(press) {
+            return;
+        }
         if self.extension_key(press.normalized()) {
             return;
         }

@@ -18,6 +18,10 @@ pub type DirectoryResult = Result<crate::archive::Directory, String>;
 type Archive = Option<Arc<crate::archive::Catalog>>;
 
 pub enum Event {
+    Appearance {
+        token: u64,
+        result: Result<crate::appearance::Outcome, String>,
+    },
     RenamePreview {
         token: u64,
         result: Result<crate::batch_rename::Preview, String>,
@@ -74,6 +78,7 @@ enum Task {
     },
 }
 pub struct Worker {
+    appearance: mpsc::SyncSender<(u64, crate::appearance::Request, Cancellation)>,
     extension_catalog: Arc<Mutex<crate::extensions::Catalog>>,
     rename_previews: Sender<(u64, Arc<Vec<PathBuf>>, String, Cancellation)>,
     trash: Sender<(u64, Option<Vec<crate::trash::Root>>, Cancellation)>,
@@ -96,6 +101,24 @@ impl Default for Worker {
 impl Worker {
     pub fn new() -> Self {
         let (send, events) = mpsc::channel();
+        let (appearance, requests) =
+            mpsc::sync_channel::<(u64, crate::appearance::Request, Cancellation)>(1);
+        let result = send.clone();
+        thread::spawn(move || {
+            while let Ok((token, request, cancel)) = requests.recv() {
+                let value =
+                    crate::appearance::execute(request, &cancel).map_err(|e| format!("{e:#}"));
+                if result
+                    .send(Event::Appearance {
+                        token,
+                        result: value,
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
         let (rename_previews, rx) =
             mpsc::channel::<(u64, Arc<Vec<PathBuf>>, String, Cancellation)>();
         let result = send.clone();
@@ -477,6 +500,7 @@ impl Worker {
             }
         });
         Self {
+            appearance,
             extension_catalog,
             rename_previews,
             trash,
@@ -494,6 +518,14 @@ impl Worker {
     }
     pub fn scan(&self, token: u64, path: PathBuf, cancellation: Cancellation) {
         self.scan_archive(token, path, None, cancellation);
+    }
+    pub fn appearance(
+        &self,
+        token: u64,
+        request: crate::appearance::Request,
+        cancel: Cancellation,
+    ) -> bool {
+        self.appearance.try_send((token, request, cancel)).is_ok()
     }
     pub fn scan_archive(
         &self,

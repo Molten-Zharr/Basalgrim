@@ -1,4 +1,5 @@
 pub mod app;
+pub mod appearance;
 pub mod batch_rename;
 pub mod clipboard;
 pub mod conflicts;

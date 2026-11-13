@@ -73,7 +73,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     for (i, section) in SettingsSection::ALL.into_iter().enumerate() {
         let rect = Rect::new(
             menu.x,
-            menu.y + 2 + i as u16 * if menu.height < 10 { 1 } else { 2 },
+            menu.y + 2 + i as u16 * if menu.height < 13 { 1 } else { 2 },
             menu.width,
             1,
         );
@@ -128,7 +128,11 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         content.height -= height;
     } else {
         frame.render_widget(
-            Paragraph::new(if app.settings_view.section == SettingsSection::Desktop {
+            Paragraph::new(if app.settings_view.section == SettingsSection::Profiles {
+                "СВОИ ТЕМЫ"
+            } else if app.settings_view.section == SettingsSection::Panels {
+                "ПАНЕЛИ И ДВИЖЕНИЕ"
+            } else if app.settings_view.section == SettingsSection::Desktop {
                 "РАБОЧИЙ СТОЛ"
             } else if app.settings_view.section == SettingsSection::Session {
                 "СЕССИЯ"
@@ -261,10 +265,17 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         hit(
             app,
             value,
-            Target::Setting {
-                index,
-                activate: true,
-                direction: 1,
+            if let crate::app::SettingControl::Profile(control) = &row.control {
+                Target::Profile {
+                    revision: app.design.revision,
+                    control: control.clone(),
+                }
+            } else {
+                Target::Setting {
+                    index,
+                    activate: true,
+                    direction: 1,
+                }
             },
         );
     }
@@ -273,8 +284,15 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         .map_or("", |r| r.description.as_str());
     let desktop_status =
         app.settings_view.section == SettingsSection::Desktop && !app.desktop.status.is_empty();
+    let profile_status = app.settings_view.section == SettingsSection::Profiles
+        && !app.design.status.is_empty()
+        && app.settings_save_error.is_none()
+        && app.settings_save_available;
+    let detail_status = desktop_status || profile_status;
     frame.render_widget(
-        Paragraph::new(if desktop_status {
+        Paragraph::new(if profile_status {
+            app.design.status.as_str()
+        } else if desktop_status {
             app.desktop.status.as_str()
         } else {
             description
@@ -285,7 +303,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
             footer.x,
             footer.y,
             footer.width,
-            if desktop_status { 3 } else { 2 },
+            if detail_status { 3 } else { 2 },
         ),
     );
     let status = if let Some(error) = &app.settings_save_error {
@@ -297,7 +315,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     } else {
         "Сохранено · изменения применяются сразу".into()
     };
-    if !desktop_status {
+    if !detail_status {
         frame.render_widget(
             Paragraph::new(status).style(if app.settings_save_error.is_some() {
                 palette.text().fg(palette.color("error"))
@@ -307,7 +325,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
             Rect::new(footer.x, footer.y + 2, footer.width, 1),
         );
     }
-    if !desktop_status && app.settings_save_error.is_some() {
+    if !detail_status && app.settings_save_error.is_some() {
         hit(
             app,
             Rect::new(footer.x, footer.y + 2, footer.width, 1),
@@ -316,6 +334,60 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     }
     let close = Rect::new(footer.x, footer.y + 3, 12.min(footer.width), 1);
     button(app, frame, close, "Esc  Назад", Target::Cancel, palette);
+    if app.settings_view.section == SettingsSection::Profiles {
+        let revision = app.design.revision;
+        if app.design.working() {
+            button(
+                app,
+                frame,
+                Rect::new(
+                    footer.x + 14,
+                    footer.y + 3,
+                    footer.width.saturating_sub(14),
+                    1,
+                ),
+                "Стоп",
+                Target::Profile {
+                    revision,
+                    control: crate::app::ProfileControl::Stop,
+                },
+                palette,
+            );
+        } else if let Some(crate::app::SettingRow {
+            control: crate::app::SettingControl::Profile(crate::app::ProfileControl::Apply(id)),
+            ..
+        }) = rows.get(app.settings_view.selected)
+        {
+            let w = if footer.width >= 50 { 16 } else { 5 };
+            button(
+                app,
+                frame,
+                Rect::new(footer.x + 13, footer.y + 3, w, 1),
+                if w == 5 {
+                    "F2"
+                } else {
+                    "Переименовать"
+                },
+                Target::Profile {
+                    revision,
+                    control: crate::app::ProfileControl::Rename(*id),
+                },
+                palette,
+            );
+            button(
+                app,
+                frame,
+                Rect::new(footer.x + 14 + w, footer.y + 3, 9, 1),
+                "Удалить",
+                Target::Profile {
+                    revision,
+                    control: crate::app::ProfileControl::Remove(*id),
+                },
+                palette,
+            );
+        }
+        return;
+    }
     if footer.width > 14 {
         frame.render_widget(
             Paragraph::new("Tab — фокус  ↑↓ — выбор  ←→ — изменить  Enter — открыть")

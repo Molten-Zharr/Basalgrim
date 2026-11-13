@@ -326,7 +326,10 @@ impl App {
                 self.help_offset = 0;
                 self.dialog = Some(Dialog::Help);
             }
-            Action::Settings => self.dialog = Some(Dialog::Settings),
+            Action::Settings => {
+                self.design.revision = self.design.revision.wrapping_add(1);
+                self.dialog = Some(Dialog::Settings);
+            }
             Action::Open => self.open_selected(),
             Action::Mark => self.toggle_mark(),
             Action::NextPane => {
@@ -553,6 +556,7 @@ impl App {
                 self.dialog = Some(Dialog::Settings)
             }
             Dialog::Details => {}
+            Dialog::Panel(_) => {}
             Dialog::Extensions => {}
             Dialog::Network => {}
             Dialog::Devices => {

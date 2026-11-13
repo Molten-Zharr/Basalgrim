@@ -1,4 +1,6 @@
 mod actions;
+mod appearance;
+pub use appearance::{DesignState, PanelKind, ProfileControl};
 mod extensions;
 pub use extensions::{ExtensionControl, ExtensionsState, ExtensionsView};
 mod desktop;
@@ -62,6 +64,20 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    Profile {
+        revision: u64,
+        control: ProfileControl,
+    },
+    PanelOpen(PanelKind),
+    PanelClose(u64),
+    PanelScroll {
+        token: u64,
+        delta: isize,
+    },
+    PanelLink {
+        token: u64,
+        target: Box<Target>,
+    },
     ExtensionStop(u64),
     Extension {
         token: u64,
@@ -252,6 +268,7 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    Panel(PanelKind),
     Extensions,
     Details,
     Network,
@@ -294,6 +311,7 @@ pub struct Place {
 }
 
 pub struct App {
+    pub design: DesignState,
     pub extensions: ExtensionsState,
     pub extension_view: Option<ExtensionsView>,
     pub desktop: DesktopState,
@@ -478,6 +496,7 @@ impl App {
             rename_area: None,
             text_paste: None,
             text_paste_fallback: None,
+            design: DesignState::default(),
             places,
             preview: None,
             preview_error: None,
@@ -586,6 +605,7 @@ impl App {
             || self.thumbnails.loading()
             || self.preview_loading
             || self.busy
+            || self.design.working()
             || self.extensions.working.is_some()
             || self.devices.working.is_some()
             || self.network.working.is_some()
@@ -659,6 +679,7 @@ impl App {
         self.reload(pane, index);
     }
     pub fn tick(&mut self) {
+        self.tick_design();
         if self.terminal.poll() && matches!(self.dialog, Some(Dialog::CloseTerminal)) {
             self.dialog = None;
         }
@@ -683,6 +704,7 @@ impl App {
         }
         while let Ok(event) = self.worker.events.try_recv() {
             match event {
+                Event::Appearance { token, result } => self.finish_palette_file(token, result),
                 Event::Trash { token, result } => self.accept_trash(token, result),
                 Event::RenamePreview { token, result } => self.accept_rename_preview(token, result),
                 Event::Journal { token, result } => self.accept_journal(token, result),

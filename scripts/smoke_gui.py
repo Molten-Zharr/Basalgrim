@@ -216,6 +216,27 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--appearance-only' in sys.argv[2:]:
+            import appearance_fixture
+            fixture=appearance_fixture.Fixture(base);os.environ.update(fixture.env)
+            process,window,log=launch(fixture.root,config)
+            def appearance_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
+            def appearance_text(value):
+                subprocess.run([xclip,'-selection','clipboard','-in'],input=value.encode(),check=True)
+                time.sleep(.15);appearance_key('v','ctrl');time.sleep(.3)
+            try:
+                appearance_fixture.exercise(fixture,appearance_key,appearance_text,lambda a,b:click(window,a,b),lambda n:screenshot(window,'native-x11-appearance-'+n+'.png'))
+                quit_when_ready(process);log.close()
+                process,window,log=launch(fixture.root,config)
+                x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.4)
+                appearance_fixture.compact(fixture,appearance_key,appearance_text,lambda a,b:click(window,a,b),lambda n:screenshot(window,'native-x11-appearance-'+n+'.png'))
+                appearance_fixture.image_preview(fixture,appearance_key,lambda a,b:click(window,a,b),lambda n:screenshot(window,'native-x11-appearance-'+n+'.png'))
+                quit_when_ready(process)
+            except BaseException:
+                screenshot(window,'native-x11-appearance-failure.png');raise
+            finally:
+                stop(process,log);fixture.close()
+            sys.exit(0)
         if '--extensions-only' in sys.argv[2:]:
             import extensions_fixture
             fixture=extensions_fixture.Fixture(base);os.environ.update(fixture.env)

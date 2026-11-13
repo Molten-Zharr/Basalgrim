@@ -10,6 +10,7 @@ mod folder_size;
 mod network;
 mod operations;
 mod palette;
+mod panels;
 mod path;
 mod places;
 mod selection;
@@ -218,9 +219,20 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled("  BASALGRIM", palette.accent().add_modifier(Modifier::BOLD)),
-            Span::styled("  /  MOLTEN-ZHARR", palette.muted()),
             Span::styled(
-                "     ФАЙЛЫ ПОД КОНТРОЛЕМ",
+                if area.width < 65 {
+                    ""
+                } else {
+                    "  /  MOLTEN-ZHARR"
+                },
+                palette.muted(),
+            ),
+            Span::styled(
+                if area.width < 65 {
+                    ""
+                } else {
+                    "     ФАЙЛЫ ПОД КОНТРОЛЕМ"
+                },
                 palette.text().fg(palette.color("separator")),
             ),
         ]))
@@ -236,7 +248,12 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     } else {
         zones[2]
     };
-    let sidebar = file_area.width >= 95 && !compact;
+    let sidebar = match app.settings.appearance.sidebar_mode {
+        crate::preferences::PanelMode::Auto => file_area.width >= 95 && !compact,
+        crate::preferences::PanelMode::Always => file_area.width >= 62 && !compact,
+        crate::preferences::PanelMode::Hidden => false,
+    };
+    app.design.sidebar_visible = sidebar;
     let body = Layout::horizontal([
         Constraint::Length(if sidebar { 24 } else { 0 }),
         Constraint::Min(30),
@@ -245,8 +262,25 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     if sidebar {
         places(app, frame, body[0], palette);
     }
-    let show_preview =
-        app.settings.preview && body[1].width >= if app.settings.dual { 125 } else { 86 };
+    let show_preview = app.settings.preview
+        && match app.settings.appearance.preview_mode {
+            crate::preferences::PanelMode::Auto => {
+                body[1].width >= if app.settings.dual { 125 } else { 86 }
+            }
+            crate::preferences::PanelMode::Always => {
+                body[1].width >= if app.settings.dual { 100 } else { 64 }
+            }
+            crate::preferences::PanelMode::Hidden => false,
+        };
+    app.design.preview_visible = show_preview;
+    panels::buttons(
+        app,
+        frame,
+        zones[0],
+        !sidebar,
+        app.settings.preview && !show_preview,
+        palette,
+    );
     let content = Layout::horizontal([
         Constraint::Min(28),
         Constraint::Length(if show_preview { 36 } else { 0 }),
@@ -296,7 +330,7 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
         x += width + 1;
     }
     let prefix = if app.busy {
-        " ◌ "
+        app.activity()
     } else if app.notice_error {
         " ! "
     } else {
@@ -749,31 +783,37 @@ fn preview(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
         .tab()
         .entry()
         .filter(|e| e.directory && !e.symlink && !app.in_trash());
-    let header_height =
-        (preview.details.len() as u16 + 4 + if directory.is_some() { 2 } else { 0 })
-            .min(inner.height);
+    let compact_preview = inner.height < 14;
+    let header_height = if compact_preview {
+        if directory.is_some() { 3 } else { 2 }
+    } else {
+        preview.details.len() as u16 + 4 + if directory.is_some() { 2 } else { 0 }
+    }
+    .min(inner.height);
     let parts =
         Layout::vertical([Constraint::Length(header_height), Constraint::Min(0)]).split(inner);
-    let mut header = vec![
-        Line::styled(
-            format!(" {}", preview.title),
-            palette.accent().add_modifier(Modifier::BOLD),
-        ),
-        Line::raw(""),
-    ];
-    header.extend(
-        preview
-            .details
-            .iter()
-            .map(|s| Line::styled(format!(" {s}"), palette.muted())),
-    );
+    let mut header = vec![Line::styled(
+        format!(" {}", preview.title),
+        palette.accent().add_modifier(Modifier::BOLD),
+    )];
+    if !compact_preview {
+        header.push(Line::raw(""));
+        header.extend(
+            preview
+                .details
+                .iter()
+                .map(|s| Line::styled(format!(" {s}"), palette.muted())),
+        );
+    }
     if let Some(entry) = directory {
         let label = app
             .folder_sizes
             .cached(&entry.path)
             .map(|r| format!(" Содержимое ~{} · кэш", fs::size(r.bytes)))
             .unwrap_or_else(|| " Размер не подсчитан".into());
-        header.push(Line::styled(label, palette.muted()));
+        if !compact_preview {
+            header.push(Line::styled(label, palette.muted()));
+        }
         let row = Rect::new(
             parts[0].x,
             parts[0].y + header.len() as u16,

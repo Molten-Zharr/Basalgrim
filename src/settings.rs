@@ -18,6 +18,7 @@ pub struct Settings {
     pub hidden: bool,
     pub restore_session: bool,
     pub history_retention: crate::journal::storage::Retention,
+    pub appearance_presets: Vec<crate::appearance::Preset>,
     #[serde(flatten)]
     pub appearance: Appearance,
     pub bindings: Vec<Binding>,
@@ -31,6 +32,7 @@ impl Default for Settings {
             hidden: false,
             restore_session: true,
             history_retention: Default::default(),
+            appearance_presets: Vec::new(),
             appearance: Appearance::default(),
             bindings: input::default_bindings(),
         }
@@ -88,6 +90,7 @@ impl Settings {
         Ok(())
     }
     pub fn normalize(&mut self) -> Result<()> {
+        crate::appearance::validate(&mut self.appearance_presets)?;
         self.appearance.normalize()?;
         for binding in &mut self.bindings {
             binding.key = binding.key.normalized();
