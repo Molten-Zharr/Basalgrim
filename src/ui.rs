@@ -353,13 +353,27 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     } else if app.busy && app.current_operation().is_some() {
         operations::status(app, frame, zones[4], palette);
     } else {
+        let mut notice_area = zones[4];
+        if app.notice_error && !app.operations.is_empty() {
+            let label = format!(" {} ", app.settings.shortcut(Action::Operations));
+            let width = (label.width() as u16).min(notice_area.width);
+            let button = Rect::new(
+                notice_area.right() - width,
+                notice_area.y,
+                width,
+                notice_area.height,
+            );
+            frame.render_widget(Paragraph::new(label).style(palette.accent()), button);
+            hit(app, button, Target::Action(Action::Operations));
+            notice_area.width = notice_area.width.saturating_sub(width);
+        }
         frame.render_widget(
             Paragraph::new(format!("{prefix}{}", app.notice)).style(if app.notice_error {
                 palette.text().fg(palette.color("help_heading"))
             } else {
                 palette.muted()
             }),
-            zones[4],
+            notice_area,
         );
     }
     dialogs::render(app, frame, palette);

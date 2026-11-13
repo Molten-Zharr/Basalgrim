@@ -26,6 +26,7 @@ pub struct RetainedCopy {
 
 #[derive(Debug, Clone)]
 pub enum Operation {
+    Privileged(crate::privileged::Plan),
     Permissions(crate::details::PermissionChange),
     ArchiveCreate {
         sources: Vec<PathBuf>,
@@ -78,6 +79,7 @@ pub enum Operation {
 impl Operation {
     pub fn title(&self) -> &'static str {
         match self {
+            Self::Privileged(_) => "Операция администратора",
             Self::Permissions(_) => "Изменение прав доступа",
             Self::ArchiveCreate { .. } => "Создание архива",
             Self::ArchiveExtract { .. } => "Распаковка архива",
@@ -101,6 +103,7 @@ impl Operation {
     }
     pub fn total(&self) -> usize {
         match self {
+            Self::Privileged(r) => r.total(),
             Self::CleanupHistory { selection } => selection.entries.len(),
             Self::BatchRename(plan) => plan.len(),
             Self::Transfer { sources, .. }
@@ -114,6 +117,7 @@ impl Operation {
     }
     pub fn destination(&self) -> Option<PathBuf> {
         match self {
+            Self::Privileged(r) => Some(r.destination()),
             Self::Permissions(change) => Some(change.path.clone()),
             Self::ArchiveCreate { destination, .. } | Self::ArchiveExtract { destination, .. } => {
                 Some(destination.clone())
@@ -598,7 +602,7 @@ pub fn operate_with_control(
     cancellation: &Cancellation,
     notify: &mut dyn FnMut(&Progress),
 ) -> Report {
-    operate_inner(operation, cancellation, notify, None, None)
+    operate_inner(operation, cancellation, notify, None, None, None)
 }
 
 pub fn operate_with_conflicts(
@@ -607,7 +611,7 @@ pub fn operate_with_conflicts(
     notify: &mut dyn FnMut(&Progress),
     resolve: &mut dyn FnMut(&crate::conflicts::Conflict) -> crate::conflicts::Decision,
 ) -> Report {
-    operate_inner(operation, cancellation, notify, Some(resolve), None)
+    operate_inner(operation, cancellation, notify, Some(resolve), None, None)
 }
 
 pub fn operate_with_journal(
@@ -617,6 +621,18 @@ pub fn operate_with_journal(
     resolve: &mut dyn FnMut(&crate::conflicts::Conflict) -> crate::conflicts::Decision,
     journal: &mut crate::journal::Recorder<'_>,
 ) -> Report {
+    operate_with_trash(operation, cancellation, notify, resolve, journal, None)
+}
+
+pub(crate) type TrashRunner<'a> = dyn FnMut(&Path) -> Result<()> + 'a;
+pub(crate) fn operate_with_trash(
+    operation: Operation,
+    cancellation: &Cancellation,
+    notify: &mut dyn FnMut(&Progress),
+    resolve: &mut dyn FnMut(&crate::conflicts::Conflict) -> crate::conflicts::Decision,
+    journal: &mut crate::journal::Recorder<'_>,
+    trash: Option<&mut TrashRunner<'_>>,
+) -> Report {
     journal.set_cancellation(cancellation.clone());
     let mut report = operate_inner(
         operation,
@@ -624,6 +640,7 @@ pub fn operate_with_journal(
         notify,
         Some(resolve),
         Some(journal),
+        trash,
     );
     journal.finish(&mut report);
     report
@@ -635,6 +652,7 @@ fn operate_inner(
     notify: &mut dyn FnMut(&Progress),
     mut resolve: Option<&mut dyn FnMut(&crate::conflicts::Conflict) -> crate::conflicts::Decision>,
     journal: Option<&mut crate::journal::Recorder<'_>>,
+    mut trash: Option<&mut TrashRunner<'_>>,
 ) -> Report {
     let total = operation.total();
     let cut = matches!(operation, Operation::Transfer { cut: true, .. });
@@ -714,6 +732,7 @@ fn operate_inner(
             control.emit();
         };
         match operation {
+            Operation::Privileged(_) => bail!("Повышение прав требует исполнителя и журнала"),
             Operation::Permissions(change) => {
                 control.current(&change.path)?;
                 let pinned = change.pin()?;
@@ -934,7 +953,10 @@ fn operate_inner(
                     control.begin_item(index)?;
                     let step = control.before_step("trash", Some(&source), None)?;
                     control.checkpoint()?;
-                    let result = trash_one(&source);
+                    let result = match &mut trash {
+                        Some(run) => run(&source),
+                        None => trash_one(&source),
+                    };
                     control.after_step(step, "trash", None, &result);
                     result?;
                     control.entry_done(&source);
@@ -1027,7 +1049,7 @@ pub fn trash_one(path: &Path) -> Result<()> {
     ensure!(
         output.status.success(),
         "Корзина: {}",
-        clean(&String::from_utf8_lossy(&output.stderr))
+        clean(String::from_utf8_lossy(&output.stderr).trim())
     );
     Ok(())
 }

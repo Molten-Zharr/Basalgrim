@@ -177,7 +177,9 @@ def launch(path, config):
     env = dict(os.environ, HOME=str(config.parent), GIO_USE_VFS='gvfs' if '--network-only' in sys.argv[2:] else 'local', XDG_CONFIG_HOME=str(config), XDG_DATA_HOME=str(config.parent/'data'), XDG_STATE_HOME=str(config.parent/'state'), LIBGL_ALWAYS_SOFTWARE='1', WINIT_X11_SCALE_FACTOR='1')
     for n in ('WAYLAND_DISPLAY','WAYLAND_SOCKET'): env.pop(n, None)
     log = open('target/preview/native-gui.log', 'w')
-    process = subprocess.Popen([str(binary), '--trash-home-only', *([] if path is None else [str(path)])], env=env, stdout=log, stderr=log)
+    if '--privileged-only' in sys.argv[2:]:
+        from privileged_fixture import sandbox
+    process = subprocess.Popen([str(binary), '--trash-home-only', *([] if path is None else [str(path)])], env=env, stdout=log, stderr=log, preexec_fn=sandbox if '--privileged-only' in sys.argv[2:] else None)
     window = None; until=time.monotonic()+10
     while window is None:
         assert process.poll() is None, 'GUI exited before opening'
@@ -214,6 +216,24 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--privileged-only' in sys.argv[2:]:
+            import details_fixture, privileged_fixture
+            fixture=details_fixture.Fixture(base);os.environ.update(fixture.env)
+            settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+            process,window,log=launch(fixture.root,config)
+            def privilege_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
+            def privilege_insert(value):
+                subprocess.run([xclip,'-selection','clipboard','-in'],input=value.encode(),check=True)
+                time.sleep(.15);privilege_key('v','ctrl');time.sleep(.3)
+            def privilege_read():return subprocess.check_output([xclip,'-selection','clipboard','-out'],timeout=3).decode()
+            try:
+                privileged_fixture.exercise(fixture.root,privilege_key,privilege_insert,lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-privileged-'+name+'.png'),copy_text=privilege_read)
+                x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.3)
+                privileged_fixture.exercise(fixture.root,privilege_key,privilege_insert,lambda cx,cy:click(window,cx,cy),lambda name:screenshot(window,'native-x11-privileged-'+name+'.png'),True,privilege_read)
+                quit_when_ready(process)
+            finally:
+                stop(process,log);fixture.close()
+            sys.exit(0)
         if '--desktop-only' in sys.argv[2:]:
             import desktop_fixture
             desktop_env=dict(os.environ,LIBGL_ALWAYS_SOFTWARE='1',WINIT_X11_SCALE_FACTOR='1')

@@ -64,7 +64,10 @@ pub fn status(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
     );
     let text = match record.progress.phase {
         Phase::Preparing => "Подготовка…".into(),
-        Phase::Verifying | Phase::RemovingSource | Phase::AwaitingDecision => {
+        Phase::Verifying
+        | Phase::RemovingSource
+        | Phase::AwaitingDecision
+        | Phase::AwaitingAuthorization => {
             format!("{} · {}", record.status(), summary(record))
         }
         _ => summary(record),

@@ -24,6 +24,8 @@ pub struct Recorder<'a> {
     started: Instant,
     cancellation: crate::operations::Cancellation,
     replaying: bool,
+    replay_block: Option<String>,
+    trash_user: Option<(u32, PathBuf)>,
     guard: Option<(PathBuf, snapshot::Snapshot)>,
 }
 impl<'a> Recorder<'a> {
@@ -62,6 +64,8 @@ impl<'a> Recorder<'a> {
             started: Instant::now(),
             cancellation: Default::default(),
             replaying: false,
+            replay_block: None,
+            trash_user: None,
             guard: None,
         }
     }
@@ -69,6 +73,12 @@ impl<'a> Recorder<'a> {
         if let Some(current) = &mut self.current {
             current.published = true;
         }
+    }
+    pub(crate) fn set_trash_user(&mut self, uid: u32, data: PathBuf) {
+        self.trash_user = Some((uid, data));
+    }
+    pub fn disable_replay(&mut self, reason: &str) {
+        self.replay_block = Some(reason.into());
     }
     pub fn set_cancellation(&mut self, cancellation: crate::operations::Cancellation) {
         self.cancellation = cancellation;
@@ -128,7 +138,9 @@ impl<'a> Recorder<'a> {
             origin: None,
             backup: None,
             trash: None,
-            undo_issue: if irreversible {
+            undo_issue: if self.replay_block.is_some() {
+                self.replay_block.clone()
+            } else if irreversible {
                 Some("Безвозвратное удаление не отменяется".into())
             } else if permissions {
                 Some("Изменение прав: автоматическая отмена и повтор недоступны".into())
@@ -182,7 +194,13 @@ impl<'a> Recorder<'a> {
                 }
                 crate::fs::operation_checkpoint(&self.cancellation)?;
                 if kind == "trash" {
-                    match trash::Search::new(source) {
+                    let search = match &self.trash_user {
+                        Some((uid, data)) => {
+                            trash::Search::for_user(source, *uid, Some(data.clone()))
+                        }
+                        None => trash::Search::new(source),
+                    };
+                    match search {
                         Ok(search) => current.trash = Some(search),
                         Err(e) => {
                             current.undo_issue =
@@ -399,6 +417,69 @@ impl<'a> Recorder<'a> {
         }
         tx.commit()?;
         self.check()
+    }
+    /// User-side durable intent, before invoking any privileged process.
+    pub fn delegated_intent(&mut self) -> Result<()> {
+        self.database.connection.execute(
+            "UPDATE items SET state='running',issue=?2 WHERE operation_id=?1",
+            params![self.id, crate::privileged::UNDO],
+        )?;
+        Ok(())
+    }
+    pub fn finish_delegated(&mut self, report: &mut Report) {
+        if let Some(receipt) = report.journal.take() {
+            let result: Result<()> = (|| {
+                let tx = self
+                    .database
+                    .connection
+                    .transaction_with_behavior(TransactionBehavior::Immediate)?;
+                if receipt.items.is_empty() && report.completed.is_empty() {
+                    tx.execute(
+                        "UPDATE items SET state='failed',issue=?2 WHERE operation_id=?1",
+                        params![
+                            self.id,
+                            report
+                                .error
+                                .as_deref()
+                                .unwrap_or("Отменено до изменения файлов")
+                        ],
+                    )?;
+                }
+                let issue = format!(
+                    "{}; системный журнал /var/lib/basalgrim/privileged/{}/operations.sqlite3, запись {}",
+                    crate::privileged::UNDO,
+                    rustix::process::getuid().as_raw(),
+                    receipt.id
+                );
+                for item in receipt.items {
+                    ensure!(
+                        item.index < self.requested.len(),
+                        "Некорректный ответ помощника"
+                    );
+                    let inverse = Inverse {
+                        action: "blocked".into(),
+                        from: item.target.clone(),
+                        to: Some(item.source.clone()),
+                        expected: item.after.clone(),
+                        original: item.before.clone(),
+                        blocked: Some(crate::privileged::UNDO.into()),
+                    };
+                    tx.execute("UPDATE items SET destination=?3,before=?4,after=?5,state=?6,inverse=?7,issue=?8 WHERE operation_id=?1 AND sequence=?2",params![self.id,item.index as i64,item.target,serde_json::to_vec(&item.before)?,serde_json::to_vec(&item.after)?,item.state,serde_json::to_vec(&inverse)?,issue])?;
+                    for recovery in item.recovery_paths {
+                        tx.execute("INSERT INTO steps(operation_id,item,kind,destination,state) VALUES (?1,?2,'privileged_recovery',?3,'done')", params![self.id,item.index as i64,recovery])?;
+                    }
+                }
+                tx.commit()?;
+                Ok(())
+            })();
+            if let Err(e) = result {
+                append_error(
+                    report,
+                    &format!("Результат получен, но запись журнала не завершена: {e:#}"),
+                );
+            }
+        }
+        self.finish(report);
     }
     pub fn finish(&mut self, report: &mut Report) {
         if let Some(error) = &self.problem {

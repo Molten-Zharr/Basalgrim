@@ -57,7 +57,20 @@ impl Settings {
     }
     pub fn load(path: &Path) -> Result<Self> {
         let mut settings: Self = match std::fs::read(path) {
-            Ok(bytes) => serde_json::from_slice(&bytes).context("Invalid settings JSON")?,
+            Ok(bytes) => {
+                let mut value: serde_json::Value =
+                    serde_json::from_slice(&bytes).context("Invalid settings JSON")?;
+                if let Some(bindings) = value
+                    .get_mut("bindings")
+                    .and_then(serde_json::Value::as_array_mut)
+                {
+                    bindings.retain(|binding| {
+                        binding.get("action").and_then(serde_json::Value::as_str)
+                            != Some("Privileged")
+                    });
+                }
+                serde_json::from_value(value).context("Invalid settings JSON")?
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
             Err(e) => return Err(e.into()),
         };

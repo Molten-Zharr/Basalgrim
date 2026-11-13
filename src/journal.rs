@@ -7,8 +7,9 @@ pub mod storage;
 pub(crate) mod trash;
 mod undo;
 use anyhow::{Context, Result, ensure};
-pub use model::{Identity, Inverse, Item, Receipt, Stored, bytes, path};
-use model::{Spec, Summary, now, specs};
+pub use model::{Identity, Inverse, Item, Receipt, Spec, Stored, bytes, path};
+use model::{Summary, now, specs};
+pub(crate) use recorder::append_error;
 pub use recorder::{Recorder, tracked_rename};
 use rusqlite::{Connection, OpenFlags, TransactionBehavior, params};
 use std::{
@@ -89,6 +90,10 @@ impl Database {
             &header == b"SQLite format 3\0",
             "Файл журнала не является SQLite"
         );
+        // Closing any descriptor for this inode releases this process's POSIX
+        // locks, including SQLite's. Close the header probe before SQLite opens
+        // its live connection, or an external reader can unlink its active WAL.
+        drop(file);
         let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
             | OpenFlags::SQLITE_OPEN_NO_MUTEX
             | OpenFlags::SQLITE_OPEN_NOFOLLOW;
@@ -257,11 +262,11 @@ impl Database {
         for row in rows {
             let (index, kind, source, target, before, after, state, inverse, issue) = row?;
             let recovery_paths = if matches!(state.as_str(), "uncertain" | "partial" | "failed") {
-                let mut stmt=self.connection.prepare("SELECT CASE WHEN kind='history_delete' THEN source ELSE destination END FROM steps WHERE operation_id=?1 AND item=?2 AND (destination IS NOT NULL OR kind='history_delete') AND kind IN ('claim_source','replace_claim','staging','publish','replay_restore','delete_claim','history_delete') ORDER BY id DESC LIMIT 20")?;
+                let mut stmt=self.connection.prepare("SELECT CASE WHEN kind='history_delete' THEN source ELSE destination END FROM steps WHERE operation_id=?1 AND item=?2 AND (destination IS NOT NULL OR kind='history_delete') AND kind IN ('claim_source','replace_claim','staging','publish','replay_restore','delete_claim','history_delete','privileged_recovery') ORDER BY id DESC LIMIT 20")?;
                 stmt.query_map(params![id, index], |r| r.get(0))?
                     .collect::<rusqlite::Result<_>>()?
             } else {
-                let mut stmt=self.connection.prepare("SELECT destination FROM steps WHERE operation_id=?1 AND item=?2 AND kind='replace_claim' AND state='done' AND destination IS NOT NULL ORDER BY id DESC LIMIT 20")?;
+                let mut stmt=self.connection.prepare("SELECT destination FROM steps WHERE operation_id=?1 AND item=?2 AND kind IN ('replace_claim','privileged_recovery') AND state='done' AND destination IS NOT NULL ORDER BY id DESC LIMIT 20")?;
                 stmt.query_map(params![id, index], |r| r.get(0))?
                     .collect::<rusqlite::Result<_>>()?
             };

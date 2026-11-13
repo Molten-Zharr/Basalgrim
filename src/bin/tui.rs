@@ -46,6 +46,9 @@ fn main() {
     }
 }
 fn run() -> Result<()> {
+    if let Some(result) = basalgrim::privileged::helper_entry() {
+        return result;
+    }
     let Some(mut options) = Options::parse()? else {
         return Ok(());
     };

@@ -78,8 +78,11 @@ pub(crate) fn original(info: &[u8], base: &Path) -> Result<PathBuf> {
 }
 impl Search {
     pub fn new(source: &Path) -> Result<Self> {
+        Self::for_user(source, rustix::process::getuid().as_raw(), dirs::data_dir())
+    }
+    pub(crate) fn for_user(source: &Path, uid: u32, data: Option<PathBuf>) -> Result<Self> {
         let mut roots = Vec::new();
-        if let Some(data) = dirs::data_dir() {
+        if let Some(data) = data {
             roots.push((data.join("Trash"), data));
         }
         let mut top = source
@@ -93,7 +96,6 @@ impl Search {
             }
             top = parent.into();
         }
-        let uid = rustix::process::getuid().as_raw();
         roots.push((top.join(format!(".Trash/{uid}")), top.clone()));
         roots.push((top.join(format!(".Trash-{uid}")), top));
         let mut result = Self {

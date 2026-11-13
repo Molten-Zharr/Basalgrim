@@ -36,3 +36,5 @@ pub mod details;
 pub mod network;
 
 pub mod desktop;
+
+pub mod privileged;

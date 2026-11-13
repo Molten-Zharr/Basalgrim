@@ -394,6 +394,34 @@ impl Worker {
                                     ..Default::default()
                                 },
                                 Some(Ok(database)) => match operation {
+                                    Operation::Privileged(request) => match database
+                                        .begin(&Operation::Privileged(request.clone()), token)
+                                    {
+                                        Ok(mut recorder) => {
+                                            let mut report = match recorder.delegated_intent() {
+                                                Ok(()) => crate::privileged::run(
+                                                    request,
+                                                    &cancellation,
+                                                    &mut notify,
+                                                    &mut resolve,
+                                                ),
+                                                Err(e) => Report {
+                                                    total: request.total(),
+                                                    error: Some(format!(
+                                                        "Журнал недоступен: {e:#}"
+                                                    )),
+                                                    ..Default::default()
+                                                },
+                                            };
+                                            recorder.finish_delegated(&mut report);
+                                            report
+                                        }
+                                        Err(e) => Report {
+                                            total: request.total(),
+                                            error: Some(format!("Журнал недоступен: {e:#}")),
+                                            ..Default::default()
+                                        },
+                                    },
                                     Operation::CleanupHistory { selection } => database
                                         .cleanup_history(
                                             selection,
@@ -408,22 +436,14 @@ impl Worker {
                                         &cancellation,
                                         &mut notify,
                                     ),
-                                    operation => match database.begin(&operation, token) {
-                                        Ok(mut recorder) => fs::operate_with_journal(
-                                            operation,
-                                            &cancellation,
-                                            &mut notify,
-                                            &mut resolve,
-                                            &mut recorder,
-                                        ),
-                                        Err(error) => Report {
-                                            total: operation.total(),
-                                            error: Some(format!(
-                                                "Не удалось начать журнал; файлы не изменены: {error:#}"
-                                            )),
-                                            ..Default::default()
-                                        },
-                                    },
+                                    operation => crate::privileged::execute(
+                                        operation,
+                                        database,
+                                        token,
+                                        &cancellation,
+                                        &mut notify,
+                                        &mut resolve,
+                                    ),
                                 },
                             }
                         };

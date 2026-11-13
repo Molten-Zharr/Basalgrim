@@ -108,7 +108,9 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             return None
 
         def launch(path):
-            child = subprocess.Popen([str(binary), "--trash-home-only", *([] if path is None else [str(path)])], env=env, stdout=app_log, stderr=app_log)
+            if '--privileged-only' in sys.argv[2:]:
+                from privileged_fixture import sandbox
+            child = subprocess.Popen([str(binary), "--trash-home-only", *([] if path is None else [str(path)])], env=env, stdout=app_log, stderr=app_log, preexec_fn=sandbox if '--privileged-only' in sys.argv[2:] else None)
             def mapped():
                 assert child.poll() is None, "Native Wayland app exited; see native-wayland.log"
                 return find(json.loads(run("swaymsg", "-t", "get_tree").stdout), child.pid)
@@ -135,6 +137,20 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--privileged-only' in sys.argv[2:]:
+                import details_fixture, privileged_fixture
+                fixture=details_fixture.Fixture(base);env.update(fixture.env)
+                settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+                process=launch(fixture.root)
+                try:
+                    privileged_fixture.exercise(fixture.root,key,lambda text:run('wtype','-s','100',text,'-s','100'),click,lambda name:run('grim','-g','0,0 1360x860',str(out/('native-wayland-privileged-'+name+'.png'))),copy_text=lambda:run('wl-paste','--no-newline').stdout)
+                    run('swaymsg',f'[pid={process.pid}] resize set 400 px 360 px, move absolute position 0 px 0 px');time.sleep(.3)
+                    privileged_fixture.exercise(fixture.root,key,lambda text:run('wtype','-s','100',text,'-s','100'),click,lambda name:run('grim','-g','0,0 400x360',str(out/('native-wayland-privileged-'+name+'.png'))),True,lambda:run('wl-paste','--no-newline').stdout)
+                    key('q','ctrl');process.wait(timeout=5);assert process.returncode==0
+                finally:
+                    if process.poll() is None:process.terminate();process.wait(timeout=5)
+                    process=None;fixture.close()
+                return
             if '--desktop-only' in sys.argv[2:]:
                 import desktop_fixture
                 fixture=desktop_fixture.Fixture(base,env);env.update(fixture.env)

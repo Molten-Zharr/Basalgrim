@@ -21,6 +21,42 @@ fn run(database: &mut Database, operation: Operation, choice: Choice) -> fs::Rep
 }
 
 #[test]
+fn independent_sqlite_readers_cannot_detach_the_live_journal_wal() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("operations.sqlite3");
+    let mut db = Database::open(&path).unwrap();
+    for count in 1..=3 {
+        let report = run(
+            &mut db,
+            Operation::Create {
+                parent: root.path().into(),
+                name: format!("file-{count}"),
+                directory: false,
+            },
+            Choice::KeepBoth,
+        );
+        assert!(report.error.is_none(), "{report:?}");
+        // A separate SQLite runtime closes its last connection after reading.
+        // It must see each committed operation and must not unlink our live WAL.
+        let output = std::process::Command::new("python3")
+            .args([
+                "-c",
+                "import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); print(db.execute('SELECT count(*) FROM operations WHERE state=\"done\"').fetchone()[0]); db.close()",
+            ])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap().trim(),
+            count.to_string()
+        );
+    }
+    drop(db);
+    assert_eq!(Database::open(&path).unwrap().history().unwrap().len(), 3);
+}
+
+#[test]
 fn durable_history_records_actual_keep_both_paths_ids_and_inverse_plans() {
     let root = tempfile::tempdir().unwrap();
     let dbpath = root.path().join("operations.sqlite3");

@@ -9,6 +9,11 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+/// Put the actionable cause before long path/context prefixes in the status row.
+pub fn error_summary(error: &str) -> String {
+    crate::fs::clean(error.rsplit(": ").next().unwrap_or(error).trim())
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Cancellation(Arc<AtomicBool>);
 impl Cancellation {
@@ -28,6 +33,7 @@ pub enum Phase {
     Verifying,
     RemovingSource,
     AwaitingDecision,
+    AwaitingAuthorization,
     CleaningUp,
     Finished,
 }
@@ -167,6 +173,8 @@ impl OperationRecord {
             "Проверка копии…"
         } else if self.progress.phase == Phase::RemovingSource {
             "Удаление исходника…"
+        } else if self.progress.phase == Phase::AwaitingAuthorization {
+            "Ожидает разрешения системы"
         } else if self.progress.phase == Phase::AwaitingDecision {
             "Ожидает выбора"
         } else {

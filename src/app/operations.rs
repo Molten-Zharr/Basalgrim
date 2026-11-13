@@ -306,7 +306,10 @@ impl App {
         }
         self.message(
             if let Some(error) = &report.error {
-                format!("{summary} · {error}")
+                format!(
+                    "{} · {summary} · {error}",
+                    crate::operations::error_summary(error)
+                )
             } else {
                 summary
             },
