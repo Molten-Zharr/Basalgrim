@@ -36,6 +36,8 @@ fn normalized(text: &str) -> String {
 fn aliases(action: Action) -> &'static str {
     use Action::*;
     match action {
+        Extensions => "extensions plugins плагины установка расширения",
+        ExtensionCommands => "extensions plugins команды расширений",
         Copy => "copy копия буфер",
         Cut => "cut буфер",
         Paste => "paste буфер",
@@ -167,7 +169,10 @@ impl App {
                 | Redo
         );
         if (mutation || action == Quit)
-            && (self.busy || self.devices.working.is_some() || self.network.working.is_some())
+            && (self.busy
+                || self.extensions.working.is_some()
+                || self.devices.working.is_some()
+                || self.network.working.is_some())
         {
             return Some("Дождитесь завершения текущей операции");
         }

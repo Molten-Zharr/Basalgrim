@@ -1,0 +1,14 @@
+{
+  "api": 1,
+  "id": "json-tools",
+  "name": "JSON",
+  "version": "1.0",
+  "description": "Читаемый предпросмотр JSON и проверка выбранных JSON-файлов. Последнее событие сохраняется в пользовательской папке состояния.",
+  "executable": "json-tools.py",
+  "commands": [
+    {"id": "validate", "name": "Проверить JSON", "contexts": ["file", "selection"], "extensions": ["json"]},
+    {"id": "folder", "name": "Сведения о папке", "contexts": ["background", "directory"]}
+  ],
+  "preview": ["json"],
+  "events": ["directory_changed", "operation_finished"]
+}

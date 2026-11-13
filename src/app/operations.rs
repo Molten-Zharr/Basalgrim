@@ -98,6 +98,7 @@ impl App {
     }
     pub fn start_operation(&mut self, operation: Operation) {
         if self.busy
+            || self.extensions.working.is_some()
             || self.clipboard_reads_pending()
             || self.devices.working.is_some()
             || self.network.working.is_some()
@@ -217,6 +218,16 @@ impl App {
         self.finish_conflict(token);
         self.busy = false;
         self.operation_count += 1;
+        self.extension_event(
+            "operation_finished",
+            Some(format!(
+                "completed={} total={} cancelled={} failed={}",
+                report.completed.len(),
+                report.total,
+                report.cancelled,
+                report.error.is_some()
+            )),
+        );
         // Publish the confirmed name into the existing snapshot before removing
         // its pending label. A later scan can sort once while retaining focus.
         // Only touch snapshots captured at dispatch, never a newly navigated tab.

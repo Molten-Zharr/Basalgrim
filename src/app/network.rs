@@ -164,7 +164,11 @@ impl App {
         self.text_paste = None;
     }
     fn start_network(&mut self, request: Request) {
-        if self.busy || self.devices.working.is_some() || self.network.working.is_some() {
+        if self.busy
+            || self.extensions.working.is_some()
+            || self.devices.working.is_some()
+            || self.network.working.is_some()
+        {
             self.network_view.error = Some("Дождитесь завершения текущей операции".into());
             return;
         }

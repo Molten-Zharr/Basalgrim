@@ -130,6 +130,7 @@ impl App {
     }
     fn run_device(&mut self, plan: Plan) {
         if self.busy
+            || self.extensions.working.is_some()
             || self.network.working.is_some()
             || self.devices.working.is_some()
             || !self.devices.ready

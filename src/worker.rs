@@ -74,6 +74,7 @@ enum Task {
     },
 }
 pub struct Worker {
+    extension_catalog: Arc<Mutex<crate::extensions::Catalog>>,
     rename_previews: Sender<(u64, Arc<Vec<PathBuf>>, String, Cancellation)>,
     trash: Sender<(u64, Option<Vec<crate::trash::Root>>, Cancellation)>,
     scans: Sender<(u64, PathBuf, Archive, Cancellation)>,
@@ -189,6 +190,8 @@ impl Worker {
             }
         });
         let (previews, rx) = mpsc::channel::<(u64, PathBuf, bool, Archive, Cancellation)>();
+        let extension_catalog: Arc<Mutex<crate::extensions::Catalog>> = Default::default();
+        let extensions = extension_catalog.clone();
         let result = send.clone();
         thread::spawn(move || {
             while let Ok(mut request) = rx.recv() {
@@ -202,7 +205,22 @@ impl Worker {
                 }
                 let preview = match archive {
                     Some(archive) => archive.preview(&path, graphics, &cancellation),
-                    None => fs::preview_until(&path, graphics, &cancellation),
+                    None => {
+                        let catalog = extensions.lock().unwrap().clone();
+                        match crate::extensions::preview(&catalog, &path, &cancellation) {
+                            Ok(Some(preview)) => Ok(preview),
+                            Ok(None) => fs::preview_until(&path, graphics, &cancellation),
+                            Err(e) => {
+                                fs::preview_until(&path, graphics, &cancellation).map(|mut p| {
+                                    p.details.push(format!(
+                                        "Расширение: {}",
+                                        fs::clean(&format!("{e:#}"))
+                                    ));
+                                    p
+                                })
+                            }
+                        }
+                    }
                 }
                 .map_err(|e| format!("{e:#}"));
                 if cancellation.is_cancelled() {
@@ -459,6 +477,7 @@ impl Worker {
             }
         });
         Self {
+            extension_catalog,
             rename_previews,
             trash,
             scans,
@@ -531,6 +550,9 @@ impl Worker {
     }
     pub fn preview(&self, token: u64, path: PathBuf) {
         self.preview_image(token, path, true, Cancellation::default());
+    }
+    pub fn set_extensions(&self, catalog: crate::extensions::Catalog) {
+        *self.extension_catalog.lock().unwrap() = catalog;
     }
     pub fn preview_image(
         &self,

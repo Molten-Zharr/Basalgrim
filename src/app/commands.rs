@@ -61,6 +61,7 @@ impl App {
                 HistoryStorage,
             ],
             MenuContext::Entries => &[
+                ExtensionCommands,
                 Open,
                 OpenWith,
                 Properties,
@@ -78,10 +79,25 @@ impl App {
                 Unfavorite,
             ],
             MenuContext::Directory => &[
-                NewFile, NewFolder, Paste, Properties, FolderSize, Sort, Grid, Hidden, Refresh,
-                Search, SelectAll, CopyPath, Bookmark, Places,
+                ExtensionCommands,
+                NewFile,
+                NewFolder,
+                Paste,
+                Properties,
+                FolderSize,
+                Sort,
+                Grid,
+                Hidden,
+                Refresh,
+                Search,
+                SelectAll,
+                CopyPath,
+                Bookmark,
+                Places,
             ],
             MenuContext::All => &[
+                Extensions,
+                ExtensionCommands,
                 Palette,
                 Open,
                 OpenWith,
@@ -156,6 +172,8 @@ impl App {
         let count = self.tab().selection_count();
         let selection = count > 0;
         (match action {
+            Extensions => true,
+            ExtensionCommands => self.has_extension_commands(context == MenuContext::Directory),
             OpenWith => self.can_open_with(),
             Properties => self
                 .detail_source(context == MenuContext::Directory)
@@ -212,7 +230,10 @@ impl App {
             }
             Duplicate => selection && !self.busy,
             CancelOperation => {
-                self.busy || self.clipboard_reads_pending() || self.external_drop_reading()
+                self.busy
+                    || self.extensions.working.is_some()
+                    || self.clipboard_reads_pending()
+                    || self.external_drop_reading()
             }
             Undo => self.replay_candidate(false).is_some(),
             Redo => self.replay_candidate(true).is_some(),
@@ -225,6 +246,26 @@ impl App {
             Quit => !self.busy && !self.desktop.working,
             _ => true,
         }) && (!self.busy || !matches!(action, Rename | Trash))
+            && !(self.extensions.working.is_some()
+                && matches!(
+                    action,
+                    Quit | Paste
+                        | Rename
+                        | Trash
+                        | NewFile
+                        | NewFolder
+                        | Duplicate
+                        | CopyToOtherPane
+                        | MoveToOtherPane
+                        | ArchiveCreate
+                        | ArchiveExtract
+                        | RestoreTrash
+                        | RestoreTrashHere
+                        | DeleteTrash
+                        | EmptyTrash
+                        | Undo
+                        | Redo
+                ))
             && !(self.in_archive() && Self::archive_writable_action(action))
     }
 
@@ -269,6 +310,10 @@ impl App {
             let archive_background = matches!(&self.dialog, Some(Dialog::Commands(menu)) if menu.context == MenuContext::Directory);
             let folder = (action == Action::FolderSize).then(|| self.folder_size_target(matches!(&self.dialog, Some(Dialog::Commands(menu)) if menu.context == MenuContext::Directory))).flatten();
             self.dialog = None;
+            if action == Action::ExtensionCommands {
+                self.open_extensions(true, archive_background);
+                return;
+            }
             if action == Action::Properties {
                 self.open_details(archive_background, false);
                 return;

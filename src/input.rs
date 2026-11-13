@@ -127,6 +127,8 @@ pub enum Input {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
+    Extensions,
+    ExtensionCommands,
     Palette,
     OpenWith,
     Properties,
@@ -192,6 +194,8 @@ pub enum Action {
 
 impl Action {
     pub const ALL: &'static [Self] = &[
+        Self::Extensions,
+        Self::ExtensionCommands,
         Self::Commands,
         Self::Palette,
         Self::Back,
@@ -256,6 +260,8 @@ impl Action {
     ];
     pub fn name(self) -> &'static str {
         match self {
+            Self::Extensions => "Расширения",
+            Self::ExtensionCommands => "Команды расширений…",
             Self::Devices => "Накопители",
             Self::Properties => "Свойства",
             Self::OpenWith => "Открыть с помощью…",
@@ -352,6 +358,8 @@ pub fn default_bindings() -> Vec<Binding> {
     .collect();
     for (action, key, alt, shift) in [
         (Palette, 'p', false, true),
+        (Extensions, 'x', true, false),
+        (ExtensionCommands, 'x', true, true),
         (Places, 'b', false, false),
         (Devices, 'm', true, false),
         (Network, 'k', true, false),

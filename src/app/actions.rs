@@ -20,6 +20,9 @@ impl App {
             return;
         }
         if action == Action::CancelOperation {
+            if let Some((_, cancel)) = &self.extensions.working {
+                cancel.cancel();
+            }
             self.cancel_operation();
             return;
         }
@@ -48,6 +51,7 @@ impl App {
                 || self.devices.working.is_some()
                 || self.network.working.is_some()
                 || self.desktop.working
+                || self.extensions.working.is_some()
             {
                 self.message("Перед выходом дождитесь завершения операции", true);
             } else {
@@ -87,6 +91,8 @@ impl App {
             self.tab_mut().selected = index;
         }
         match action {
+            Action::Extensions => self.open_extensions(false, false),
+            Action::ExtensionCommands => self.open_extensions(true, false),
             Action::Palette => self.open_palette(),
             Action::Devices => self.open_devices(),
             Action::Properties => self.open_details(false, false),
@@ -351,6 +357,19 @@ impl App {
         self.update_preview();
     }
     pub fn cancel_dialog(&mut self) {
+        if matches!(
+            self.dialog,
+            Some(
+                Dialog::Extensions
+                    | Dialog::Edit {
+                        kind: EditKind::ExtensionInstall,
+                        ..
+                    }
+            )
+        ) {
+            self.close_extensions();
+            return;
+        }
         if self.palette_dialog() {
             self.close_palette();
             return;
@@ -440,6 +459,12 @@ impl App {
         }
     }
     pub fn confirm_dialog(&mut self) {
+        if matches!(self.dialog, Some(Dialog::Extensions)) {
+            if let Some(v) = &self.extension_view {
+                self.extension_control(v.token, v.revision, ExtensionControl::Run, false);
+            }
+            return;
+        }
         if self.palette_dialog() {
             self.confirm_palette();
             return;
@@ -528,6 +553,7 @@ impl App {
                 self.dialog = Some(Dialog::Settings)
             }
             Dialog::Details => {}
+            Dialog::Extensions => {}
             Dialog::Network => {}
             Dialog::Devices => {
                 self.dialog = Some(Dialog::Devices);
@@ -541,6 +567,10 @@ impl App {
             Dialog::Operations => self.dialog = Some(Dialog::Operations),
             Dialog::Trash(sources) => self.start_operation(Operation::Trash { sources }),
             Dialog::Edit { kind, text, .. } => {
+                if matches!(kind, EditKind::ExtensionInstall) {
+                    self.submit_extension_install(text);
+                    return;
+                }
                 if matches!(kind, EditKind::PlaceFilter | EditKind::PlaceLabel { .. }) {
                     self.submit_place_edit(kind, text);
                     return;
@@ -578,6 +608,7 @@ impl App {
                     return;
                 }
                 match kind {
+                    EditKind::ExtensionInstall => unreachable!(),
                     EditKind::ArchiveCreate { .. } | EditKind::ArchiveExtract { .. } => {
                         unreachable!()
                     }

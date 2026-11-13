@@ -1,4 +1,6 @@
 mod actions;
+mod extensions;
+pub use extensions::{ExtensionControl, ExtensionsState, ExtensionsView};
 mod desktop;
 pub use desktop::DesktopState;
 mod palette;
@@ -60,6 +62,12 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    ExtensionStop(u64),
+    Extension {
+        token: u64,
+        revision: u64,
+        control: ExtensionControl,
+    },
     Palette {
         token: u64,
         revision: u64,
@@ -189,6 +197,7 @@ pub enum Target {
 
 #[derive(Clone)]
 pub enum EditKind {
+    ExtensionInstall,
     CommandFilter,
     ApplicationFilter,
     Network(NetworkField),
@@ -222,6 +231,7 @@ pub enum EditKind {
 impl EditKind {
     pub fn title(&self) -> &'static str {
         match self {
+            Self::ExtensionInstall => "Папка расширения (полный путь)",
             Self::CommandFilter => "Поиск команды",
             Self::ApplicationFilter => "Поиск программы",
             Self::Network(_) => "Подключение к серверу",
@@ -242,6 +252,7 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    Extensions,
     Details,
     Network,
     Devices,
@@ -283,6 +294,8 @@ pub struct Place {
 }
 
 pub struct App {
+    pub extensions: ExtensionsState,
+    pub extension_view: Option<ExtensionsView>,
     pub desktop: DesktopState,
     pub network: crate::network::Network,
     pub network_view: NetworkView,
@@ -402,6 +415,8 @@ impl App {
             path: PathBuf::from("/"),
         });
         let mut app = Self {
+            extensions: Default::default(),
+            extension_view: None,
             desktop: Default::default(),
             network: Default::default(),
             network_view: Default::default(),
@@ -571,6 +586,7 @@ impl App {
             || self.thumbnails.loading()
             || self.preview_loading
             || self.busy
+            || self.extensions.working.is_some()
             || self.devices.working.is_some()
             || self.network.working.is_some()
             || self.detail_view.as_ref().is_some_and(|v| v.loading)
@@ -657,6 +673,7 @@ impl App {
         self.poll_network();
         self.poll_details();
         self.poll_desktop();
+        self.poll_extensions();
         self.update_palette();
         self.persist_session();
         self.validate_marquee();

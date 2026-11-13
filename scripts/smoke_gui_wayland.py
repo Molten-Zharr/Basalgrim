@@ -137,6 +137,24 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--extensions-only' in sys.argv[2:]:
+                import extensions_fixture
+                fixture=extensions_fixture.Fixture(base);env.update(fixture.env)
+                settings.write_text(json.dumps({'preview':True,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+                process=launch(fixture.root)
+                try:
+                    extensions_fixture.exercise(fixture,key,lambda s:run('wtype','-s','100',s,'-s','100'),click,lambda n:run('grim','-g','0,0 1360x860',str(out/('native-wayland-extensions-'+n+'.png'))))
+                    key('Escape');key('q','ctrl');process.wait(timeout=5)
+                    process=launch(fixture.root)
+                    run('swaymsg',f'[pid={process.pid}] resize set 400 px 360 px, move absolute position 0 px 0 px');time.sleep(.3)
+                    key('x','ctrl','alt');time.sleep(.3);assert fixture.enabled()
+                    run('grim','-g','0,0 400x360',str(out/'native-wayland-extensions-compact.png'))
+                    extensions_fixture.remove(fixture,key,click,(50,22))
+                    key('q','ctrl');process.wait(timeout=5);assert process.returncode==0
+                finally:
+                    if process.poll() is None:process.terminate();process.wait(timeout=5)
+                    process=None;fixture.close()
+                return
             if '--privileged-only' in sys.argv[2:]:
                 import details_fixture, privileged_fixture
                 fixture=details_fixture.Fixture(base);env.update(fixture.env)

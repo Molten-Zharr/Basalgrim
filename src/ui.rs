@@ -4,6 +4,7 @@ mod conflicts;
 mod details;
 mod devices;
 mod dialogs;
+mod extensions;
 mod files;
 mod folder_size;
 mod network;
@@ -352,6 +353,16 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
         hit(app, cancel, Target::Action(Action::CancelOperation));
     } else if app.busy && app.current_operation().is_some() {
         operations::status(app, frame, zones[4], palette);
+    } else if let Some((id, _)) = &app.extensions.working {
+        let area = zones[4];
+        let width = area.width.min(8);
+        let stop = Rect::new(area.right() - width, area.y, width, area.height);
+        frame.render_widget(
+            Paragraph::new("Расширения: выполняется…").style(palette.text()),
+            Rect::new(area.x, area.y, area.width - width, area.height),
+        );
+        frame.render_widget(Paragraph::new(" Стоп ").style(palette.accent()), stop);
+        hit(app, stop, Target::ExtensionStop(*id));
     } else {
         let mut notice_area = zones[4];
         if app.notice_error && !app.operations.is_empty() {

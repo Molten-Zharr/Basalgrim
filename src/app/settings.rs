@@ -81,6 +81,7 @@ impl SettingsEdit {
 }
 #[derive(Clone)]
 pub enum SettingControl {
+    Extensions,
     Desktop(crate::desktop::InstallAction),
     RestoreSession,
     RetrySessionSave,
@@ -178,6 +179,14 @@ impl App {
                     None,
                 );
             }
+            push(
+                "Расширения".into(),
+                "Открыть".into(),
+                "Установка, включение и команды расширений".into(),
+                SettingControl::Extensions,
+                false,
+                None,
+            );
         } else if self.settings_view.section == SettingsSection::Session {
             let mut description = "Восстанавливать вкладки, каталоги и активную панель при запуске без указанного пути. Выбор файлов и буфер обмена не сохраняются.".to_string();
             if let Some(error) = &self.session_load_error {
@@ -317,6 +326,10 @@ impl App {
         }
         let appearance = &mut self.settings.appearance;
         match row.control {
+            SettingControl::Extensions => {
+                self.open_extensions(false, false);
+                return;
+            }
             SettingControl::Desktop(action) => {
                 self.desktop_install(action);
                 return;

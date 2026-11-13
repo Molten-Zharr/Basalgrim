@@ -202,6 +202,18 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::ExtensionStop(id)) => {
+                        if let Some((expected, cancel)) = &self.extensions.working
+                            && *expected == id
+                        {
+                            cancel.cancel();
+                        }
+                    }
+                    Some(Target::Extension {
+                        token,
+                        revision,
+                        control,
+                    }) => self.extension_control(token, revision, control, double),
                     Some(Target::Palette {
                         token,
                         revision,
@@ -506,6 +518,16 @@ impl App {
             Input::Scroll { delta, .. } if self.network_dialog() => {
                 self.network_scroll(delta as isize * 3);
             }
+            Input::Scroll { x, y, delta } if matches!(self.dialog, Some(Dialog::Extensions)) => {
+                if let Some(v) = &self.extension_view {
+                    let c = if v.detail_area.contains(Position::new(x, y)) {
+                        ExtensionControl::Detail(delta as isize * 3)
+                    } else {
+                        ExtensionControl::Move(delta as isize * 3)
+                    };
+                    self.extension_control(v.token, v.revision, c, false);
+                }
+            }
             Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::Devices)) => {
                 self.device_move(delta as isize * 3)
             }
@@ -697,6 +719,9 @@ impl App {
         self.tab_mut().reset_range();
     }
     fn key(&mut self, press: KeyPress) {
+        if self.extension_key(press.normalized()) {
+            return;
+        }
         if self.palette_key(press.normalized()) {
             return;
         }

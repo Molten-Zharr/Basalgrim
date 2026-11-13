@@ -37,4 +37,5 @@ pub mod network;
 
 pub mod desktop;
 
+pub mod extensions;
 pub mod privileged;

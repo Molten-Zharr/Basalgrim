@@ -103,7 +103,13 @@ fn desktop_settings_are_reachable_by_mouse_at_minimum_size_without_attaching_ser
     });
     assert_eq!(app.settings_view.section, SettingsSection::Desktop);
     terminal.draw(|frame| ui::render(&mut app, frame)).unwrap();
-    assert_eq!(app.settings_rows().len(), 3);
+    assert_eq!(
+        app.settings_rows()
+            .iter()
+            .filter(|row| matches!(row.control, basalgrim::app::SettingControl::Desktop(_)))
+            .count(),
+        3
+    );
     assert!(
         app.hits
             .iter()

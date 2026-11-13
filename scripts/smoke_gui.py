@@ -216,6 +216,30 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--extensions-only' in sys.argv[2:]:
+            import extensions_fixture
+            fixture=extensions_fixture.Fixture(base);os.environ.update(fixture.env)
+            settings.write_text(json.dumps({'preview':True,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
+            process,window,log=launch(fixture.root,config)
+            def ext_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
+            def ext_text(value):
+                subprocess.run([xclip,'-selection','clipboard','-in'],input=value.encode(),check=True)
+                time.sleep(.15);ext_key('v','ctrl');time.sleep(.3)
+            try:
+                extensions_fixture.exercise(fixture,ext_key,ext_text,lambda a,b:click(window,a,b),lambda n:screenshot(window,'native-x11-extensions-'+n+'.png'))
+                ext_key('Escape');quit_when_ready(process);log.close()
+                process,window,log=launch(fixture.root,config)
+                x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.3)
+                # Select the JSON file after the test-created file changed sorting.
+                key('slash');ext_text(fixture.file.name);key('Return');time.sleep(.2)
+                ext_key('x','ctrl','alt');time.sleep(.3)
+                assert fixture.enabled(),'extension state after restart'
+                screenshot(window,'native-x11-extensions-compact.png')
+                extensions_fixture.remove(fixture,ext_key,lambda a,b:click(window,a,b),(50,22))
+                quit_when_ready(process)
+            finally:
+                stop(process,log);fixture.close()
+            sys.exit(0)
         if '--privileged-only' in sys.argv[2:]:
             import details_fixture, privileged_fixture
             fixture=details_fixture.Fixture(base);os.environ.update(fixture.env)

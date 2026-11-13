@@ -8,6 +8,9 @@ impl App {
     pub fn startup(options: Options, settings: Settings, warning: Option<String>) -> Self {
         let mut app = Self::startup_with_session(options, settings, warning, State::path());
         app.configure_journal(crate::journal::Database::path());
+        if let Some(store) = crate::extensions::Store::desktop() {
+            app.configure_extensions(store);
+        }
         app.configure_network(|| Box::new(crate::network::Gvfs::default()));
         app.devices
             .attach(Box::new(crate::devices::UDisks::default()));
