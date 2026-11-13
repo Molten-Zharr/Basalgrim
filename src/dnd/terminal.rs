@@ -81,6 +81,12 @@ impl Default for TerminalDnd {
 }
 impl TerminalDnd {
     pub fn new() -> Self {
+        Self::with_probe(true)
+    }
+    pub fn disabled() -> Self {
+        Self::with_probe(false)
+    }
+    fn with_probe(probe: bool) -> Self {
         let mut bytes = [0; 4];
         let local =
             std::env::var_os("SSH_CONNECTION").is_none() && std::env::var_os("SSH_TTY").is_none();
@@ -102,7 +108,7 @@ impl TerminalDnd {
             events: vec![],
             output: VecDeque::new(),
         };
-        if local && random {
+        if probe && local && random {
             this.emit(&format!("t=q:i={id}"), "");
         }
         this

@@ -10,7 +10,7 @@ license = "MIT"
 [features]
 default = ["guitui"]
 guitui = ["dep:eframe", "dep:egui_ratatui", "dep:soft_ratatui", "dep:rustc-hash", "dep:resvg", "dep:image", "file-clipboard", "dep:raw-window-handle"]
-tui = ["dep:crossterm", "ratatui/crossterm", "dep:ratatui-image", "dep:resvg", "dep:image", "dep:base64", "file-clipboard"]
+tui = ["dep:crossterm", "ratatui/crossterm", "dep:ratatui-image", "dep:resvg", "dep:image", "dep:base64", "file-clipboard", "rustix/net"]
 file-clipboard = ["dep:x11rb", "dep:wayland-client", "dep:wayland-protocols", "dep:wayland-protocols-wlr"]
 
 [[bin]]

@@ -39,3 +39,6 @@ pub mod desktop;
 
 pub mod extensions;
 pub mod privileged;
+
+#[cfg(feature = "tui")]
+pub mod tui_input;
