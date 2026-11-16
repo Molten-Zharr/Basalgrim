@@ -12,7 +12,6 @@ pub use operations::{
 use anyhow::{Context, Result, ensure};
 use chrono::{DateTime, Local};
 use std::{
-    cmp::Reverse,
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -28,6 +27,7 @@ pub struct Entry {
     pub hidden: bool,
     pub size: u64,
     pub modified: Option<SystemTime>,
+    pub details: crate::columns::Details,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -36,38 +36,32 @@ pub enum Sort {
     Name,
     Size,
     Modified,
+    Field(crate::columns::Column, bool),
 }
 impl Sort {
     pub fn next(self) -> Self {
         match self {
             Self::Name => Self::Size,
             Self::Size => Self::Modified,
-            Self::Modified => Self::Name,
+            Self::Modified | Self::Field(..) => Self::Name,
         }
     }
-    pub fn label(self) -> &'static str {
+    pub fn field(self) -> (crate::columns::Column, bool) {
+        use crate::columns::Column;
         match self {
-            Self::Name => "Имя ↑",
-            Self::Size => "Размер ↓",
-            Self::Modified => "Дата ↓",
+            Self::Name => (Column::Name, false),
+            Self::Size => (Column::Size, true),
+            Self::Modified => (Column::Modified, true),
+            Self::Field(c, d) => (c, d),
         }
+    }
+    pub fn label(self) -> String {
+        let (column, descending) = self.field();
+        format!("{} {}", column.label(), if descending { "↓" } else { "↑" })
     }
     pub fn sort(self, entries: &mut [Entry]) {
-        entries.sort_by_cached_key(|e| {
-            (
-                !e.directory,
-                match self {
-                    Self::Size => Reverse(e.size),
-                    _ => Reverse(0),
-                },
-                match self {
-                    Self::Modified => Reverse(e.modified),
-                    _ => Reverse(None),
-                },
-                e.name.to_lowercase(),
-                e.path.clone(),
-            )
-        });
+        let (column, descending) = self.field();
+        crate::columns::sort(entries, column, descending);
     }
 }
 
@@ -90,6 +84,7 @@ pub(crate) fn read_directory_until(
     if cancelled() {
         return Ok(None);
     }
+    let owners = local_owners();
     for entry in
         fs::read_dir(path).with_context(|| format!("Не удалось прочитать {}", path.display()))?
     {
@@ -116,9 +111,45 @@ pub(crate) fn read_directory_until(
             symlink,
             size: metadata.len(),
             modified: metadata.modified().ok(),
+            details: {
+                use std::os::unix::fs::MetadataExt;
+                crate::columns::Details {
+                    created: metadata.created().ok(),
+                    accessed: metadata.accessed().ok(),
+                    mode: Some(metadata.mode()),
+                    owner: Some(
+                        owners
+                            .get(&metadata.uid())
+                            .cloned()
+                            .unwrap_or_else(|| metadata.uid().to_string()),
+                    ),
+                }
+            },
         });
     }
     Ok((!cancelled()).then_some(entries))
+}
+
+// Bounded local account labels only: no NSS/network lookup on the UI thread
+// or unbounded per-entry subprocesses. Unknown/remote users retain their UID.
+fn local_owners() -> std::collections::BTreeMap<u32, String> {
+    use std::io::BufRead;
+    let Ok(file) = fs::File::open("/etc/passwd") else {
+        return Default::default();
+    };
+    let mut owners = std::collections::BTreeMap::new();
+    for line in std::io::BufReader::new(file.take(256 * 1024))
+        .lines()
+        .map_while(Result::ok)
+    {
+        let mut fields = line.split(':');
+        let name = fields.next().unwrap_or_default();
+        let _ = fields.next();
+        if let Some(uid) = fields.next().and_then(|s| s.parse().ok()) {
+            owners.insert(uid, clean(name));
+        }
+    }
+    owners
 }
 
 /// Read a tree branch through pinned no-follow directory descriptors. Reopening

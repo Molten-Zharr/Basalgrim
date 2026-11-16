@@ -24,6 +24,9 @@ impl App {
             self.selection_extend = extend;
             return;
         }
+        if self.columns_input(&input) {
+            return;
+        }
         if self.editor_pointer(&input) {
             return;
         }
@@ -413,6 +416,7 @@ impl App {
                                     | Dialog::Edit { .. }
                                     | Dialog::Panel(_)
                                     | Dialog::View(_)
+                                    | Dialog::Columns(_)
                             )
                         ) =>
                     {

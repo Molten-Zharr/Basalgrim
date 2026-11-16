@@ -1,4 +1,6 @@
 mod actions;
+mod columns;
+pub use columns::{ColumnOwner, ColumnsMenu};
 mod tree;
 mod views;
 pub use views::ViewMenu;
@@ -67,6 +69,19 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    ColumnHeader {
+        context: ColumnOwner,
+        column: crate::columns::Column,
+    },
+    ColumnBoundary {
+        context: ColumnOwner,
+        column: crate::columns::Column,
+    },
+    ColumnToggle {
+        token: u64,
+        revision: u64,
+        column: crate::columns::Column,
+    },
     TreeToggle {
         owner: PathOwner,
         request: u64,
@@ -290,6 +305,7 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    Columns(ColumnsMenu),
     View(ViewMenu),
     Panel(PanelKind),
     Extensions,
@@ -406,6 +422,9 @@ pub struct App {
     pub preview_area: Rect,
     pub pane_areas: [Rect; 2],
     pub file_areas: [Rect; 2],
+    pub(crate) column_headers: [Rect; 2],
+    pub(crate) columns_revision: u64,
+    column_drag: Option<columns::ColumnDrag>,
     marquee: Option<selection::Marquee>,
     file_drag: Option<drag_drop::FileDrag>,
     external_drop: drag_drop::ExternalDropState,
@@ -537,6 +556,9 @@ impl App {
             preview_area: Rect::default(),
             pane_areas: [Rect::default(); 2],
             file_areas: [Rect::default(); 2],
+            column_headers: [Rect::default(); 2],
+            columns_revision: 0,
+            column_drag: None,
             marquee: None,
             file_drag: None,
             external_drop: Default::default(),
@@ -591,7 +613,11 @@ impl App {
     }
     /// Resolve against this frame's active hit regions, including modal overlays.
     pub fn hovered_area(&self) -> Option<Rect> {
-        if self.selection_area().is_some() || self.dragging_files() || self.external_drag_active() {
+        if self.column_drag.is_some()
+            || self.selection_area().is_some()
+            || self.dragging_files()
+            || self.external_drag_active()
+        {
             return None;
         }
         let pointer = self.pointer?;
@@ -717,6 +743,7 @@ impl App {
         self.reload(pane, index);
     }
     pub fn tick(&mut self) {
+        self.validate_column_drag();
         self.tick_design();
         if self.terminal.poll() && matches!(self.dialog, Some(Dialog::CloseTerminal)) {
             self.dialog = None;
@@ -845,6 +872,9 @@ impl App {
         &self.places[0].path
     }
     pub fn persist_preferences(&mut self, path: Option<&Path>) {
+        if self.column_drag.is_some() {
+            return;
+        }
         self.settings_save_available = path.is_some();
         if !self.settings_dirty || self.settings_save_error.is_some() {
             return;

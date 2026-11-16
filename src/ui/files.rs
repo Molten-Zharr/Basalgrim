@@ -702,7 +702,8 @@ fn draw_name_row(
     let entry = &tab.entries[tab.visible[index]];
     let style = row_style(app, pane, index, palette);
     let marked = tab.marked.contains(&entry.path);
-    let images = app.icon_backend.supports_images()
+    let images = rect.width >= 10
+        && app.icon_backend.supports_images()
         && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images;
     let depth = if tree {
         entry
@@ -715,8 +716,9 @@ fn draw_name_row(
     let indent = (depth.saturating_mul(2))
         .min(usize::from(rect.width.saturating_sub(16)))
         .min(32) as u16;
-    let toggle_x = rect.x + 3 + indent;
-    let prefix = 3 + indent + if tree { 2 } else { 0 } + if images { 3 } else { 0 };
+    let mark_width = if rect.width >= 6 { 3 } else { 1 };
+    let toggle_x = rect.x + mark_width + indent;
+    let prefix = mark_width + indent + if tree { 2 } else { 0 } + if images { 3 } else { 0 };
     let field = Rect::new(
         rect.x + prefix.min(rect.width),
         rect.y,
@@ -748,8 +750,15 @@ fn draw_name_row(
     let suffix = if entry.symlink { " ↗" } else { "" };
     frame.render_widget(Block::default().style(style), rect);
     frame.render_widget(
-        Paragraph::new(if marked { " ● " } else { " □ " }).style(style),
-        Rect::new(rect.x, rect.y, 3.min(rect.width), 1),
+        Paragraph::new(if mark_width == 1 {
+            if marked { "●" } else { "□" }
+        } else if marked {
+            " ● "
+        } else {
+            " □ "
+        })
+        .style(style),
+        Rect::new(rect.x, rect.y, mark_width.min(rect.width), 1),
     );
     if tree {
         frame.render_widget(
@@ -798,7 +807,7 @@ fn draw_name_row(
     );
     hit(
         app,
-        Rect::new(rect.x, rect.y, 3.min(rect.width), 1),
+        Rect::new(rect.x, rect.y, mark_width.min(rect.width), 1),
         Target::EntryMark { pane, index },
     );
     if let Some(target) = toggle {
@@ -827,6 +836,10 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
     tab.offset = tab.offset.min(tab.visible.len().saturating_sub(rows));
     let start = tab.offset;
     let end = (start + rows).min(tab.visible.len());
+    if !tree {
+        detail_list(app, frame, area, pane, palette, start, end);
+        return;
+    }
     let tab = app.file_tab(pane);
     let details = tree;
     let name_width = if details {
@@ -904,6 +917,102 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
         hit(
             app,
             Rect::new(area.right() - 1, y, 1, 1),
+            Target::EntryBackground,
+        );
+    }
+}
+
+fn detail_list(
+    app: &mut App,
+    frame: &mut Frame,
+    area: Rect,
+    pane: usize,
+    palette: Palette,
+    start: usize,
+    end: usize,
+) {
+    use crate::columns::Column;
+    let header = Rect::new(area.x, area.y, area.width, 1);
+    app.set_column_header(pane, header);
+    let context = app.column_owner(pane, header);
+    let specs = app.settings.list_columns.columns.clone();
+    let widths = app.settings.list_columns.widths(area.width);
+    let sort = app.file_tab(pane).sort.field();
+    let mut x = area.x;
+    for (spec, width) in specs.iter().zip(widths) {
+        let r = Rect::new(x, area.y, width, 1);
+        x += width;
+        if width == 0 {
+            continue;
+        }
+        let label = if app.trash_in(pane) && spec.column == Column::Modified {
+            "Дата удаления"
+        } else {
+            spec.column.label()
+        };
+        let title = format!(
+            "{}{}{}",
+            label,
+            if sort.0 == spec.column {
+                if sort.1 { " ↓" } else { " ↑" }
+            } else {
+                ""
+            },
+            if spec.manual { " *" } else { "" }
+        );
+        frame.render_widget(
+            Paragraph::new(shorten_name(&title, usize::from(width.saturating_sub(1))))
+                .style(palette.muted()),
+            r,
+        );
+        hit(
+            app,
+            r,
+            Target::ColumnHeader {
+                context: context.clone(),
+                column: spec.column,
+            },
+        );
+        let edge = Rect::new(r.right() - 1, r.y, 1, 1);
+        frame.render_widget(Paragraph::new("│").style(palette.accent()), edge);
+        hit(
+            app,
+            edge,
+            Target::ColumnBoundary {
+                context: context.clone(),
+                column: spec.column,
+            },
+        );
+        for index in start..end {
+            let cell = Rect::new(r.x, area.y + 1 + (index - start) as u16, width, 1);
+            if spec.column == Column::Name {
+                draw_name_row(app, frame, cell, pane, index, palette, false);
+            } else {
+                let tab = app.file_tab(pane);
+                let entry = &tab.entries[tab.visible[index]];
+                let style = row_style(app, pane, index, palette);
+                frame.render_widget(Block::default().style(style), cell);
+                frame.render_widget(
+                    Paragraph::new(shorten_name(
+                        &spec.column.text(entry),
+                        usize::from(width.saturating_sub(1)),
+                    ))
+                    .style(style),
+                    cell,
+                );
+                hit(app, cell, Target::Entry { pane, index });
+            }
+            frame.render_widget(
+                Paragraph::new("│").style(palette.muted()),
+                Rect::new(cell.right() - 1, cell.y, 1, 1),
+            );
+        }
+    }
+    // Ordinary row hits keep metadata cells usable for selection, opening and drag.
+    for index in start..end {
+        hit(
+            app,
+            Rect::new(area.right() - 1, area.y + 1 + (index - start) as u16, 1, 1),
             Target::EntryBackground,
         );
     }

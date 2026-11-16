@@ -79,11 +79,13 @@ impl TrashView {
         // Sorting entries never changes the association with guarded trash metadata.
         let focus = self.files.entry().map(|e| e.path.clone());
         let query = self.filter.to_lowercase();
-        self.files.sort = if self.sort_name {
-            fs::Sort::Name
-        } else {
-            fs::Sort::Modified
-        };
+        if !matches!(self.files.sort, fs::Sort::Field(..)) {
+            self.files.sort = if self.sort_name {
+                fs::Sort::Name
+            } else {
+                fs::Sort::Modified
+            };
+        }
         self.files.sort.sort(&mut self.files.entries);
         self.files.visible = self
             .files
@@ -245,6 +247,7 @@ impl App {
                         directory: e.directory,
                         symlink: e.symlink,
                         hidden: false,
+                        details: Default::default(),
                         size: e.size,
                         modified: chrono::NaiveDateTime::parse_from_str(
                             &e.deleted,
@@ -345,6 +348,11 @@ impl App {
             Action::Sort => {
                 let view = self.trash.as_mut().unwrap();
                 view.sort_name = !view.sort_name;
+                view.files.sort = if view.sort_name {
+                    fs::Sort::Name
+                } else {
+                    fs::Sort::Modified
+                };
                 view.follow_selection = true;
                 view.rebuild();
             }

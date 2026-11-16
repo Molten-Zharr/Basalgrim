@@ -7,7 +7,18 @@ pub(super) fn fingerprint(entries: &[fs::Entry]) -> (usize, u64, u64) {
     let (mut sum, mut xor) = (0u64, 0u64);
     for entry in entries {
         let mut hash = std::collections::hash_map::DefaultHasher::new();
-        entry.hash(&mut hash);
+        // Reading a preview or counting a folder can update atime. Display-only
+        // metadata must not invalidate a cached size as if content had changed.
+        (
+            &entry.path,
+            &entry.name,
+            entry.directory,
+            entry.symlink,
+            entry.hidden,
+            entry.size,
+            entry.modified,
+        )
+            .hash(&mut hash);
         let hash = hash.finish();
         sum = sum.wrapping_add(hash);
         xor ^= hash;
@@ -62,7 +73,8 @@ impl App {
     }
 
     pub(super) fn directory_updates_deferred(&self) -> bool {
-        self.dialog.is_some()
+        self.column_drag.is_some()
+            || self.dialog.is_some()
             || self.marquee.is_some()
             || self.file_drag.is_some()
             || self.external_drag_active()

@@ -1,4 +1,5 @@
 mod batch;
+mod columns;
 mod commands;
 mod conflicts;
 mod details;
@@ -75,6 +76,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     render_content(app, frame, palette);
     app.validate_marquee();
     app.validate_file_drag();
+    app.validate_column_drag();
     app.refresh_external_hover();
     // Use the same topmost hit region as clicking. Modal rendering has already
     // replaced background hits, so a covered control can never receive hover.
@@ -125,6 +127,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 }
 fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     app.hits.clear();
+    app.column_headers = [Rect::default(); 2];
     app.preview_area = Rect::default();
     app.pane_areas = [Rect::default(); 2];
     app.file_areas = [Rect::default(); 2];

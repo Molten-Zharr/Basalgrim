@@ -3,6 +3,10 @@ use crate::app::Dialog;
 use ratatui::widgets::{Clear, Wrap};
 
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
+    if matches!(app.dialog, Some(Dialog::Columns(_))) {
+        super::columns::menu(app, frame, palette);
+        return;
+    }
     if matches!(app.dialog, Some(Dialog::View(_))) {
         super::views::render(app, frame, palette);
         return;
@@ -143,6 +147,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Dialog::CleanupHistory(_) => "Очистить данные undo/redo?",
         Dialog::Panel(_)
         | Dialog::View(_)
+        | Dialog::Columns(_)
         | Dialog::Details
         | Dialog::Extensions
         | Dialog::Network
@@ -163,6 +168,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     match dialog {
         Dialog::Panel(_)
         | Dialog::View(_)
+        | Dialog::Columns(_)
         | Dialog::Details
         | Dialog::Extensions
         | Dialog::Network

@@ -315,7 +315,10 @@ fn run() -> Result<()> {
                         {
                             if let Some((x, y)) = to_cell(pos) {
                                 app.handle(Input::Drag { x, y });
-                                if app.selection_area().is_some() || app.dragging_files() {
+                                if app.resizing_columns()
+                                    || app.selection_area().is_some()
+                                    || app.dragging_files()
+                                {
                                     previous_click = None;
                                 }
                             } else if dnd_ready && let Some(dnd) = &dnd {
@@ -333,7 +336,10 @@ fn run() -> Result<()> {
                                     copy: modifiers.ctrl,
                                 });
                                 app.handle(Input::Drag { x, y });
-                                if app.selection_area().is_some() || app.dragging_files() {
+                                if app.resizing_columns()
+                                    || app.selection_area().is_some()
+                                    || app.dragging_files()
+                                {
                                     previous_click = None;
                                 }
                                 app.handle(Input::PointerUp { x, y });
@@ -393,6 +399,9 @@ fn run() -> Result<()> {
             if let Some((id, action)) = app.external_drop_result() {
                 dnd.submit(basalgrim::dnd::Request::Finish { id, action });
             }
+        }
+        if app.column_resize_cursor() {
+            ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
         if let Some(feedback) = app.drag_feedback() {
             ctx.set_cursor_icon(if feedback.destination.is_none() {

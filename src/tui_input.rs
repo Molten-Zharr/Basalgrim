@@ -101,13 +101,15 @@ impl Mouse {
             }
             MouseEventKind::Drag(MouseButton::Left) => {
                 app.handle(Input::Drag { x, y });
-                if app.selection_area().is_some() || app.dragging_files() {
+                if app.resizing_columns() || app.selection_area().is_some() || app.dragging_files()
+                {
                     self.previous_click = None;
                 }
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 app.handle(Input::Drag { x, y });
-                if app.selection_area().is_some() || app.dragging_files() {
+                if app.resizing_columns() || app.selection_area().is_some() || app.dragging_files()
+                {
                     self.previous_click = None;
                 }
                 app.handle(Input::PointerUp { x, y });

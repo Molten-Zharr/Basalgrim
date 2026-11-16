@@ -2,6 +2,7 @@ use super::*;
 
 impl App {
     pub fn action(&mut self, action: Action) {
+        self.finish_column_drag(true);
         self.cancel_file_drag();
         if action == Action::HistoryStorage
             && matches!(self.dialog, None | Some(Dialog::Operations))
@@ -563,7 +564,7 @@ impl App {
                 self.dialog = Some(Dialog::Settings)
             }
             Dialog::Details => {}
-            Dialog::Panel(_) | Dialog::View(_) => {}
+            Dialog::Panel(_) | Dialog::View(_) | Dialog::Columns(_) => {}
             Dialog::Extensions => {}
             Dialog::Network => {}
             Dialog::Devices => {

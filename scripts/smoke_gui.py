@@ -216,6 +216,27 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--columns-only' in sys.argv[2:]:
+            import columns_fixture
+            fixture=columns_fixture.Fixture(base);os.environ.update(fixture.env)
+            process,window,log=launch(fixture.root,config)
+            def columns_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
+            def columns_text(value):
+                subprocess.run([xclip,'-selection','clipboard','-in'],input=value.encode(),check=True)
+                time.sleep(.15);columns_key('v','ctrl');time.sleep(.3)
+            def columns_drag(start,end):band_begin(window,start,end);band_end()
+            try:
+                columns_fixture.exercise(fixture,columns_key,columns_text,lambda a,b,button=1:click(window,a,b,button),columns_drag,lambda n:screenshot(window,'native-x11-columns-'+n+'.png'))
+                quit_when_ready(process);log.close()
+                process,window,log=launch(fixture.root,config)
+                x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.4)
+                columns_fixture.compact(fixture,columns_key,columns_text,lambda a,b,button=1:click(window,a,b,button),columns_drag,lambda n:screenshot(window,'native-x11-columns-'+n+'.png'))
+                quit_when_ready(process)
+            except BaseException:
+                screenshot(window,'native-x11-columns-failure.png');raise
+            finally:
+                stop(process,log);fixture.close()
+            sys.exit(0)
         if '--views-only' in sys.argv[2:]:
             import views_fixture
             fixture=views_fixture.Fixture(base);os.environ.update(fixture.env)

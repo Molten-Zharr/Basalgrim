@@ -431,6 +431,10 @@ impl Catalog {
                     hidden: name.as_encoded_bytes().starts_with(b"."),
                     size: m.size,
                     modified: m.modified,
+                    details: crate::columns::Details {
+                        mode: Some(m.mode),
+                        ..Default::default()
+                    },
                 }
             })
             .collect())
