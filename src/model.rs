@@ -20,6 +20,7 @@ impl Pane {
 }
 
 pub struct Tab {
+    pub tree: Option<crate::tree::Tree>,
     pub archive: Option<std::sync::Arc<crate::archive::Catalog>>,
     pub cwd: PathBuf,
     pub entries: Vec<Entry>,
@@ -42,6 +43,8 @@ pub struct Tab {
     /// Keyboard navigation reveals focus; wheel scrolling controls only the viewport.
     pub follow_selection: bool,
     pub columns: usize,
+    /// Nonzero for column-major horizontal layout: entries per column.
+    pub column_rows: usize,
     pub page_size: usize,
     pub(crate) scan_cancel: Cancellation,
 }
@@ -56,6 +59,7 @@ pub(crate) struct RangeSelection {
 impl Tab {
     pub fn new(cwd: PathBuf) -> Self {
         Self {
+            tree: None,
             archive: None,
             cwd,
             entries: vec![],
@@ -76,6 +80,7 @@ impl Tab {
             offset: 0,
             follow_selection: true,
             columns: 1,
+            column_rows: 0,
             page_size: 10,
             scan_cancel: Cancellation::default(),
         }
@@ -89,7 +94,21 @@ impl Tab {
                 .map(|e| vec![e.path.clone()])
                 .unwrap_or_default()
         } else {
-            self.marked.iter().cloned().collect()
+            let parents: BTreeSet<_> = self
+                .entries
+                .iter()
+                .filter(|e| e.directory && !e.symlink && self.marked.contains(&e.path))
+                .map(|e| e.path.as_path())
+                .collect();
+            self.marked
+                .iter()
+                .filter(|p| {
+                    !p.ancestors()
+                        .skip(1)
+                        .any(|ancestor| parents.contains(ancestor))
+                })
+                .cloned()
+                .collect()
         }
     }
     pub fn selection_count(&self) -> usize {
@@ -156,16 +175,34 @@ impl Tab {
         }
     }
     pub(crate) fn rename_range(&mut self, source: &Path, destination: &Path) {
-        if self.range.anchor.as_deref() == Some(source) {
-            self.range.anchor = Some(destination.to_path_buf());
-        }
-        if let Some(base) = &mut self.range.additive_base
-            && base.remove(source)
+        if let Some(path) = &self.range.anchor
+            && let Ok(relative) = path.strip_prefix(source)
         {
-            base.insert(destination.to_path_buf());
+            self.range.anchor = Some(destination.join(relative));
+        }
+        if let Some(base) = &mut self.range.additive_base {
+            *base = base
+                .iter()
+                .map(|p| {
+                    p.strip_prefix(source)
+                        .map(|r| destination.join(r))
+                        .unwrap_or_else(|_| p.clone())
+                })
+                .collect();
         }
     }
     pub fn scroll_rows(&mut self, rows: isize) {
+        if self.column_rows > 0 {
+            let stride = self.column_rows;
+            let max = self
+                .visible
+                .len()
+                .div_ceil(stride)
+                .saturating_sub(self.columns);
+            self.offset = (self.offset / stride).saturating_add_signed(rows).min(max) * stride;
+            self.follow_selection = false;
+            return;
+        }
         let columns = self.columns.max(1);
         let page_rows = (self.page_size / columns).max(1);
         let max = self
@@ -177,9 +214,37 @@ impl Tab {
         self.offset = top * columns;
         self.follow_selection = false;
     }
+    pub fn enable_tree(&mut self, enabled: bool, hidden: bool) {
+        if enabled == self.tree.is_some() {
+            return;
+        }
+        let focus = self.entry().map(|e| e.path.clone());
+        if enabled {
+            self.tree = Some(crate::tree::Tree {
+                roots: self.entries.clone(),
+                ..Default::default()
+            });
+        } else if let Some(tree) = self.tree.take() {
+            self.entries = tree.roots;
+            self.visible.clear();
+        }
+        self.rebuild(hidden);
+        if let Some(path) = focus {
+            self.selected = path
+                .ancestors()
+                .find_map(|p| self.visible.iter().position(|&i| self.entries[i].path == p))
+                .unwrap_or(0);
+        }
+    }
     pub fn rebuild(&mut self, hidden: bool) {
         let selected = self.entry().map(|e| e.path.clone());
-        self.sort.sort(&mut self.entries);
+        let tree = self.tree.is_some();
+        if let Some(tree) = &mut self.tree {
+            self.entries = tree.flatten(self.sort, hidden, &self.filter, &self.revealed);
+            self.visible.clear();
+        } else {
+            self.sort.sort(&mut self.entries);
+        }
         let query = self.filter.to_lowercase();
         self.visible = self
             .entries
@@ -187,7 +252,7 @@ impl Tab {
             .enumerate()
             .filter(|(_, e)| {
                 (hidden || !e.hidden || self.revealed.contains(&e.path))
-                    && e.name.to_lowercase().contains(&query)
+                    && (tree || e.name.to_lowercase().contains(&query))
             })
             .map(|(i, _)| i)
             .collect();

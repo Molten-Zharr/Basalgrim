@@ -121,6 +121,64 @@ pub(crate) fn read_directory_until(
     Ok((!cancelled()).then_some(entries))
 }
 
+/// Read a tree branch through pinned no-follow directory descriptors. Reopening
+/// the path after the scan detects replacements without exposing unrelated data.
+pub(crate) fn read_tree_directory(
+    path: &Path,
+    cancelled: impl Fn() -> bool,
+) -> Result<Option<Vec<Entry>>> {
+    use rustix::fs::{Mode, OFlags};
+    use std::{
+        fs::File,
+        os::{fd::AsRawFd, unix::fs::MetadataExt},
+        path::Component,
+    };
+    fn pin(path: &Path) -> Result<File> {
+        ensure!(path.is_absolute(), "Нужен абсолютный путь папки");
+        let mut fd = File::from(rustix::fs::open(
+            "/",
+            OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+        )?);
+        for component in path.components() {
+            match component {
+                Component::RootDir => {}
+                Component::Normal(name) => {
+                    fd = File::from(rustix::fs::openat(
+                        &fd,
+                        name,
+                        OFlags::PATH | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                        Mode::empty(),
+                    )?)
+                }
+                _ => anyhow::bail!("Некорректный путь папки"),
+            }
+        }
+        Ok(fd)
+    }
+    if cancelled() {
+        return Ok(None);
+    }
+    let fd = pin(path)?;
+    let before = fd.metadata()?;
+    let descriptor = PathBuf::from(format!("/proc/self/fd/{}", fd.as_raw_fd()));
+    let Some(mut entries) = read_directory_until(&descriptor, &cancelled)? else {
+        return Ok(None);
+    };
+    if cancelled() {
+        return Ok(None);
+    }
+    let after = pin(path)?.metadata()?;
+    ensure!(
+        (before.dev(), before.ino()) == (after.dev(), after.ino()),
+        "Папка изменилась во время чтения. Повторите раскрытие."
+    );
+    for entry in &mut entries {
+        entry.path = path.join(entry.path.file_name().unwrap());
+    }
+    Ok(Some(entries))
+}
+
 pub fn size(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
     let mut value = bytes as f64;

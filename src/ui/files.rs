@@ -162,7 +162,7 @@ pub fn render(
         return;
     }
     let icon_start = app.icon_slots.len();
-    if app.settings.grid {
+    if app.settings.view_mode() == crate::view::ViewMode::Icons {
         app.set_file_area(pane, parts[3]);
         grid(app, frame, parts[3], pane, palette);
     } else {
@@ -175,7 +175,11 @@ pub fn render(
                 parts[3].height.saturating_sub(1),
             ),
         );
-        list(app, frame, parts[3], pane, palette);
+        if app.settings.view_mode() == crate::view::ViewMode::Columns {
+            columns(app, frame, parts[3], pane, palette);
+        } else {
+            list(app, frame, parts[3], pane, palette);
+        }
     }
     if app.file_tab(pane).archive.is_some() {
         for slot in &mut app.icon_slots[icon_start..] {
@@ -236,6 +240,39 @@ pub fn render(
         )
     };
     frame.render_widget(Paragraph::new(footer).style(palette.muted()), parts[4]);
+    if app.settings.view_mode() == crate::view::ViewMode::Columns {
+        let r = parts[4];
+        let owner = crate::app::PathOwner::current(app, pane);
+        let request = app.panes[pane].tab().request;
+        let tab = app.file_tab(pane);
+        let stride = tab.column_rows.max(1);
+        let count = tab.visible.len().div_ceil(stride);
+        let first = tab.offset / stride;
+        frame.render_widget(
+            Paragraph::new(format!(
+                "          {}–{} / {} столбцов",
+                if count == 0 { 0 } else { first + 1 },
+                (first + tab.columns).min(count),
+                count
+            ))
+            .style(palette.muted()),
+            r,
+        );
+        for (x, label, delta) in [(r.x, " ← ", -1), (r.x + 4, " → ", 1)] {
+            let rect = Rect::new(x, r.y, 3, 1);
+            frame.render_widget(Paragraph::new(label).style(palette.accent()), rect);
+            hit(
+                app,
+                rect,
+                Target::FileColumns {
+                    owner: owner.clone(),
+                    request,
+                    delta,
+                },
+            );
+        }
+    }
+
     if matches!(
         app.dialog,
         Some(crate::app::Dialog::Edit {
@@ -426,6 +463,7 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
     let count = columns * rows;
     let tab = app.file_tab_mut(pane);
     tab.columns = columns;
+    tab.column_rows = 0;
     tab.page_size = count;
     let selected_row = tab.selected / columns;
     let mut top_row = tab.offset / columns;
@@ -600,18 +638,184 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
         hit(app, mark_area, Target::EntryMark { pane, index });
     }
 }
-fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Palette) {
-    let rows = usize::from(area.height.saturating_sub(1));
+fn row_style(app: &App, pane: usize, index: usize, palette: Palette) -> Style {
+    let tab = app.file_tab(pane);
+    let entry = &tab.entries[tab.visible[index]];
+    if (tab.selected == index && !tab.explicit_selection) || tab.marked.contains(&entry.path) {
+        palette.selection()
+    } else {
+        palette.text()
+    }
+}
+fn columns(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Palette) {
+    let rows = usize::from(area.height.saturating_sub(1)).max(1);
+    let cols = usize::from(app.settings.view_columns)
+        .min(usize::from(area.width) / 12)
+        .max(1);
+    let tab = app.file_tab_mut(pane);
+    tab.columns = cols;
+    tab.column_rows = rows;
+    tab.page_size = rows * cols;
+    let total = tab.visible.len().div_ceil(rows);
+    let mut first = tab.offset / rows;
+    if tab.follow_selection {
+        let selected = tab.selected / rows;
+        if selected < first {
+            first = selected;
+        }
+        if selected >= first + cols {
+            first = selected + 1 - cols;
+        }
+    }
+    first = first.min(total.saturating_sub(cols));
+    tab.offset = first * rows;
+    let start = tab.offset;
+    let len = tab.visible.len();
+    frame.render_widget(
+        Paragraph::new(" Имя").style(palette.muted()),
+        Rect::new(area.x, area.y, area.width, 1),
+    );
+    if area.height <= 1 {
+        return;
+    }
+    for index in start..(start + rows * cols).min(len) {
+        let local = index - start;
+        let col = local / rows;
+        let row = local % rows;
+        let x = area.x + (col * usize::from(area.width) / cols) as u16;
+        let right = area.x + ((col + 1) * usize::from(area.width) / cols) as u16;
+        let r = Rect::new(x, area.y + 1 + row as u16, right - x, 1);
+        draw_name_row(app, frame, r, pane, index, palette, false);
+    }
+}
+/// One row owns its name, icon, mark and optional expansion control in every backend.
+fn draw_name_row(
+    app: &mut App,
+    frame: &mut Frame,
+    rect: Rect,
+    pane: usize,
+    index: usize,
+    palette: Palette,
+    tree: bool,
+) {
+    let tab = app.file_tab(pane);
+    let entry = &tab.entries[tab.visible[index]];
+    let style = row_style(app, pane, index, palette);
+    let marked = tab.marked.contains(&entry.path);
     let images = app.icon_backend.supports_images()
         && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images;
-    let is_trash = app.trash_in(pane);
-    let mut icon_slots = Vec::new();
-    let tab = app.file_tab_mut(pane);
-    tab.columns = 1;
-    tab.page_size = rows.max(1);
+    let depth = if tree {
+        entry
+            .path
+            .strip_prefix(&tab.cwd)
+            .map_or(0, |p| p.components().count().saturating_sub(1))
+    } else {
+        0
+    };
+    let indent = (depth.saturating_mul(2))
+        .min(usize::from(rect.width.saturating_sub(16)))
+        .min(32) as u16;
+    let toggle_x = rect.x + 3 + indent;
+    let prefix = 3 + indent + if tree { 2 } else { 0 } + if images { 3 } else { 0 };
+    let field = Rect::new(
+        rect.x + prefix.min(rect.width),
+        rect.y,
+        rect.width.saturating_sub(prefix + 1),
+        1,
+    );
+    let status = tab.tree.as_ref().and_then(|t| t.branches.get(&entry.path));
+    let arrow = if !entry.directory || entry.symlink {
+        "  "
+    } else if status.is_some_and(|b| b.loading) {
+        "… "
+    } else if status.is_some_and(|b| b.error.is_some()) {
+        "! "
+    } else if status.is_some() {
+        "↓ "
+    } else {
+        "→ "
+    };
+    let path = entry.path.clone();
+    let toggle = (tree && !app.trash_in(pane) && entry.directory && !entry.symlink).then(|| {
+        Target::TreeToggle {
+            owner: crate::app::PathOwner::current(app, pane),
+            request: tab.request,
+            revision: tab.tree.as_ref().map_or(0, |t| t.revision),
+            path: path.clone(),
+        }
+    });
+    let name = app.entry_name(pane, entry);
+    let suffix = if entry.symlink { " ↗" } else { "" };
+    frame.render_widget(Block::default().style(style), rect);
+    frame.render_widget(
+        Paragraph::new(if marked { " ● " } else { " □ " }).style(style),
+        Rect::new(rect.x, rect.y, 3.min(rect.width), 1),
+    );
+    if tree {
+        frame.render_widget(
+            Paragraph::new(arrow).style(style.fg(palette.color("active"))),
+            Rect::new(toggle_x, rect.y, 2, 1),
+        );
+    }
+    if depth.saturating_mul(2) > usize::from(indent) && indent > 0 {
+        frame.render_widget(
+            Paragraph::new("…").style(palette.muted()),
+            Rect::new(rect.x + 3, rect.y, 1, 1),
+        );
+    }
+    frame.render_widget(
+        Paragraph::new(format!(
+            "{}{suffix}",
+            shorten_name(
+                name,
+                usize::from(field.width).saturating_sub(suffix.width())
+            )
+        ))
+        .style(if entry.directory {
+            style.fg(palette.color("folder_icon"))
+        } else {
+            style
+        }),
+        field,
+    );
+    let slot = images.then(|| {
+        image_slot(
+            entry,
+            tab.request,
+            Rect::new(field.x - 3, rect.y, 2, 1),
+            palette,
+        )
+    });
+    if app.renaming(pane, &path) {
+        app.rename_area = Some(field);
+    }
+    app.icon_slots.extend(slot);
+    hit(app, rect, Target::Entry { pane, index });
+    hit(
+        app,
+        Rect::new(rect.right() - 1, rect.y, 1, 1),
+        Target::EntryBackground,
+    );
+    hit(
+        app,
+        Rect::new(rect.x, rect.y, 3.min(rect.width), 1),
+        Target::EntryMark { pane, index },
+    );
+    if let Some(target) = toggle {
+        hit(app, Rect::new(toggle_x, rect.y, 2, 1), target);
+    }
+}
+fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Palette) {
+    let rows = usize::from(area.height.saturating_sub(1));
     if rows == 0 {
         return;
     }
+    let tree = app.settings.view_mode() == crate::view::ViewMode::Tree;
+    let is_trash = app.trash_in(pane);
+    let tab = app.file_tab_mut(pane);
+    tab.columns = 1;
+    tab.column_rows = 0;
+    tab.page_size = rows;
     if tab.follow_selection {
         if tab.selected < tab.offset {
             tab.offset = tab.selected;
@@ -622,117 +826,85 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
     }
     tab.offset = tab.offset.min(tab.visible.len().saturating_sub(rows));
     let start = tab.offset;
+    let end = (start + rows).min(tab.visible.len());
     let tab = app.file_tab(pane);
-    let mut rendered = vec![];
-    for index in start..(start + rows).min(tab.visible.len()) {
-        let entry = &tab.entries[tab.visible[index]];
-        let base = if (tab.selected == index && !tab.explicit_selection)
-            || tab.marked.contains(&entry.path)
-        {
-            palette.selection()
-        } else {
-            palette.text()
-        };
-        let mark = if tab.marked.contains(&entry.path) {
-            "●"
-        } else {
-            "□"
-        };
-        let name = format!(
-            " {mark} {}{}{}",
-            if images { "   " } else { "" },
-            app.entry_name(pane, entry),
-            if entry.symlink { " ↗" } else { "" }
+    let details = tree;
+    let name_width = if details {
+        area.width.saturating_sub(
+            13 + if area.width > 65 { 12 } else { 0 } + if area.width > 85 { 15 } else { 0 },
+        )
+    } else {
+        area.width
+    };
+    if details {
+        let rendered = (start..end)
+            .map(|index| {
+                let entry = &tab.entries[tab.visible[index]];
+                Row::new(vec![
+                    Cell::from(""),
+                    Cell::from(if entry.directory {
+                        "—".into()
+                    } else {
+                        fs::size(entry.size)
+                    }),
+                    Cell::from(fs::kind(entry)),
+                    Cell::from(fs::date(entry.modified)),
+                ])
+                .style(row_style(app, pane, index, palette))
+            })
+            .collect::<Vec<_>>();
+        frame.render_widget(
+            Table::new(
+                rendered,
+                [
+                    Constraint::Min(12),
+                    Constraint::Length(10),
+                    Constraint::Length(if area.width > 65 { 12 } else { 0 }),
+                    Constraint::Length(if area.width > 85 { 15 } else { 0 }),
+                ],
+            )
+            .header(
+                Row::new([
+                    " Имя",
+                    "Размер",
+                    "Тип",
+                    if is_trash {
+                        "Удалён"
+                    } else {
+                        "Изменён"
+                    },
+                ])
+                .style(palette.muted()),
+            )
+            .column_spacing(1),
+            area,
         );
-        if images {
-            icon_slots.push(image_slot(
-                entry,
-                app.file_tab(pane).request,
-                Rect::new(area.x + 3, area.y + 1 + (index - start) as u16, 2, 1),
-                palette,
-            ));
-        }
-        rendered.push(
-            Row::new(vec![
-                Cell::from(name).style(if entry.directory {
-                    base.fg(palette.color("folder_icon"))
-                } else {
-                    base
-                }),
-                Cell::from(if entry.directory {
-                    "—".into()
-                } else {
-                    fs::size(entry.size)
-                }),
-                Cell::from(fs::kind(entry)),
-                Cell::from(fs::date(entry.modified)),
-            ])
-            .style(base),
+    } else {
+        frame.render_widget(
+            Paragraph::new(" Имя").style(palette.muted()),
+            Rect::new(area.x, area.y, area.width, 1),
         );
     }
-    let table = Table::new(
-        rendered,
-        [
-            Constraint::Min(12),
-            Constraint::Length(10),
-            Constraint::Length(if area.width > 65 { 12 } else { 0 }),
-            Constraint::Length(if area.width > 85 { 15 } else { 0 }),
-        ],
-    )
-    .header(
-        Row::new([
-            " Имя",
-            "Размер",
-            "Тип",
-            if is_trash {
-                "Удалён"
-            } else {
-                "Изменён"
-            },
-        ])
-        .style(palette.muted()),
-    )
-    .column_spacing(1);
-    frame.render_widget(table, area);
-    let len = tab.visible.len();
-    app.icon_slots.extend(icon_slots);
-    for index in start..(start + rows).min(len) {
-        if app.renaming(
-            pane,
-            &app.file_tab(pane).entries[app.file_tab(pane).visible[index]].path,
-        ) {
-            let prefix = if images { 6 } else { 3 };
-            let name_width = area.width.saturating_sub(
-                13 + if area.width > 65 { 12 } else { 0 } + if area.width > 85 { 15 } else { 0 },
-            );
-            app.rename_area = Some(Rect::new(
-                area.x + prefix,
-                area.y + 1 + (index - start) as u16,
-                name_width.saturating_sub(prefix),
-                1,
-            ));
-        }
+    for index in start..end {
+        let y = area.y + 1 + (index - start) as u16;
         hit(
             app,
-            Rect::new(area.x, area.y + 1 + (index - start) as u16, area.width, 1),
+            Rect::new(area.x, y, area.width, 1),
             Target::Entry { pane, index },
         );
-        if area.width > 3 {
-            hit(
-                app,
-                Rect::new(area.right() - 1, area.y + 1 + (index - start) as u16, 1, 1),
-                Target::EntryBackground,
-            );
-        }
+        draw_name_row(
+            app,
+            frame,
+            Rect::new(area.x, y, name_width, 1),
+            pane,
+            index,
+            palette,
+            tree && !is_trash,
+        );
         hit(
             app,
-            Rect::new(
-                area.x,
-                area.y + 1 + (index - start) as u16,
-                3.min(area.width),
-                1,
-            ),
-            Target::EntryMark { pane, index },
+            Rect::new(area.right() - 1, y, 1, 1),
+            Target::EntryBackground,
         );
     }
 }

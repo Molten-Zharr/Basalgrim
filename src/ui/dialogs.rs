@@ -3,6 +3,10 @@ use crate::app::Dialog;
 use ratatui::widgets::{Clear, Wrap};
 
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
+    if matches!(app.dialog, Some(Dialog::View(_))) {
+        super::views::render(app, frame, palette);
+        return;
+    }
     if matches!(app.dialog, Some(Dialog::Panel(_))) {
         super::panels::render(app, frame, palette);
         return;
@@ -138,6 +142,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Dialog::CloseTerminal => "Завершить терминал?",
         Dialog::CleanupHistory(_) => "Очистить данные undo/redo?",
         Dialog::Panel(_)
+        | Dialog::View(_)
         | Dialog::Details
         | Dialog::Extensions
         | Dialog::Network
@@ -157,6 +162,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     let mut lines = vec![Line::raw("")];
     match dialog {
         Dialog::Panel(_)
+        | Dialog::View(_)
         | Dialog::Details
         | Dialog::Extensions
         | Dialog::Network

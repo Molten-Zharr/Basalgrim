@@ -216,6 +216,26 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--views-only' in sys.argv[2:]:
+            import views_fixture
+            fixture=views_fixture.Fixture(base);os.environ.update(fixture.env)
+            process,window,log=launch(fixture.root,config)
+            def views_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
+            def views_text(value):
+                subprocess.run([xclip,'-selection','clipboard','-in'],input=value.encode(),check=True)
+                time.sleep(.15);views_key('v','ctrl');time.sleep(.3)
+            try:
+                views_fixture.exercise(fixture,views_key,views_text,lambda a,b:click(window,a,b),lambda n:screenshot(window,'native-x11-views-'+n+'.png'),wheel=lambda a,b,d:click(window,a,b,5 if d>0 else 4))
+                quit_when_ready(process);log.close()
+                process,window,log=launch(fixture.root,config)
+                x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.4)
+                views_fixture.compact(fixture,views_key,views_text,lambda a,b:click(window,a,b),lambda n:screenshot(window,'native-x11-views-'+n+'.png'))
+                quit_when_ready(process)
+            except BaseException:
+                screenshot(window,'native-x11-views-failure.png');raise
+            finally:
+                stop(process,log);fixture.close()
+            sys.exit(0)
         if '--appearance-only' in sys.argv[2:]:
             import appearance_fixture
             fixture=appearance_fixture.Fixture(base);os.environ.update(fixture.env)

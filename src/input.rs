@@ -127,6 +127,7 @@ pub enum Input {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
+    View,
     Extensions,
     ExtensionCommands,
     Palette,
@@ -206,6 +207,7 @@ impl Action {
         Self::Search,
         Self::Path,
         Self::Grid,
+        Self::View,
         Self::Dual,
         Self::Preview,
         Self::FolderSize,
@@ -294,7 +296,8 @@ impl Action {
             Self::Refresh => "Обновить",
             Self::Search => "Фильтр папки",
             Self::Path => "Перейти по пути",
-            Self::Grid => "Сетка / список",
+            Self::Grid => "Значки / список",
+            Self::View => "Режим просмотра",
             Self::Dual => "Вторая панель",
             Self::Preview => "Предпросмотр",
             Self::FolderSize => "Размер папки",
@@ -450,6 +453,13 @@ pub fn default_bindings() -> Vec<Binding> {
     ] {
         result.push(Binding { action, key });
     }
+    result.push(Binding {
+        action: View,
+        key: KeyPress {
+            shift: true,
+            ..KeyPress::ctrl('g')
+        },
+    });
     result.push(Binding {
         action: DeleteTrash,
         key: KeyPress {

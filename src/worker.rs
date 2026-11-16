@@ -82,7 +82,7 @@ pub struct Worker {
     extension_catalog: Arc<Mutex<crate::extensions::Catalog>>,
     rename_previews: Sender<(u64, Arc<Vec<PathBuf>>, String, Cancellation)>,
     trash: Sender<(u64, Option<Vec<crate::trash::Root>>, Cancellation)>,
-    scans: Sender<(u64, PathBuf, Archive, Cancellation)>,
+    scans: Sender<(u64, PathBuf, Archive, Cancellation, bool)>,
     previews: Sender<(u64, PathBuf, bool, Archive, Cancellation)>,
     tasks: Option<Sender<Task>>,
     task_thread: Option<thread::JoinHandle<()>>,
@@ -176,14 +176,20 @@ impl Worker {
                 }
             }
         });
-        let (scans, rx) = mpsc::channel::<(u64, PathBuf, Archive, Cancellation)>();
+        let (scans, rx) = mpsc::channel::<(u64, PathBuf, Archive, Cancellation, bool)>();
         let result = send.clone();
         thread::spawn(move || {
-            for (token, path, archive, cancellation) in rx {
+            for (token, path, archive, cancellation, tree) in rx {
                 if cancellation.is_cancelled() {
                     continue;
                 }
                 let read = (|| -> anyhow::Result<_> {
+                    if tree && archive.is_none() {
+                        return Ok(
+                            fs::read_tree_directory(&path, || cancellation.is_cancelled())?
+                                .map(|entries| (path.clone(), entries, None)),
+                        );
+                    }
                     if let Some(snapshot) =
                         crate::archive::directory(&path, archive, &cancellation)?
                     {
@@ -516,6 +522,15 @@ impl Worker {
             watcher: watch::Watcher::new(),
         }
     }
+    pub fn scan_tree(
+        &self,
+        token: u64,
+        path: PathBuf,
+        archive: Archive,
+        cancellation: Cancellation,
+    ) {
+        let _ = self.scans.send((token, path, archive, cancellation, true));
+    }
     pub fn scan(&self, token: u64, path: PathBuf, cancellation: Cancellation) {
         self.scan_archive(token, path, None, cancellation);
     }
@@ -534,7 +549,7 @@ impl Worker {
         archive: Archive,
         cancellation: Cancellation,
     ) {
-        let _ = self.scans.send((token, path, archive, cancellation));
+        let _ = self.scans.send((token, path, archive, cancellation, false));
     }
     pub fn rename_preview(
         &self,

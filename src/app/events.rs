@@ -202,6 +202,23 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::TreeToggle {
+                        owner,
+                        request,
+                        revision,
+                        path,
+                    }) => self.toggle_tree(owner, request, revision, path),
+                    Some(Target::ViewChoose { token, mode }) => {
+                        self.view_control(token, Some(mode), 0)
+                    }
+                    Some(Target::ViewColumns { token, delta }) => {
+                        self.view_control(token, None, delta)
+                    }
+                    Some(Target::FileColumns {
+                        owner,
+                        request,
+                        delta,
+                    }) => self.scroll_file_columns(&owner, request, delta),
                     Some(Target::Profile { revision, control }) => {
                         self.profile_control(revision, control)
                     }
@@ -395,6 +412,7 @@ impl App {
                                     | Dialog::Paths(_)
                                     | Dialog::Edit { .. }
                                     | Dialog::Panel(_)
+                                    | Dialog::View(_)
                             )
                         ) =>
                     {
@@ -651,7 +669,14 @@ impl App {
                         .position(|r| r.contains(Position::new(x, y)))
                     && !self.file_areas[pane].is_empty()
                 {
-                    let step = if self.settings.grid { 1 } else { 3 };
+                    let step = if matches!(
+                        self.settings.view_mode(),
+                        crate::view::ViewMode::Icons | crate::view::ViewMode::Columns
+                    ) {
+                        1
+                    } else {
+                        3
+                    };
                     self.file_tab_mut(pane)
                         .scroll_rows((delta as isize).saturating_mul(step));
                 }
@@ -727,7 +752,7 @@ impl App {
             }
         }
     }
-    fn move_selection(&mut self, delta: isize, extend: bool, additive: bool) {
+    pub(super) fn move_selection(&mut self, delta: isize, extend: bool, additive: bool) {
         let tab = self.tab_mut();
         tab.follow_selection = true;
         let index = tab
@@ -757,6 +782,9 @@ impl App {
         self.tab_mut().reset_range();
     }
     fn key(&mut self, press: KeyPress) {
+        if self.view_key(press) {
+            return;
+        }
         if self.panel_key(press) {
             return;
         }
@@ -870,15 +898,41 @@ impl App {
             self.action(a);
             return;
         }
-        let columns = self.tab().columns as isize;
+        if !ctrl
+            && !alt
+            && !shift
+            && matches!(key, Key::Left | Key::Right)
+            && self.tree_arrow(key == Key::Right)
+        {
+            return;
+        }
+        let horizontal = self.tab().column_rows > 0;
+        let vertical_step = if horizontal {
+            1
+        } else {
+            self.tab().columns as isize
+        };
+        let horizontal_step = if horizontal {
+            self.tab().column_rows as isize
+        } else {
+            1
+        };
         if alt || (ctrl && !shift) {
             return;
         }
         match key {
-            Key::Up => self.move_selection(-columns, shift, ctrl),
-            Key::Down => self.move_selection(columns, shift, ctrl),
-            Key::Left if self.settings.grid => self.move_selection(-1, shift, ctrl),
-            Key::Right if self.settings.grid => self.move_selection(1, shift, ctrl),
+            Key::Up => self.move_selection(-vertical_step, shift, ctrl),
+            Key::Down => self.move_selection(vertical_step, shift, ctrl),
+            Key::Left
+                if horizontal || self.settings.view_mode() == crate::view::ViewMode::Icons =>
+            {
+                self.move_selection(-horizontal_step, shift, ctrl)
+            }
+            Key::Right
+                if horizontal || self.settings.view_mode() == crate::view::ViewMode::Icons =>
+            {
+                self.move_selection(horizontal_step, shift, ctrl)
+            }
             Key::Home => self.move_selection(isize::MIN, shift, ctrl),
             Key::End => self.move_selection(isize::MAX, shift, ctrl),
             Key::PageUp => self.move_selection(-(self.tab().page_size as isize), shift, ctrl),

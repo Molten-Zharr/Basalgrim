@@ -63,7 +63,8 @@ fn aliases(action: Action) -> &'static str {
         CopyPath => "copy path address адрес",
         Search => "search find поиск найти фильтр",
         Refresh => "refresh reload",
-        Grid => "grid list вид",
+        Grid => "grid list toggle",
+        View => "view icons list columns tree вид значки список столбцы дерево",
         Dual => "dual panes split панели",
         NextPane => "next pane переключить",
         Preview => "preview просмотр",
@@ -238,6 +239,12 @@ impl App {
         if matches!(action, CopyToOtherPane | MoveToOtherPane) && self.other_destination().is_none()
         {
             return Some("Откройте обычную папку во второй панели");
+        }
+        if action == Duplicate
+            && self.tab().selection_count() > 0
+            && self.duplicate_destination().is_none()
+        {
+            return Some("Для дублирования выберите файлы одной папки");
         }
         if self.command_enabled(action, MenuContext::All) {
             return None;

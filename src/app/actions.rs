@@ -157,11 +157,14 @@ impl App {
                 self.edit_path(PathOwner::current(self, self.active));
             }
             Action::CopyPath => self.copy_path(&self.tab().cwd.clone()),
+            Action::View => self.open_view_menu(),
             Action::Grid => {
-                self.settings.grid = !self.settings.grid;
-                self.tab_mut().offset = 0;
-                self.tab_mut().follow_selection = true;
-                self.preferences_changed();
+                let mode = if self.settings.view_mode() == crate::view::ViewMode::Icons {
+                    crate::view::ViewMode::List
+                } else {
+                    crate::view::ViewMode::Icons
+                };
+                self.select_view(mode);
             }
             Action::Dual => {
                 self.settings.dual = !self.settings.dual;
@@ -236,11 +239,15 @@ impl App {
                 }
             }
             Action::Duplicate => {
+                let Some(destination) = self.duplicate_destination() else {
+                    self.message("Для дублирования выберите файлы одной папки", true);
+                    return;
+                };
                 let sources = self.tab().targets();
                 if !sources.is_empty() {
                     self.start_operation(Operation::Duplicate {
                         sources,
-                        destination: self.tab().cwd.clone(),
+                        destination,
                     });
                 }
             }
@@ -556,7 +563,7 @@ impl App {
                 self.dialog = Some(Dialog::Settings)
             }
             Dialog::Details => {}
-            Dialog::Panel(_) => {}
+            Dialog::Panel(_) | Dialog::View(_) => {}
             Dialog::Extensions => {}
             Dialog::Network => {}
             Dialog::Devices => {

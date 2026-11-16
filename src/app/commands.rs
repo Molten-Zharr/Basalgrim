@@ -38,7 +38,7 @@ impl App {
                 ArchiveExtract,
                 Properties,
                 Sort,
-                Grid,
+                View,
                 Hidden,
                 Refresh,
                 Search,
@@ -46,7 +46,7 @@ impl App {
                 CopyPath,
             ],
             MenuContext::Trash => &[RestoreTrash, RestoreTrashHere, DeleteTrash],
-            MenuContext::TrashBackground => &[EmptyTrash, Sort, Grid, Refresh],
+            MenuContext::TrashBackground => &[EmptyTrash, Sort, View, Refresh],
             MenuContext::All if self.in_trash() => &[
                 Palette,
                 RestoreTrash,
@@ -86,7 +86,7 @@ impl App {
                 Properties,
                 FolderSize,
                 Sort,
-                Grid,
+                View,
                 Hidden,
                 Refresh,
                 Search,
@@ -130,7 +130,7 @@ impl App {
                 CopyPath,
                 Search,
                 Refresh,
-                Grid,
+                View,
                 Dual,
                 Preview,
                 Terminal,
@@ -228,7 +228,7 @@ impl App {
             CopyToOtherPane | MoveToOtherPane => {
                 selection && !self.busy && self.other_destination().is_some()
             }
-            Duplicate => selection && !self.busy,
+            Duplicate => selection && !self.busy && self.duplicate_destination().is_some(),
             CancelOperation => {
                 self.busy
                     || self.extensions.working.is_some()

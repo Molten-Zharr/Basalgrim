@@ -135,7 +135,7 @@ impl App {
                     .panes
                     .iter()
                     .flat_map(|p| &p.tabs)
-                    .filter(|t| source.parent() == Some(t.cwd.as_path()))
+                    .filter(|t| t.entries.iter().any(|e| e.path == source))
                     .map(|t| t.request)
                     .collect(),
                 source,
@@ -257,6 +257,23 @@ impl App {
                 }
             }
             for (source, destination) in rebound {
+                if let Some(tree) = &mut tab.tree {
+                    tree.renamed(&source, &destination);
+                    for entry in &mut tab.entries {
+                        if let Ok(relative) = entry.path.strip_prefix(&source) {
+                            entry.path = destination.join(relative);
+                        }
+                    }
+                    tab.marked = tab
+                        .marked
+                        .iter()
+                        .map(|p| {
+                            p.strip_prefix(&source)
+                                .map(|r| destination.join(r))
+                                .unwrap_or_else(|_| p.clone())
+                        })
+                        .collect();
+                }
                 if tab.marked.remove(&source) {
                     tab.marked.insert(destination.clone());
                 }

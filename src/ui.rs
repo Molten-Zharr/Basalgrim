@@ -20,6 +20,7 @@ mod terminal;
 mod text_edit;
 pub mod theme;
 mod trash;
+mod views;
 
 use crate::{
     app::{App, Target},
@@ -435,7 +436,7 @@ fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
                 format!(" {} ", app.settings.shortcut(Action::Search)),
                 Action::Search,
             ),
-            (" Вид ".into(), Action::Grid),
+            (" Вид ".into(), Action::View),
         ];
     }
     let mut commands = vec![
@@ -450,15 +451,8 @@ fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
             Action::Search,
         ),
         (
-            format!(
-                " {} ",
-                if app.settings.grid {
-                    "☷ Список"
-                } else {
-                    "▦ Сетка"
-                }
-            ),
-            Action::Grid,
+            format!(" Вид: {} ", app.settings.view_mode().name()),
+            Action::View,
         ),
     ];
     if app.in_trash() {

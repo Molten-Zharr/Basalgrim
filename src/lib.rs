@@ -43,3 +43,7 @@ pub mod privileged;
 
 #[cfg(feature = "tui")]
 pub mod tui_input;
+
+pub mod view;
+
+pub mod tree;

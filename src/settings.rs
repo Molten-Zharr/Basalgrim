@@ -13,6 +13,9 @@ use std::{
 #[serde(default)]
 pub struct Settings {
     pub grid: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view: Option<crate::view::ViewMode>,
+    pub view_columns: u8,
     pub preview: bool,
     pub dual: bool,
     pub hidden: bool,
@@ -27,6 +30,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             grid: true,
+            view: None,
+            view_columns: 2,
             preview: true,
             dual: false,
             hidden: false,
@@ -39,6 +44,13 @@ impl Default for Settings {
     }
 }
 impl Settings {
+    pub fn view_mode(&self) -> crate::view::ViewMode {
+        self.view.unwrap_or(if self.grid {
+            crate::view::ViewMode::Icons
+        } else {
+            crate::view::ViewMode::List
+        })
+    }
     pub fn startup() -> (Self, Option<PathBuf>, Option<String>) {
         let Some(path) = Self::path() else {
             return (Self::default(), None, None);
@@ -90,6 +102,7 @@ impl Settings {
         Ok(())
     }
     pub fn normalize(&mut self) -> Result<()> {
+        self.view_columns = self.view_columns.clamp(1, 16);
         crate::appearance::validate(&mut self.appearance_presets)?;
         self.appearance.normalize()?;
         for binding in &mut self.bindings {
@@ -98,6 +111,7 @@ impl Settings {
         // Older settings do not have these commands. Keep custom bindings intact,
         // including keys that were free before the commands were introduced.
         for action in [
+            Action::View,
             Action::Extensions,
             Action::ExtensionCommands,
             Action::Palette,

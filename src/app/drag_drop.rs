@@ -433,7 +433,11 @@ impl App {
                 && (r.tab_target || self.panes[r.pane].active == r.tab)
                 && r.destination.as_ref().is_some_and(|path| {
                     !drag.sources.iter().any(|source| path.starts_with(source))
-                        && (drag.copy || path != &drag.cwd)
+                        && (drag.copy
+                            || drag
+                                .sources
+                                .iter()
+                                .any(|source| source.parent() != Some(path.as_path())))
                 })
         });
         Some(DragFeedback {
@@ -549,9 +553,18 @@ impl App {
             let point = hover.point;
             if let Some(pane) = self.file_areas.iter().position(|r| r.contains(point)) {
                 let area = self.file_areas[pane];
-                let delta = if point.y == area.y {
+                let horizontal = self.file_tab(pane).column_rows > 0;
+                let delta = if if horizontal {
+                    point.x == area.x
+                } else {
+                    point.y == area.y
+                } {
                     -1
-                } else if point.y + 1 == area.bottom() {
+                } else if if horizontal {
+                    point.x + 1 == area.right()
+                } else {
+                    point.y + 1 == area.bottom()
+                } {
                     1
                 } else {
                     0
@@ -576,9 +589,18 @@ impl App {
             return;
         };
         let area = self.file_areas[pane];
-        let delta = if drag.current.y == area.y {
+        let horizontal = self.settings.view_mode() == crate::view::ViewMode::Columns;
+        let delta = if if horizontal {
+            drag.current.x == area.x
+        } else {
+            drag.current.y == area.y
+        } {
             -1
-        } else if drag.current.y + 1 == area.bottom() {
+        } else if if horizontal {
+            drag.current.x + 1 == area.right()
+        } else {
+            drag.current.y + 1 == area.bottom()
+        } {
             1
         } else {
             return;

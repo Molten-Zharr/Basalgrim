@@ -1,4 +1,7 @@
 mod actions;
+mod tree;
+mod views;
+pub use views::ViewMenu;
 mod appearance;
 pub use appearance::{DesignState, PanelKind, ProfileControl};
 mod extensions;
@@ -64,6 +67,25 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    TreeToggle {
+        owner: PathOwner,
+        request: u64,
+        revision: u64,
+        path: PathBuf,
+    },
+    ViewChoose {
+        token: u64,
+        mode: crate::view::ViewMode,
+    },
+    ViewColumns {
+        token: u64,
+        delta: isize,
+    },
+    FileColumns {
+        owner: PathOwner,
+        request: u64,
+        delta: isize,
+    },
     Profile {
         revision: u64,
         control: ProfileControl,
@@ -268,6 +290,7 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    View(ViewMenu),
     Panel(PanelKind),
     Extensions,
     Details,
@@ -603,6 +626,13 @@ impl App {
             t.loading && !(t.refreshing && self.directory_results.contains_key(&t.request))
         }) || (self.terminal.visible && self.terminal.snapshot.running)
             || self.thumbnails.loading()
+            || self
+                .panes
+                .iter()
+                .flat_map(|p| &p.tabs)
+                .filter_map(|t| t.tree.as_ref())
+                .flat_map(|t| t.branches.values())
+                .any(|b| b.loading && !self.directory_results.contains_key(&b.request))
             || self.preview_loading
             || self.busy
             || self.design.working()
@@ -627,6 +657,13 @@ impl App {
     pub fn reload(&mut self, pane: usize, index: usize) {
         let token = self.token();
         let tab = &mut self.panes[pane].tabs[index];
+        tab.enable_tree(
+            self.settings.view_mode() == crate::view::ViewMode::Tree,
+            self.settings.hidden,
+        );
+        if let Some(tree) = &mut tab.tree {
+            tree.dirty();
+        }
         tab.scan_cancel.cancel();
         tab.scan_cancel = Default::default();
         tab.request = token;
@@ -666,6 +703,7 @@ impl App {
             tab.archive = None;
         }
         tab.cwd = path;
+        tab.tree = None;
         tab.entries.clear();
         tab.visible.clear();
         tab.marked.clear();
@@ -750,6 +788,7 @@ impl App {
         self.folder_sizes.poll();
         self.thumbnails.poll();
         self.refresh_changed_directories();
+        self.schedule_tree_scans();
         self.update_preview();
         self.apply_trash();
     }

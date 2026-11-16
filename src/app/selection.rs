@@ -7,7 +7,7 @@ pub(super) struct Marquee {
     tab: usize,
     cwd: PathBuf,
     request: u64,
-    grid: bool,
+    view: crate::view::ViewMode,
     viewport: Rect,
     origin: Position,
     current: Position,
@@ -75,7 +75,7 @@ impl App {
                     tab: self.panes[pane].active,
                     cwd: tab.cwd.clone(),
                     request: tab.request,
-                    grid: self.settings.grid,
+                    view: self.settings.view_mode(),
                     viewport: self.file_areas[pane],
                     origin: point,
                     current: point,
@@ -196,7 +196,7 @@ impl App {
                 || self.panes[d.pane].active != d.tab
                 || self.file_tab(d.pane).cwd != d.cwd
                 || self.file_tab(d.pane).request != d.request
-                || self.settings.grid != d.grid
+                || self.settings.view_mode() != d.view
                 || self.file_areas[d.pane] != d.viewport
         }) {
             self.finish_marquee(true);

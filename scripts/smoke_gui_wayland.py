@@ -137,6 +137,27 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--views-only' in sys.argv[2:]:
+                import views_fixture
+                fixture=views_fixture.Fixture(base);env.update(fixture.env)
+                process=launch(fixture.root)
+                def views_shot(name,compact=False):
+                    path=out/('native-wayland-views-'+name+'.png')
+                    run('grim','-g','0,0 400x360' if compact else '0,0 1360x860',str(path))
+                    return Image.open(path)
+                try:
+                    views_fixture.exercise(fixture,key,lambda s:run('wtype','-s','100',s,'-s','100'),click,views_shot)
+                    key('q','ctrl');process.wait(timeout=5)
+                    process=launch(fixture.root)
+                    run('swaymsg',f'[pid={process.pid}] resize set 400 px 360 px, move absolute position 0 px 0 px');time.sleep(.4)
+                    views_fixture.compact(fixture,key,lambda s:run('wtype','-s','100',s,'-s','100'),click,lambda n:views_shot(n,True))
+                    key('q','ctrl');process.wait(timeout=5);assert process.returncode==0
+                except BaseException:
+                    run('grim',str(out/'native-wayland-views-failure.png'));raise
+                finally:
+                    if process.poll() is None:process.terminate();process.wait(timeout=5)
+                    process=None;fixture.close()
+                return
             if '--appearance-only' in sys.argv[2:]:
                 import appearance_fixture
                 fixture=appearance_fixture.Fixture(base);env.update(fixture.env)
