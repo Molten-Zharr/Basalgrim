@@ -121,7 +121,19 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
             palette.text()
         };
         let shortcut = app.settings.shortcut(item.action);
-        let label = item.action.name();
+        let group_label = format!(
+            "{} Группировка ›",
+            if app.settings.grouping.enabled {
+                "√"
+            } else {
+                "□"
+            }
+        );
+        let label = if item.action == Action::Grouping {
+            &group_label
+        } else {
+            item.action.name()
+        };
         let label_width = usize::from(row.width).saturating_sub(shortcut.width() + 3);
         let label = files::shorten_name(label, label_width);
         let gap = usize::from(row.width).saturating_sub(label.width() + shortcut.width() + 2);
@@ -132,6 +144,18 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         // Disabled commands consume clicks and own the same one-row hover area.
         // Activation still checks availability in App::choose_command.
         hit(app, row, Target::Command(index));
+        if item.action == Action::Grouping && row.width > 3 {
+            let owner = crate::app::PathOwner::current(app, app.active);
+            hit(
+                app,
+                Rect::new(row.x + 1, row.y, 2, 1),
+                Target::GroupCheck {
+                    owner,
+                    request: app.tab().request,
+                    enabled: app.settings.grouping.enabled,
+                },
+            );
+        }
     }
     if !scrolling {
         return;

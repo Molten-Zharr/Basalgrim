@@ -127,6 +127,7 @@ pub enum Input {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
+    Grouping,
     View,
     Extensions,
     ExtensionCommands,
@@ -208,6 +209,7 @@ impl Action {
         Self::Path,
         Self::Grid,
         Self::View,
+        Self::Grouping,
         Self::Dual,
         Self::Preview,
         Self::FolderSize,
@@ -298,6 +300,7 @@ impl Action {
             Self::Path => "Перейти по пути",
             Self::Grid => "Значки / список",
             Self::View => "Режим просмотра",
+            Self::Grouping => "Группировка",
             Self::Dual => "Вторая панель",
             Self::Preview => "Предпросмотр",
             Self::FolderSize => "Размер папки",
@@ -456,6 +459,13 @@ pub fn default_bindings() -> Vec<Binding> {
     ] {
         result.push(Binding { action, key });
     }
+    result.push(Binding {
+        action: Grouping,
+        key: KeyPress {
+            alt: true,
+            ..KeyPress::ctrl('g')
+        },
+    });
     result.push(Binding {
         action: View,
         key: KeyPress {

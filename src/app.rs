@@ -1,6 +1,8 @@
 mod actions;
 mod typeahead;
 pub use typeahead::Typeahead;
+mod grouping;
+pub use grouping::GroupMenu;
 mod columns;
 pub use columns::{ColumnOwner, ColumnsMenu};
 mod tree;
@@ -90,6 +92,15 @@ pub enum Target {
         request: u64,
         revision: u64,
         path: PathBuf,
+    },
+    GroupCheck {
+        owner: PathOwner,
+        request: u64,
+        enabled: bool,
+    },
+    GroupControl {
+        token: u64,
+        row: usize,
     },
     ViewChoose {
         token: u64,
@@ -309,6 +320,7 @@ impl EditKind {
 }
 pub enum Dialog {
     Columns(ColumnsMenu),
+    Grouping(GroupMenu),
     View(ViewMenu),
     Panel(PanelKind),
     Extensions,
@@ -688,6 +700,7 @@ impl App {
     pub fn reload(&mut self, pane: usize, index: usize) {
         let token = self.token();
         let tab = &mut self.panes[pane].tabs[index];
+        tab.grouping = self.settings.grouping;
         tab.enable_tree(
             self.settings.view_mode() == crate::view::ViewMode::Tree,
             self.settings.hidden,

@@ -39,6 +39,7 @@ impl App {
                 Properties,
                 Sort,
                 View,
+                Grouping,
                 Hidden,
                 Refresh,
                 Search,
@@ -46,7 +47,7 @@ impl App {
                 CopyPath,
             ],
             MenuContext::Trash => &[RestoreTrash, RestoreTrashHere, DeleteTrash],
-            MenuContext::TrashBackground => &[EmptyTrash, Sort, View, Refresh],
+            MenuContext::TrashBackground => &[EmptyTrash, Sort, View, Grouping, Refresh],
             MenuContext::All if self.in_trash() => &[
                 Palette,
                 RestoreTrash,
@@ -87,6 +88,7 @@ impl App {
                 FolderSize,
                 Sort,
                 View,
+                Grouping,
                 Hidden,
                 Refresh,
                 Search,
@@ -131,6 +133,7 @@ impl App {
                 Search,
                 Refresh,
                 View,
+                Grouping,
                 Dual,
                 Preview,
                 Terminal,
@@ -309,7 +312,20 @@ impl App {
             let action = item.action;
             let archive_background = matches!(&self.dialog, Some(Dialog::Commands(menu)) if menu.context == MenuContext::Directory);
             let folder = (action == Action::FolderSize).then(|| self.folder_size_target(matches!(&self.dialog, Some(Dialog::Commands(menu)) if menu.context == MenuContext::Directory))).flatten();
+            let anchor = match &self.dialog {
+                Some(Dialog::Commands(m)) => m.anchor,
+                _ => Position::new(2, 4),
+            };
             self.dialog = None;
+            if action == Action::Grouping {
+                if !self.settings.grouping.enabled {
+                    let mut p = self.settings.grouping;
+                    p.enabled = true;
+                    self.set_grouping(p);
+                }
+                self.open_grouping(anchor);
+                return;
+            }
             if action == Action::ExtensionCommands {
                 self.open_extensions(true, archive_background);
                 return;
@@ -353,6 +369,18 @@ impl App {
         let Some(Dialog::Commands(menu)) = &mut self.dialog else {
             return;
         };
+        if press.key == Key::Char(' ')
+            && items
+                .get(menu.selected)
+                .is_some_and(|i| i.action == Action::Grouping)
+        {
+            self.group_checkbox(
+                PathOwner::current(self, self.active),
+                self.tab().request,
+                self.settings.grouping.enabled,
+            );
+            return;
+        }
         if press.key == Key::Enter {
             let index = menu.selected;
             self.choose_command(index);

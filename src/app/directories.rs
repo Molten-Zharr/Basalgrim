@@ -202,7 +202,11 @@ impl App {
                             } else {
                                 tab.columns.max(1)
                             };
-                            tab.offset = top / stride * stride;
+                            tab.offset = if tab.grouping.enabled {
+                                top
+                            } else {
+                                top / stride * stride
+                            };
                         }
                         preview_changed |= pane_index == self.active && index == pane.active;
                     }

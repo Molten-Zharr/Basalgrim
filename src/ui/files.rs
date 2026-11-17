@@ -162,7 +162,10 @@ pub fn render(
         return;
     }
     let icon_start = app.icon_slots.len();
-    if app.settings.view_mode() == crate::view::ViewMode::Icons {
+    if app.file_tab(pane).grouping.enabled && !app.file_tab(pane).visible.is_empty() {
+        grouped(app, frame, parts[3], pane, palette);
+    } else if app.settings.view_mode() == crate::view::ViewMode::Icons {
+        app.file_tab_mut(pane).group_view = None;
         app.set_file_area(pane, parts[3]);
         grid(app, frame, parts[3], pane, palette);
     } else {
@@ -246,8 +249,14 @@ pub fn render(
         let request = app.panes[pane].tab().request;
         let tab = app.file_tab(pane);
         let stride = tab.column_rows.max(1);
-        let count = tab.visible.len().div_ceil(stride);
-        let first = tab.offset / stride;
+        let count = tab
+            .group_view
+            .as_ref()
+            .map_or_else(|| tab.visible.len().div_ceil(stride), |v| v.total);
+        let first = tab
+            .group_view
+            .as_ref()
+            .map_or(tab.offset / stride, |v| v.offset);
         frame.render_widget(
             Paragraph::new(format!(
                 "          {}–{} / {} столбцов",
@@ -528,147 +537,156 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
             right - left,
             5.min(area.height.saturating_sub((row * 5) as u16)),
         );
-        let entry = &app.file_tab(pane).entries[app.file_tab(pane).visible[index]];
-        let renaming = app.renaming(pane, &entry.path);
-        let selected =
-            app.file_tab(pane).selected == index && !app.file_tab(pane).explicit_selection;
-        let marked = app.file_tab(pane).marked.contains(&entry.path);
-        let base = if selected || marked {
-            palette.selection()
-        } else {
-            palette.text()
-        };
-        frame.render_widget(Block::default().style(base), rect);
-        let icon = if entry.directory {
-            [" ▄▄▄     ", " ███████ "]
-        } else {
-            [" ┌────┐ ", " │ ≡≡ │ "]
-        };
-        let icon_style = base.fg(palette.color(if entry.directory {
-            "folder_icon"
-        } else {
-            "folder_path"
-        }));
-        let icon_area = Rect::new(
-            rect.x,
-            rect.y,
-            rect.width,
-            2.min(rect.height.saturating_sub(1)),
-        );
-        let slot = if !icon_area.is_empty()
-            && app.icon_backend.supports_images()
-            && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images
-        {
-            let width = icon_area.width.min(6);
-            Some(image_slot(
-                entry,
-                app.file_tab(pane).request,
-                Rect::new(
-                    icon_area.x + (icon_area.width - width) / 2,
-                    icon_area.y,
-                    width,
-                    icon_area.height,
-                ),
-                palette,
-            ))
-        } else {
-            frame.render_widget(
-                Paragraph::new(icon.join("\n"))
-                    .alignment(Alignment::Center)
-                    .style(icon_style),
-                icon_area,
-            );
-            None
-        };
-        let mut rename_area = None;
-        if rect.height > 0 && rect.width > 2 {
-            let prefix = if marked { "● " } else { "" };
-            let suffix = if entry.symlink { " ↗" } else { "" };
-            let label_width = rect.width - 2;
-            let name_width =
-                usize::from(label_width).saturating_sub(prefix.width() + suffix.width());
-            let row = Rect::new(rect.x + 1, rect.y + 2.min(rect.height - 1), label_width, 1);
-            if renaming && let Some(crate::app::Dialog::Edit { text, .. }) = &app.dialog {
-                // Use the same centered origin as the ordinary label. Reserve
-                // a cell for the caret, and retain the mark/link decorations.
-                let width = crate::text_edit::width(text);
-                let padding = name_width.saturating_sub(width) / 2;
-                let x = row.x + padding as u16;
-                frame.render_widget(
-                    Paragraph::new(prefix).style(base),
-                    Rect::new(x, row.y, prefix.width() as u16, 1),
-                );
-                let field = Rect::new(
-                    x + prefix.width() as u16,
-                    row.y,
-                    (width + 1).min(name_width.saturating_sub(padding)) as u16,
-                    1,
-                );
-                let suffix_x = (field.x + width.min(name_width) as u16)
-                    .min(row.right().saturating_sub(suffix.width() as u16));
-                frame.render_widget(
-                    Paragraph::new(suffix).style(base),
-                    Rect::new(suffix_x, row.y, suffix.width() as u16, 1),
-                );
-                rename_area = Some(field);
-            } else {
-                let label = format!(
-                    "{prefix}{}{suffix}",
-                    shorten_name(app.entry_name(pane, entry), name_width)
-                );
-                frame.render_widget(
-                    Paragraph::new(label)
-                        .alignment(Alignment::Center)
-                        .style(typeahead_style(app, pane, index, base)),
-                    row,
-                );
-            }
-        }
-        if rect.height > 3 {
-            let detail = if entry.directory {
-                "Папка".into()
-            } else {
-                fs::size(entry.size)
-            };
-            frame.render_widget(
-                Paragraph::new(detail)
-                    .alignment(Alignment::Center)
-                    .style(base.fg(palette.color("folder_path"))),
-                Rect::new(rect.x, rect.y + 3, rect.width, 1),
-            );
-        }
-        if rename_area.is_some() {
-            app.rename_area = rename_area;
-        }
-        app.icon_slots.extend(slot);
-        hit(app, rect, Target::Entry { pane, index });
-        if rect.height > 1 && rect.width > 2 {
-            hit(
-                app,
-                Rect::new(rect.x, rect.y + 1, 1, rect.height - 1),
-                Target::EntryBackground,
-            );
-            hit(
-                app,
-                Rect::new(rect.right() - 1, rect.y + 1, 1, rect.height - 1),
-                Target::EntryBackground,
-            );
-        }
-        if rect.height == 5 {
-            hit(
-                app,
-                Rect::new(rect.x, rect.bottom() - 1, rect.width, 1),
-                Target::EntryBackground,
-            );
-        }
-        let mark_area = Rect::new(rect.right().saturating_sub(3), rect.y, 3.min(rect.width), 1);
-        frame.render_widget(
-            Paragraph::new(if marked { "[●]" } else { "[ ]" }).style(base),
-            mark_area,
-        );
-        hit(app, mark_area, Target::EntryMark { pane, index });
+        draw_tile(app, frame, rect, pane, index, palette);
     }
 }
+fn draw_tile(
+    app: &mut App,
+    frame: &mut Frame,
+    rect: Rect,
+    pane: usize,
+    index: usize,
+    palette: Palette,
+) {
+    let entry = &app.file_tab(pane).entries[app.file_tab(pane).visible[index]];
+    let renaming = app.renaming(pane, &entry.path);
+    let selected = app.file_tab(pane).selected == index && !app.file_tab(pane).explicit_selection;
+    let marked = app.file_tab(pane).marked.contains(&entry.path);
+    let base = if selected || marked {
+        palette.selection()
+    } else {
+        palette.text()
+    };
+    frame.render_widget(Block::default().style(base), rect);
+    let icon = if entry.directory {
+        [" ▄▄▄     ", " ███████ "]
+    } else {
+        [" ┌────┐ ", " │ ≡≡ │ "]
+    };
+    let icon_style = base.fg(palette.color(if entry.directory {
+        "folder_icon"
+    } else {
+        "folder_path"
+    }));
+    let icon_area = Rect::new(
+        rect.x,
+        rect.y,
+        rect.width,
+        2.min(rect.height.saturating_sub(1)),
+    );
+    let slot = if !icon_area.is_empty()
+        && app.icon_backend.supports_images()
+        && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images
+    {
+        let width = icon_area.width.min(6);
+        Some(image_slot(
+            entry,
+            app.file_tab(pane).request,
+            Rect::new(
+                icon_area.x + (icon_area.width - width) / 2,
+                icon_area.y,
+                width,
+                icon_area.height,
+            ),
+            palette,
+        ))
+    } else {
+        frame.render_widget(
+            Paragraph::new(icon.join("\n"))
+                .alignment(Alignment::Center)
+                .style(icon_style),
+            icon_area,
+        );
+        None
+    };
+    let mut rename_area = None;
+    if rect.height > 0 && rect.width > 2 {
+        let prefix = if marked { "● " } else { "" };
+        let suffix = if entry.symlink { " ↗" } else { "" };
+        let label_width = rect.width - 2;
+        let name_width = usize::from(label_width).saturating_sub(prefix.width() + suffix.width());
+        let row = Rect::new(rect.x + 1, rect.y + 2.min(rect.height - 1), label_width, 1);
+        if renaming && let Some(crate::app::Dialog::Edit { text, .. }) = &app.dialog {
+            // Use the same centered origin as the ordinary label. Reserve
+            // a cell for the caret, and retain the mark/link decorations.
+            let width = crate::text_edit::width(text);
+            let padding = name_width.saturating_sub(width) / 2;
+            let x = row.x + padding as u16;
+            frame.render_widget(
+                Paragraph::new(prefix).style(base),
+                Rect::new(x, row.y, prefix.width() as u16, 1),
+            );
+            let field = Rect::new(
+                x + prefix.width() as u16,
+                row.y,
+                (width + 1).min(name_width.saturating_sub(padding)) as u16,
+                1,
+            );
+            let suffix_x = (field.x + width.min(name_width) as u16)
+                .min(row.right().saturating_sub(suffix.width() as u16));
+            frame.render_widget(
+                Paragraph::new(suffix).style(base),
+                Rect::new(suffix_x, row.y, suffix.width() as u16, 1),
+            );
+            rename_area = Some(field);
+        } else {
+            let label = format!(
+                "{prefix}{}{suffix}",
+                shorten_name(app.entry_name(pane, entry), name_width)
+            );
+            frame.render_widget(
+                Paragraph::new(label)
+                    .alignment(Alignment::Center)
+                    .style(typeahead_style(app, pane, index, base)),
+                row,
+            );
+        }
+    }
+    if rect.height > 3 {
+        let detail = if entry.directory {
+            "Папка".into()
+        } else {
+            fs::size(entry.size)
+        };
+        frame.render_widget(
+            Paragraph::new(detail)
+                .alignment(Alignment::Center)
+                .style(base.fg(palette.color("folder_path"))),
+            Rect::new(rect.x, rect.y + 3, rect.width, 1),
+        );
+    }
+    if rename_area.is_some() {
+        app.rename_area = rename_area;
+    }
+    app.icon_slots.extend(slot);
+    hit(app, rect, Target::Entry { pane, index });
+    if rect.height > 1 && rect.width > 2 {
+        hit(
+            app,
+            Rect::new(rect.x, rect.y + 1, 1, rect.height - 1),
+            Target::EntryBackground,
+        );
+        hit(
+            app,
+            Rect::new(rect.right() - 1, rect.y + 1, 1, rect.height - 1),
+            Target::EntryBackground,
+        );
+    }
+    if rect.height == 5 {
+        hit(
+            app,
+            Rect::new(rect.x, rect.bottom() - 1, rect.width, 1),
+            Target::EntryBackground,
+        );
+    }
+    let mark_area = Rect::new(rect.right().saturating_sub(3), rect.y, 3.min(rect.width), 1);
+    frame.render_widget(
+        Paragraph::new(if marked { "[●]" } else { "[ ]" }).style(base),
+        mark_area,
+    );
+    hit(app, mark_area, Target::EntryMark { pane, index });
+}
+
 fn row_style(app: &App, pane: usize, index: usize, palette: Palette) -> Style {
     let tab = app.file_tab(pane);
     let entry = &tab.entries[tab.visible[index]];
@@ -873,7 +891,10 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
     let start = tab.offset;
     let end = (start + rows).min(tab.visible.len());
     if !tree {
-        detail_list(app, frame, area, pane, palette, start, end);
+        let rows: Vec<_> = (start..end)
+            .map(|i| (i, area.y + 1 + (i - start) as u16))
+            .collect();
+        detail_list(app, frame, area, pane, palette, &rows);
         return;
     }
     let tab = app.file_tab(pane);
@@ -964,8 +985,7 @@ fn detail_list(
     area: Rect,
     pane: usize,
     palette: Palette,
-    start: usize,
-    end: usize,
+    rows: &[(usize, u16)],
 ) {
     use crate::columns::Column;
     let header = Rect::new(area.x, area.y, area.width, 1);
@@ -1019,8 +1039,8 @@ fn detail_list(
                 column: spec.column,
             },
         );
-        for index in start..end {
-            let cell = Rect::new(r.x, area.y + 1 + (index - start) as u16, width, 1);
+        for &(index, y) in rows {
+            let cell = Rect::new(r.x, y, width, 1);
             if spec.column == Column::Name {
                 draw_name_row(app, frame, cell, pane, index, palette, false);
             } else {
@@ -1045,10 +1065,10 @@ fn detail_list(
         }
     }
     // Ordinary row hits keep metadata cells usable for selection, opening and drag.
-    for index in start..end {
+    for &(_, y) in rows {
         hit(
             app,
-            Rect::new(area.right() - 1, area.y + 1 + (index - start) as u16, 1, 1),
+            Rect::new(area.right() - 1, y, 1, 1),
             Target::EntryBackground,
         );
     }
@@ -1062,5 +1082,190 @@ fn typeahead_style(app: &App, pane: usize, index: usize, style: Style) -> Style 
         style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
     } else {
         style
+    }
+}
+
+fn grouped(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Palette) {
+    use crate::view::ViewMode;
+    let mode = app.settings.view_mode();
+    let content = if mode == ViewMode::Icons {
+        area
+    } else {
+        Rect::new(
+            area.x,
+            area.y + 1,
+            area.width,
+            area.height.saturating_sub(1),
+        )
+    };
+    app.set_file_area(pane, content);
+    if content.is_empty() {
+        return;
+    }
+    let columns = match mode {
+        ViewMode::Icons => (usize::from(area.width) / 18).max(1),
+        ViewMode::Columns => usize::from(app.settings.view_columns)
+            .min(usize::from(area.width) / 12)
+            .max(1),
+        _ => 1,
+    };
+    let tab = app.file_tab_mut(pane);
+    let changed = tab.group_view.as_ref().is_none_or(|v| {
+        v.mode != mode
+            || v.width != content.width
+            || v.height != content.height
+            || v.columns != columns
+    });
+    if changed {
+        let mut v = crate::grouping::Viewport::new(
+            &tab.groups,
+            mode,
+            content.width,
+            content.height,
+            columns,
+        );
+        if !tab.follow_selection {
+            v.anchor(tab.offset);
+        }
+        tab.group_view = Some(v);
+    }
+    tab.columns = columns;
+    tab.column_rows = if mode == ViewMode::Columns {
+        usize::from(content.height.saturating_sub(1)).max(1)
+    } else {
+        0
+    };
+    tab.page_size = match mode {
+        ViewMode::Icons => columns * (usize::from(content.height) / 5).max(1),
+        ViewMode::Columns => columns * tab.column_rows,
+        _ => usize::from(content.height).max(1),
+    };
+    let view = tab.group_view.as_mut().unwrap();
+    if tab.follow_selection {
+        view.follow(tab.selected);
+    }
+    tab.offset = view.first();
+    let items = view.items();
+    let headings = view
+        .headers()
+        .into_iter()
+        .map(|(g, x, y)| (tab.groups[g].label.clone(), tab.groups[g].count, x, y))
+        .collect::<Vec<_>>();
+    let rows: Vec<_> = items
+        .iter()
+        .map(|&(i, _, y)| (i, content.y + y as u16))
+        .collect();
+    if mode == ViewMode::List {
+        detail_list(app, frame, area, pane, palette, &rows);
+    } else if mode == ViewMode::Tree {
+        // Reuse the ordinary tree controls; expanded descendants stay with roots.
+        let name_width = area.width.saturating_sub(
+            13 + if area.width > 65 { 12 } else { 0 } + if area.width > 85 { 15 } else { 0 },
+        );
+        let widths = [
+            Constraint::Min(12),
+            Constraint::Length(10),
+            Constraint::Length(if area.width > 65 { 12 } else { 0 }),
+            Constraint::Length(if area.width > 85 { 15 } else { 0 }),
+        ];
+        frame.render_widget(
+            Table::new(
+                [Row::new([" Имя", "Размер", "Тип", "Изменён"]).style(palette.muted())],
+                widths,
+            )
+            .column_spacing(1),
+            Rect::new(area.x, area.y, area.width, 1),
+        );
+        for &(index, y) in &rows {
+            let e = &app.file_tab(pane).entries[app.file_tab(pane).visible[index]];
+            let r = Rect::new(area.x, y, area.width, 1);
+            frame.render_widget(
+                Table::new(
+                    [Row::new(vec![
+                        String::new(),
+                        if e.directory {
+                            "—".into()
+                        } else {
+                            fs::size(e.size)
+                        },
+                        fs::kind(e).into(),
+                        fs::date(e.modified),
+                    ])
+                    .style(row_style(app, pane, index, palette))],
+                    widths,
+                )
+                .column_spacing(1),
+                r,
+            );
+            hit(app, r, Target::Entry { pane, index });
+            draw_name_row(
+                app,
+                frame,
+                Rect::new(r.x, r.y, name_width, 1),
+                pane,
+                index,
+                palette,
+                !app.trash_in(pane),
+            );
+            hit(
+                app,
+                Rect::new(r.right() - 1, y, 1, 1),
+                Target::EntryBackground,
+            );
+        }
+    } else {
+        if mode == ViewMode::Columns {
+            frame.render_widget(
+                Paragraph::new(" Имя").style(palette.muted()),
+                Rect::new(area.x, area.y, area.width, 1),
+            );
+        }
+        for (index, col, row) in items {
+            let left = content.x + (col * usize::from(content.width) / columns) as u16;
+            let right = content.x + ((col + 1) * usize::from(content.width) / columns) as u16;
+            let r = Rect::new(
+                left,
+                content.y + row as u16,
+                right - left,
+                if mode == ViewMode::Icons {
+                    5.min(content.height.saturating_sub(row as u16))
+                } else {
+                    1
+                },
+            );
+            if mode == ViewMode::Icons {
+                draw_tile(app, frame, r, pane, index, palette);
+            } else {
+                draw_name_row(app, frame, r, pane, index, palette, false);
+            }
+        }
+    }
+    for (label, count, col, row) in headings {
+        let r = if mode == ViewMode::Columns {
+            let x = content.x + (col * usize::from(content.width) / columns) as u16;
+            let right = content.x + ((col + 1) * usize::from(content.width) / columns) as u16;
+            Rect::new(x, content.y + row as u16, right - x, 1)
+        } else {
+            Rect::new(content.x, content.y + row as u16, content.width, 1)
+        };
+        let counted = format!("{label} · {count}");
+        let budget = usize::from(r.width.saturating_sub(3));
+        let label = shorten_name(
+            if counted.width() <= budget {
+                &counted
+            } else {
+                &label
+            },
+            budget,
+        );
+        let line = format!(
+            " {label} {}",
+            "─".repeat(usize::from(r.width).saturating_sub(label.width() + 2))
+        );
+        frame.render_widget(
+            Paragraph::new(line).style(palette.accent().add_modifier(Modifier::BOLD)),
+            r,
+        );
+        hit(app, r, Target::EntryBackground);
     }
 }

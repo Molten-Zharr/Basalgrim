@@ -170,7 +170,8 @@ fn background_menu_uses_the_directory_even_when_files_are_marked() {
         assert!(!items.contains(&a));
     }
     assert!(items.contains(&Action::Properties));
-    assert!(items.len() <= 11);
+    assert!(items.contains(&Action::Grouping));
+    assert!(items.len() <= 12);
     assert_eq!(app.tab().marked.len(), 2);
     app.cancel_dialog();
     app.clipboard = Some(Clipboard {

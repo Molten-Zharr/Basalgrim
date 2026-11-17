@@ -20,6 +20,9 @@ impl Pane {
 }
 
 pub struct Tab {
+    pub grouping: crate::grouping::Grouping,
+    pub groups: Vec<crate::grouping::Group>,
+    pub group_view: Option<crate::grouping::Viewport>,
     pub tree: Option<crate::tree::Tree>,
     pub archive: Option<std::sync::Arc<crate::archive::Catalog>>,
     pub cwd: PathBuf,
@@ -59,6 +62,9 @@ pub(crate) struct RangeSelection {
 impl Tab {
     pub fn new(cwd: PathBuf) -> Self {
         Self {
+            grouping: Default::default(),
+            groups: vec![],
+            group_view: None,
             tree: None,
             archive: None,
             cwd,
@@ -192,6 +198,12 @@ impl Tab {
         }
     }
     pub fn scroll_rows(&mut self, rows: isize) {
+        if let Some(view) = &mut self.group_view {
+            view.scroll(rows);
+            self.offset = view.first();
+            self.follow_selection = false;
+            return;
+        }
         if self.column_rows > 0 {
             let stride = self.column_rows;
             let max = self
@@ -236,7 +248,20 @@ impl Tab {
                 .unwrap_or(0);
         }
     }
+    pub fn regroup(&mut self) {
+        self.groups = crate::grouping::project(
+            &self.entries,
+            &mut self.visible,
+            self.grouping,
+            self.tree.as_ref().map(|_| self.cwd.as_path()),
+        );
+        self.group_view = None;
+    }
     pub fn rebuild(&mut self, hidden: bool) {
+        let top = self
+            .visible
+            .get(self.offset)
+            .map(|&i| self.entries[i].path.clone());
         let selected = self.entry().map(|e| e.path.clone());
         let tree = self.tree.is_some();
         if let Some(tree) = &mut self.tree {
@@ -256,6 +281,13 @@ impl Tab {
             })
             .map(|(i, _)| i)
             .collect();
+        self.regroup();
+        if self.grouping.enabled
+            && let Some(top) =
+                top.and_then(|p| self.visible.iter().position(|&i| self.entries[i].path == p))
+        {
+            self.offset = top;
+        }
         self.selected = selected
             .and_then(|p| self.visible.iter().position(|&i| self.entries[i].path == p))
             .unwrap_or(self.selected)

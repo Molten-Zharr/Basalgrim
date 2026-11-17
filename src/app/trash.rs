@@ -102,6 +102,7 @@ impl TrashView {
             })
             .map(|(i, _)| i)
             .collect();
+        self.files.regroup();
         self.files.selected = focus
             .and_then(|path| {
                 self.files
@@ -131,6 +132,7 @@ impl App {
         }
         let owner = PathOwner::current(self, self.active);
         let mut files = Tab::new(owner.cwd.clone());
+        files.grouping = self.settings.grouping;
         files.loading = false;
         let roots = roots.or_else(|| {
             self.trash_home_only
@@ -283,7 +285,11 @@ impl App {
                         .iter()
                         .position(|i| Some(&view.files.entries[*i].path) == top.as_ref())
                 {
-                    view.offset = i.min(view.visible.len().saturating_sub(view.page_size));
+                    view.offset = if view.grouping.enabled {
+                        i
+                    } else {
+                        i.min(view.visible.len().saturating_sub(view.page_size))
+                    };
                 }
             }
         }

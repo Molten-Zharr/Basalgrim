@@ -96,6 +96,7 @@ impl App {
             Action::Extensions => self.open_extensions(false, false),
             Action::ExtensionCommands => self.open_extensions(true, false),
             Action::Palette => self.open_palette(),
+            Action::Grouping => self.open_grouping(self.pointer.unwrap_or(Position::new(2, 4))),
             Action::Devices => self.open_devices(),
             Action::Properties => self.open_details(false, false),
             Action::OpenWith => self.open_details(false, true),
@@ -565,7 +566,7 @@ impl App {
                 self.dialog = Some(Dialog::Settings)
             }
             Dialog::Details => {}
-            Dialog::Panel(_) | Dialog::View(_) | Dialog::Columns(_) => {}
+            Dialog::Panel(_) | Dialog::View(_) | Dialog::Columns(_) | Dialog::Grouping(_) => {}
             Dialog::Extensions => {}
             Dialog::Network => {}
             Dialog::Devices => {

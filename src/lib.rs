@@ -49,3 +49,4 @@ pub mod view;
 pub mod tree;
 
 pub mod columns;
+pub mod grouping;

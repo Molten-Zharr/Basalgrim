@@ -65,11 +65,13 @@ impl App {
         let hidden = self.settings.hidden;
         for tab in self.panes.iter_mut().flat_map(|p| &mut p.tabs) {
             tab.enable_tree(mode == ViewMode::Tree, hidden);
+            tab.group_view = None;
             tab.offset = 0;
             tab.follow_selection = true;
             tab.column_rows = 0;
         }
         if let Some(trash) = &mut self.trash {
+            trash.files.group_view = None;
             trash.files.offset = 0;
             trash.files.column_rows = 0;
             trash.files.follow_selection = true;

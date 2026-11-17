@@ -16,6 +16,7 @@ pub struct Settings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub view: Option<crate::view::ViewMode>,
     pub view_columns: u8,
+    pub grouping: crate::grouping::Grouping,
     pub typeahead_timeout_ms: u64,
     pub list_columns: crate::columns::Layout,
     pub preview: bool,
@@ -37,6 +38,7 @@ impl Default for Settings {
             grid: true,
             view: None,
             view_columns: 2,
+            grouping: Default::default(),
             typeahead_timeout_ms: 1000,
             list_columns: Default::default(),
             preview: true,
@@ -138,6 +140,7 @@ impl Settings {
         for action in [
             Action::Parent,
             Action::View,
+            Action::Grouping,
             Action::Extensions,
             Action::ExtensionCommands,
             Action::Palette,

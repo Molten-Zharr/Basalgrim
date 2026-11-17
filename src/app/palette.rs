@@ -72,6 +72,7 @@ fn aliases(action: Action) -> &'static str {
         Terminal => "terminal shell консоль",
         Hidden => "hidden скрытые",
         Sort => "sort порядок",
+        Grouping => "group groups группировка месяцы тип размер",
         NewTab => "new tab добавить вкладка",
         CloseTab => "close tab закрыть вкладка",
         NextTab => "next tab переключить вкладка",

@@ -31,6 +31,9 @@ impl App {
             self.selection_extend = extend;
             return;
         }
+        if self.grouping_input(&input) {
+            return;
+        }
         if self.columns_input(&input) {
             return;
         }
@@ -219,6 +222,12 @@ impl App {
                         revision,
                         path,
                     }) => self.toggle_tree(owner, request, revision, path),
+                    Some(Target::GroupCheck {
+                        owner,
+                        request,
+                        enabled,
+                    }) => self.group_checkbox(owner, request, enabled),
+                    Some(Target::GroupControl { token, row }) => self.group_control(token, row),
                     Some(Target::ViewChoose { token, mode }) => {
                         self.view_control(token, Some(mode), 0)
                     }
@@ -423,6 +432,7 @@ impl App {
                                     | Dialog::Paths(_)
                                     | Dialog::Edit { .. }
                                     | Dialog::Panel(_)
+                                    | Dialog::Grouping(_)
                                     | Dialog::View(_)
                                     | Dialog::Columns(_)
                             )
@@ -947,6 +957,20 @@ impl App {
         };
         if alt || (ctrl && !shift) {
             return;
+        }
+        if let Some(view) = &self.tab().group_view {
+            let dir = match (view.mode, key) {
+                (crate::view::ViewMode::Icons, Key::Up) => Some((0, -1)),
+                (crate::view::ViewMode::Icons, Key::Down) => Some((0, 1)),
+                (crate::view::ViewMode::Columns, Key::Left) => Some((-1, 0)),
+                (crate::view::ViewMode::Columns, Key::Right) => Some((1, 0)),
+                _ => None,
+            };
+            if let Some((dx, dy)) = dir {
+                let next = view.next(self.tab().selected, dx, dy, self.tab().visible.len());
+                self.move_selection(next as isize - self.tab().selected as isize, shift, ctrl);
+                return;
+            }
         }
         match key {
             Key::Up => self.move_selection(-vertical_step, shift, ctrl),

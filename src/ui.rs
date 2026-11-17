@@ -8,6 +8,7 @@ mod dialogs;
 mod extensions;
 mod files;
 mod folder_size;
+mod grouping;
 mod network;
 mod operations;
 mod palette;
