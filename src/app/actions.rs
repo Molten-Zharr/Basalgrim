@@ -300,6 +300,10 @@ impl App {
                     .iter()
                     .map(|&i| tab.entries[i].path.clone())
                     .collect();
+                if tab.filter_run.is_some() {
+                    let count = tab.marked.len();
+                    self.message(format!("Выбрано на текущей странице: {count}"), false);
+                }
             }
             Action::NewTab => {
                 let cwd = self.tab().cwd.clone();
@@ -460,14 +464,22 @@ impl App {
             return;
         }
         if let Some(Dialog::Edit {
+            kind: EditKind::FilterExtension { original },
+            ..
+        }) = &self.dialog
+        {
+            self.tab_mut().filter_options.extension = original.clone();
+            self.dialog = None;
+            self.filter_changed(true);
+            return;
+        }
+        if let Some(Dialog::Edit {
             kind: EditKind::Search { original },
             ..
         }) = self.dialog.take()
         {
             self.tab_mut().filter = original;
-            self.tab_mut().follow_selection = true;
-            let hidden = self.settings.hidden;
-            self.tab_mut().rebuild(hidden);
+            self.filter_changed(true);
             self.update_preview();
         }
     }
@@ -566,7 +578,11 @@ impl App {
                 self.dialog = Some(Dialog::Settings)
             }
             Dialog::Details => {}
-            Dialog::Panel(_) | Dialog::View(_) | Dialog::Columns(_) | Dialog::Grouping(_) => {}
+            Dialog::Panel(_)
+            | Dialog::View(_)
+            | Dialog::Columns(_)
+            | Dialog::Grouping(_)
+            | Dialog::FilterMenu(_) => {}
             Dialog::Extensions => {}
             Dialog::Network => {}
             Dialog::Devices => {
@@ -611,7 +627,10 @@ impl App {
                 }
                 if !matches!(
                     kind,
-                    EditKind::Search { .. } | EditKind::TrashSearch { .. } | EditKind::Path(_)
+                    EditKind::Search { .. }
+                        | EditKind::TrashSearch { .. }
+                        | EditKind::FilterExtension { .. }
+                        | EditKind::Path(_)
                 ) && let Err(e) = fs::validate_name(&text)
                 {
                     self.dialog = Some(Dialog::Edit {
@@ -636,7 +655,9 @@ impl App {
                     EditKind::RecursiveSearch => unreachable!(),
                     EditKind::BatchRename => unreachable!(),
                     EditKind::Setting(_) => unreachable!(),
-                    EditKind::Search { .. } | EditKind::TrashSearch { .. } => {}
+                    EditKind::Search { .. }
+                    | EditKind::TrashSearch { .. }
+                    | EditKind::FilterExtension { .. } => {}
                     EditKind::Path(original) => {
                         if text == "trash:///" {
                             self.open_trash(None);

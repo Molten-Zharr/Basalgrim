@@ -31,6 +31,9 @@ impl App {
             self.selection_extend = extend;
             return;
         }
+        if self.filter_input(&input) {
+            return;
+        }
         if self.grouping_input(&input) {
             return;
         }
@@ -216,6 +219,11 @@ impl App {
                     .find(|(r, _)| r.contains(Position::new(x, y)))
                     .map(|(_, t)| t.clone());
                 match target {
+                    Some(Target::Filter {
+                        owner,
+                        menu,
+                        control,
+                    }) => self.filter_control(owner, menu, control),
                     Some(Target::TreeToggle {
                         owner,
                         request,
@@ -432,6 +440,7 @@ impl App {
                                     | Dialog::Paths(_)
                                     | Dialog::Edit { .. }
                                     | Dialog::Panel(_)
+                                    | Dialog::FilterMenu(_)
                                     | Dialog::Grouping(_)
                                     | Dialog::View(_)
                                     | Dialog::Columns(_)
@@ -674,7 +683,7 @@ impl App {
             Input::Scroll { delta, .. } if matches!(self.dialog, Some(Dialog::FolderSize)) => {
                 self.scroll_folder_size(delta as isize * 3)
             }
-            Input::Scroll { x, y, delta } if self.dialog.is_none() => {
+            Input::Scroll { x, y, delta } if self.dialog.is_none() || self.inline_filter() => {
                 if self.preview_area.contains(Position::new(x, y)) {
                     let max = self
                         .preview
@@ -740,9 +749,15 @@ impl App {
         }) = &self.dialog
         {
             self.panes[self.active].tab_mut().filter = text.clone();
-            self.tab_mut().follow_selection = true;
-            let hidden = self.settings.hidden;
-            self.tab_mut().rebuild(hidden);
+            self.filter_changed(true);
+        } else if let Some(Dialog::Edit {
+            kind: EditKind::FilterExtension { .. },
+            text,
+            ..
+        }) = &self.dialog
+        {
+            self.tab_mut().filter_options.extension = text.clone();
+            self.filter_changed(true);
         }
     }
     pub(super) fn select_entry(
@@ -996,6 +1011,11 @@ impl App {
                 self.tab_mut().marked.clear();
                 self.tab_mut().reset_range();
                 self.tab_mut().filter.clear();
+                self.tab_mut().filter_options = Default::default();
+                if self.tab().filter_run.is_some() {
+                    self.filter_changed(true);
+                    return;
+                }
                 let h = self.settings.hidden;
                 if self.in_trash() {
                     self.trash.as_mut().unwrap().rebuild();

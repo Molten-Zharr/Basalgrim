@@ -137,6 +137,28 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--filter-only' in sys.argv[2:]:
+                import filter_fixture
+                fixture=filter_fixture.Fixture(base);env.update(fixture.env)
+                process=launch(fixture.root)
+                def filter_click(x,y,button=1): click(x,y,{4:20,5:21}.get(button,button))
+                def filter_shot(name,compact=False):
+                    path=out/('native-wayland-filter-'+name+'.png')
+                    run('grim','-g','0,0 400x360' if compact else '0,0 1360x860',str(path))
+                    return Image.open(path)
+                try:
+                    filter_fixture.exercise(fixture,key,lambda s:run('wtype','-s','100',s,'-s','100'),filter_click,filter_shot)
+                    key('q','ctrl');process.wait(timeout=5)
+                    process=launch(fixture.root)
+                    run('swaymsg',f'[pid={process.pid}] resize set 400 px 360 px, move absolute position 0 px 0 px');time.sleep(.4)
+                    filter_fixture.compact(fixture,key,lambda s:run('wtype','-s','100',s,'-s','100'),filter_click,lambda n:filter_shot(n,True))
+                    key('q','ctrl');process.wait(timeout=5);assert process.returncode==0
+                except BaseException:
+                    run('grim',str(out/'native-wayland-filter-failure.png'));raise
+                finally:
+                    if process.poll() is None:process.terminate();process.wait(timeout=5)
+                    process=None;fixture.close()
+                return
             if '--grouping-only' in sys.argv[2:]:
                 import grouping_fixture
                 fixture=grouping_fixture.Fixture(base);env.update(fixture.env)

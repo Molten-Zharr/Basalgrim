@@ -1,6 +1,8 @@
 mod actions;
 mod typeahead;
 pub use typeahead::Typeahead;
+mod filtering;
+pub use filtering::{FilterControl, FilterMenu, FilterOwner};
 mod grouping;
 pub use grouping::GroupMenu;
 mod columns;
@@ -92,6 +94,11 @@ pub enum Target {
         request: u64,
         revision: u64,
         path: PathBuf,
+    },
+    Filter {
+        owner: FilterOwner,
+        menu: Option<u64>,
+        control: FilterControl,
     },
     GroupCheck {
         owner: PathOwner,
@@ -264,6 +271,9 @@ pub enum Target {
 
 #[derive(Clone)]
 pub enum EditKind {
+    FilterExtension {
+        original: String,
+    },
     ExtensionInstall,
     CommandFilter,
     ApplicationFilter,
@@ -298,6 +308,7 @@ pub enum EditKind {
 impl EditKind {
     pub fn title(&self) -> &'static str {
         match self {
+            Self::FilterExtension { .. } => "Расширение файла",
             Self::ExtensionInstall => "Папка расширения (полный путь)",
             Self::CommandFilter => "Поиск команды",
             Self::ApplicationFilter => "Поиск программы",
@@ -319,6 +330,7 @@ impl EditKind {
     }
 }
 pub enum Dialog {
+    FilterMenu(FilterMenu),
     Columns(ColumnsMenu),
     Grouping(GroupMenu),
     View(ViewMenu),
@@ -661,6 +673,13 @@ impl App {
         self.file_tab_mut(self.active)
     }
     pub fn loading(&self) -> bool {
+        if self.panes.iter().flat_map(|p| &p.tabs).any(|t| {
+            t.filter_run
+                .as_ref()
+                .is_some_and(|r| !r.worker.results.done)
+        }) {
+            return true;
+        }
         if self.dragging_files() || self.external_drag_active() {
             return true;
         }
@@ -698,6 +717,14 @@ impl App {
         self.notice_error = error;
     }
     pub fn reload(&mut self, pane: usize, index: usize) {
+        if self.panes[pane].tabs[index].filter_options.deep()
+            && self.panes[pane].tabs[index].archive.is_none()
+            && self.panes[pane].tabs[index].filter_run.is_some()
+        {
+            self.start_pane_filter(pane, index, false);
+            return;
+        }
+        self.panes[pane].tabs[index].filter_run = None;
         let token = self.token();
         let tab = &mut self.panes[pane].tabs[index];
         tab.grouping = self.settings.grouping;
@@ -753,7 +780,14 @@ impl App {
         tab.visible.clear();
         tab.marked.clear();
         tab.explicit_selection = false;
-        tab.filter.clear();
+        if !self.settings.keep_filters_on_navigation {
+            tab.filter.clear();
+            tab.filter_options = Default::default();
+        }
+        tab.filter_run = None;
+        if tab.archive.is_some() {
+            tab.filter_options.depth = Some(0);
+        }
         tab.revealed.clear();
         tab.selected = 0;
         tab.reset_range();
@@ -832,6 +866,7 @@ impl App {
         }
         self.apply_directory_results();
         self.poll_search();
+        self.poll_filters();
         self.folder_sizes.poll();
         self.thumbnails.poll();
         self.refresh_changed_directories();

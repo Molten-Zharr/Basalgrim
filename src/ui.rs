@@ -7,6 +7,7 @@ mod devices;
 mod dialogs;
 mod extensions;
 mod files;
+mod filtering;
 mod folder_size;
 mod grouping;
 mod network;

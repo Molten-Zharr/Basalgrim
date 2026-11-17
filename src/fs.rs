@@ -130,9 +130,41 @@ pub(crate) fn read_directory_until(
     Ok((!cancelled()).then_some(entries))
 }
 
+/// Metadata for a search result, read exclusively by its worker.
+pub(crate) fn search_entry(
+    path: PathBuf,
+    source: &Path,
+    owners: &std::collections::BTreeMap<u32, String>,
+) -> std::io::Result<Entry> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = fs::symlink_metadata(source)?;
+    let symlink = metadata.is_symlink();
+    let raw = path.file_name().unwrap_or_default();
+    Ok(Entry {
+        name: clean(&raw.to_string_lossy()),
+        hidden: raw.as_encoded_bytes().starts_with(b"."),
+        directory: metadata.is_dir() || (symlink && source.is_dir()),
+        symlink,
+        size: metadata.len(),
+        modified: metadata.modified().ok(),
+        details: crate::columns::Details {
+            created: metadata.created().ok(),
+            accessed: metadata.accessed().ok(),
+            mode: Some(metadata.mode()),
+            owner: Some(
+                owners
+                    .get(&metadata.uid())
+                    .cloned()
+                    .unwrap_or_else(|| metadata.uid().to_string()),
+            ),
+        },
+        path,
+    })
+}
+
 // Bounded local account labels only: no NSS/network lookup on the UI thread
 // or unbounded per-entry subprocesses. Unknown/remote users retain their UID.
-fn local_owners() -> std::collections::BTreeMap<u32, String> {
+pub(crate) fn local_owners() -> std::collections::BTreeMap<u32, String> {
     use std::io::BufRead;
     let Ok(file) = fs::File::open("/etc/passwd") else {
         return Default::default();

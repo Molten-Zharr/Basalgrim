@@ -69,6 +69,20 @@ impl Column {
             Self::Location => fs::clean(&e.path.parent().unwrap_or(&e.path).to_string_lossy()),
         }
     }
+    /// Lexicographic database ordering equivalent to the in-memory typed sort.
+    pub fn order_key(self, e: &Entry) -> Option<String> {
+        self.value(e).map(|v| match v {
+            Value::Text(s) => s,
+            Value::Number(n) => format!("{n:020}"),
+            Value::Time(t) => {
+                let signed = match t.duration_since(std::time::UNIX_EPOCH) {
+                    Ok(d) => d.as_nanos() as i128,
+                    Err(e) => -(e.duration().as_nanos() as i128),
+                };
+                format!("{:039}", (signed + (i128::MAX / 2)) as u128)
+            }
+        })
+    }
     fn value(self, e: &Entry) -> Option<Value> {
         match self {
             Self::Size => (!e.directory).then_some(Value::Number(e.size)),
@@ -95,7 +109,7 @@ fn extension(e: &Entry) -> String {
         .map(|s| format!(".{}", s.to_string_lossy()))
         .unwrap_or_default()
 }
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Details {
     pub created: Option<SystemTime>,
     pub accessed: Option<SystemTime>,

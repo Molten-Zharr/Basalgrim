@@ -11,7 +11,8 @@ impl App {
             return;
         }
         let tab = self.panes[owner.pane].tab();
-        if tab.request != request
+        if tab.filtered()
+            || tab.request != request
             || tab.tree.as_ref().is_none_or(|t| t.revision != revision)
             || !tab
                 .entries
@@ -54,7 +55,7 @@ impl App {
         let mut pending = vec![];
         for (pane, p) in self.panes.iter().enumerate() {
             for (index, tab) in p.tabs.iter().enumerate() {
-                if tab.loading {
+                if tab.loading || tab.filtered() {
                     continue;
                 }
                 if let Some(tree) = &tab.tree {
@@ -156,7 +157,7 @@ impl App {
         preview
     }
     pub(super) fn tree_arrow(&mut self, right: bool) -> bool {
-        if self.settings.view_mode() != ViewMode::Tree || self.in_trash() {
+        if self.settings.view_mode() != ViewMode::Tree || self.in_trash() || self.tab().filtered() {
             return false;
         }
         let Some(entry) = self.tab().entry() else {

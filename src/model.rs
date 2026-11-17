@@ -34,6 +34,8 @@ pub struct Tab {
     pub explicit_selection: bool,
     pub(crate) range: RangeSelection,
     pub filter: String,
+    pub filter_options: crate::filter::Options,
+    pub filter_run: Option<crate::filter::Run>,
     pub(crate) revealed: BTreeSet<PathBuf>,
     pub sort: Sort,
     pub back: Vec<PathBuf>,
@@ -75,6 +77,8 @@ impl Tab {
             explicit_selection: false,
             range: RangeSelection::default(),
             filter: String::new(),
+            filter_options: Default::default(),
+            filter_run: None,
             revealed: BTreeSet::new(),
             sort: Sort::Name,
             back: vec![],
@@ -91,6 +95,12 @@ impl Tab {
             scan_cancel: Cancellation::default(),
         }
     }
+    pub fn filtered(&self) -> bool {
+        self.filter_options.active(&self.filter)
+    }
+    pub fn entry_height(&self) -> usize {
+        if self.filtered() { 2 } else { 1 }
+    }
     pub fn entry(&self) -> Option<&Entry> {
         self.visible.get(self.selected).map(|&i| &self.entries[i])
     }
@@ -105,6 +115,13 @@ impl Tab {
                 .iter()
                 .filter(|e| e.directory && !e.symlink && self.marked.contains(&e.path))
                 .map(|e| e.path.as_path())
+                .chain(
+                    self.filter_run
+                        .iter()
+                        .flat_map(|r| r.marked_directories.iter())
+                        .filter(|p| self.marked.contains(*p))
+                        .map(|p| p.as_path()),
+                )
                 .collect();
             self.marked
                 .iter()
@@ -227,6 +244,9 @@ impl Tab {
         self.follow_selection = false;
     }
     pub fn enable_tree(&mut self, enabled: bool, hidden: bool) {
+        if self.filter_run.is_some() {
+            return;
+        }
         if enabled == self.tree.is_some() {
             return;
         }
@@ -263,21 +283,28 @@ impl Tab {
             .get(self.offset)
             .map(|&i| self.entries[i].path.clone());
         let selected = self.entry().map(|e| e.path.clone());
-        let tree = self.tree.is_some();
+        let filtering = self.filter_options.active(&self.filter);
+        let tree = self.tree.is_some() && !filtering;
         if let Some(tree) = &mut self.tree {
-            self.entries = tree.flatten(self.sort, hidden, &self.filter, &self.revealed);
+            self.entries = if filtering {
+                let mut entries = tree.roots.clone();
+                self.sort.sort(&mut entries);
+                entries
+            } else {
+                tree.flatten(self.sort, hidden, &self.filter, &self.revealed)
+            };
             self.visible.clear();
         } else {
             self.sort.sort(&mut self.entries);
         }
-        let query = self.filter.to_lowercase();
+        let query = &self.filter;
         self.visible = self
             .entries
             .iter()
             .enumerate()
             .filter(|(_, e)| {
                 (hidden || !e.hidden || self.revealed.contains(&e.path))
-                    && (tree || e.name.to_lowercase().contains(&query))
+                    && (tree || self.filter_options.matches(e, query))
             })
             .map(|(i, _)| i)
             .collect();
@@ -297,7 +324,9 @@ impl Tab {
             .iter()
             .map(|&i| self.entries[i].path.clone())
             .collect();
-        self.marked.retain(|p| visible.contains(p));
+        if self.filter_run.is_none() {
+            self.marked.retain(|p| visible.contains(p));
+        }
         self.retain_range();
         self.offset = self.offset.min(self.visible.len().saturating_sub(1));
     }

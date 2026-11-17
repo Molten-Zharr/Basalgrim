@@ -78,7 +78,11 @@ impl TrashView {
         // Keep the same file model and renderer as an ordinary directory.
         // Sorting entries never changes the association with guarded trash metadata.
         let focus = self.files.entry().map(|e| e.path.clone());
-        let query = self.filter.to_lowercase();
+        let query = if self.filter_options.case_sensitive {
+            self.filter.clone()
+        } else {
+            self.filter.to_lowercase()
+        };
         if !matches!(self.files.sort, fs::Sort::Field(..)) {
             self.files.sort = if self.sort_name {
                 fs::Sort::Name
@@ -93,12 +97,20 @@ impl TrashView {
             .iter()
             .enumerate()
             .filter(|(_, e)| {
-                e.name.to_lowercase().contains(&query)
+                self.filter_options.matches(e, &self.filter)
                     || self
                         .by_path
                         .get(&e.path)
                         .and_then(|&i| self.catalog.entries[i].original.as_ref())
-                        .is_some_and(|p| p.to_string_lossy().to_lowercase().contains(&query))
+                        .is_some_and(|p| {
+                            let text = p.to_string_lossy();
+                            self.filter_options.matches(e, "")
+                                && if self.filter_options.case_sensitive {
+                                    text.contains(&query)
+                                } else {
+                                    text.to_lowercase().contains(&query)
+                                }
+                        })
             })
             .map(|(i, _)| i)
             .collect();

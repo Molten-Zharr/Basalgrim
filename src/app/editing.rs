@@ -116,7 +116,11 @@ impl App {
         if matches!(
             self.dialog,
             Some(Dialog::Edit {
-                kind: EditKind::Rename(_) | EditKind::BatchRename,
+                kind: EditKind::Rename(_)
+                    | EditKind::BatchRename
+                    | EditKind::Search { .. }
+                    | EditKind::TrashSearch { .. }
+                    | EditKind::FilterExtension { .. },
                 ..
             })
         ) && self
@@ -208,6 +212,9 @@ impl App {
                 self.text_paste = None;
             }
             Input::Scroll { delta, .. } => {
+                if self.inline_filter() && self.editor_menu.is_none() {
+                    return false;
+                }
                 if self.palette_dialog() && self.editor_menu.is_none() {
                     self.palette_move(delta as isize * 3);
                 }

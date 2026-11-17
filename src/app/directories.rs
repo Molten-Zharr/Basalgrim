@@ -164,6 +164,9 @@ impl App {
                 match result {
                     Ok((cwd, entries, archive)) => {
                         tab.archive = archive;
+                        if tab.archive.is_some() {
+                            tab.filter_options.depth = Some(0);
+                        }
                         if fingerprint(tab.tree.as_ref().map_or(&tab.entries, |t| &t.roots))
                             != fingerprint(&entries)
                         {

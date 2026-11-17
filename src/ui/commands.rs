@@ -131,6 +131,8 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         );
         let label = if item.action == Action::Grouping {
             &group_label
+        } else if item.action == Action::SelectAll && app.tab().filter_run.is_some() {
+            "Выбрать страницу"
         } else {
             item.action.name()
         };

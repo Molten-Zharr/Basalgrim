@@ -46,6 +46,18 @@ impl Grouping {
             "По возрастанию"
         }
     }
+    pub fn order_key(self, e: &Entry) -> Option<String> {
+        if !self.enabled {
+            return Some(String::new());
+        }
+        self.key(e).0.map(|key| match key {
+            Key::Number(n) => format!("{n:020}"),
+            Key::Month(year, month) => {
+                format!("{:010}{month:02}", i64::from(year) + i64::from(i32::MAX))
+            }
+            Key::Text(s) => s,
+        })
+    }
     fn key(self, e: &Entry) -> (Option<Key>, String) {
         let text = |s: String| (Some(Key::Text(s.to_lowercase())), s);
         if self.date() {
@@ -202,6 +214,7 @@ pub struct Viewport {
     pub width: u16,
     pub height: u16,
     pub columns: usize,
+    pub entry_height: usize,
     pub rows: usize,
     pub offset: usize,
     pub total: usize,
@@ -209,7 +222,17 @@ pub struct Viewport {
 }
 impl Viewport {
     pub fn new(groups: &[Group], mode: ViewMode, width: u16, height: u16, columns: usize) -> Self {
-        let rows = usize::from(height.saturating_sub(1)).max(1);
+        Self::new_with_rows(groups, mode, width, height, columns, 1)
+    }
+    pub fn new_with_rows(
+        groups: &[Group],
+        mode: ViewMode,
+        width: u16,
+        height: u16,
+        columns: usize,
+        entry_height: usize,
+    ) -> Self {
+        let rows = (usize::from(height.saturating_sub(1)) / entry_height.max(1)).max(1);
         let mut total = 0;
         let sections = groups
             .iter()
@@ -218,7 +241,7 @@ impl Viewport {
                 total += match mode {
                     ViewMode::Icons => 1 + g.range.len().div_ceil(columns) * 5,
                     ViewMode::Columns => g.range.len().div_ceil(rows),
-                    _ => 1 + g.range.len(),
+                    _ => 1 + g.range.len() * entry_height,
                 };
                 Section {
                     range: g.range.clone(),
@@ -232,6 +255,7 @@ impl Viewport {
             width,
             height,
             columns,
+            entry_height,
             rows,
             offset: 0,
             total,
@@ -253,49 +277,62 @@ impl Viewport {
         let local = index - s.range.start;
         match self.mode {
             ViewMode::Icons => (local % self.columns, s.start + 1 + local / self.columns * 5),
-            ViewMode::Columns => (s.start + local / self.rows, 1 + local % self.rows),
-            _ => (0, s.start + 1 + local),
+            ViewMode::Columns => (
+                s.start + local / self.rows,
+                1 + (local % self.rows) * self.entry_height,
+            ),
+            _ => (0, s.start + 1 + local * self.entry_height),
         }
     }
     fn unit(&self, index: usize) -> usize {
         let (x, y) = self.position(index);
         if self.mode == ViewMode::Columns { x } else { y }
     }
+    fn item_lines(&self) -> usize {
+        if self.mode == ViewMode::Icons {
+            5
+        } else {
+            self.entry_height
+        }
+    }
     fn snap(&self, offset: usize, up: bool) -> usize {
-        if self.mode != ViewMode::Icons {
+        if self.mode == ViewMode::Columns || self.item_lines() == 1 {
             return offset;
         }
         let n = self.sections.partition_point(|s| s.end <= offset);
         let Some(s) = self.sections.get(n) else {
-            return self.sections.last().map_or(0, |s| s.end.saturating_sub(5));
+            return self
+                .sections
+                .last()
+                .map_or(0, |s| s.end.saturating_sub(self.item_lines()));
         };
         if offset <= s.start {
             return s.start;
         }
         let local = offset - s.start - 1;
         if up {
-            (s.start + 1 + local.div_ceil(5) * 5).min(s.end)
+            (s.start + 1 + local.div_ceil(self.item_lines()) * self.item_lines()).min(s.end)
         } else {
-            s.start + 1 + local / 5 * 5
+            s.start + 1 + local / self.item_lines() * self.item_lines()
         }
     }
     fn maximum(&self) -> usize {
         self.snap(self.total.saturating_sub(self.extent()), true)
     }
     pub fn scroll(&mut self, delta: isize) {
-        if self.mode == ViewMode::Icons {
+        if self.mode != ViewMode::Columns && self.item_lines() > 1 {
             // A title is one row, a tile band five: visit both instead of
             // jumping from a title straight past its first band of files.
             let mut current = 0;
             let mut bands = 0;
             for s in &self.sections {
-                let count = 1 + (s.end - s.start - 1) / 5;
+                let count = 1 + (s.end - s.start - 1) / self.item_lines();
                 if self.offset >= s.start {
                     current = bands
                         + if self.offset == s.start {
                             0
                         } else {
-                            1 + (self.offset - s.start - 1) / 5
+                            1 + (self.offset - s.start - 1) / self.item_lines()
                         };
                 }
                 bands += count;
@@ -304,9 +341,14 @@ impl Viewport {
                 .saturating_add_signed(delta)
                 .min(bands.saturating_sub(1));
             for s in &self.sections {
-                let count = 1 + (s.end - s.start - 1) / 5;
+                let count = 1 + (s.end - s.start - 1) / self.item_lines();
                 if wanted < count {
-                    self.offset = s.start + if wanted == 0 { 0 } else { 1 + (wanted - 1) * 5 };
+                    self.offset = s.start
+                        + if wanted == 0 {
+                            0
+                        } else {
+                            1 + (wanted - 1) * self.item_lines()
+                        };
                     break;
                 }
                 wanted -= count;
@@ -324,10 +366,10 @@ impl Viewport {
     }
     pub fn follow(&mut self, index: usize) {
         let unit = self.unit(index);
-        let size = if self.mode == ViewMode::Icons {
-            5.min(self.extent())
-        } else {
+        let size = if self.mode == ViewMode::Columns {
             1
+        } else {
+            self.item_lines().min(self.extent())
         };
         if unit < self.offset {
             self.offset = self.snap(unit, false);
@@ -363,7 +405,10 @@ impl Viewport {
                 ViewMode::Icons => {
                     self.offset.saturating_sub(s.start + 1).div_ceil(5) * self.columns
                 }
-                _ => self.offset.saturating_sub(s.start + 1),
+                _ => self
+                    .offset
+                    .saturating_sub(s.start + 1)
+                    .div_ceil(self.entry_height),
             };
             return (s.range.start + skip).min(s.range.end.saturating_sub(1));
         }
@@ -400,8 +445,12 @@ impl Viewport {
                     (usize::from(self.height) / 5 + 2) * self.columns,
                 ),
                 _ => (
-                    s.range.start + self.offset.saturating_sub(s.start + 1),
-                    usize::from(self.height),
+                    s.range.start
+                        + self
+                            .offset
+                            .saturating_sub(s.start + 1)
+                            .div_ceil(self.entry_height),
+                    usize::from(self.height) / self.entry_height + 1,
                 ),
             };
             for i in start..(start + count).min(s.range.end) {

@@ -216,6 +216,24 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--filter-only' in sys.argv[2:]:
+            import filter_fixture
+            fixture=filter_fixture.Fixture(base);os.environ.update(fixture.env)
+            process,window,log=launch(fixture.root,config)
+            def filter_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
+            def filter_text(value):type_text(value)
+            try:
+                filter_fixture.exercise(fixture,filter_key,filter_text,lambda a,b,button=1:click(window,a,b,button),lambda n:screenshot(window,'native-x11-filter-'+n+'.png'))
+                quit_when_ready(process);log.close()
+                process,window,log=launch(fixture.root,config)
+                x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.4)
+                filter_fixture.compact(fixture,filter_key,filter_text,lambda a,b,button=1:click(window,a,b,button),lambda n:screenshot(window,'native-x11-filter-'+n+'.png'))
+                quit_when_ready(process)
+            except BaseException:
+                screenshot(window,'native-x11-filter-failure.png');raise
+            finally:
+                stop(process,log);fixture.close()
+            sys.exit(0)
         if '--grouping-only' in sys.argv[2:]:
             import grouping_fixture
             fixture=grouping_fixture.Fixture(base);os.environ.update(fixture.env)
