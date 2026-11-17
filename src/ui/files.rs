@@ -273,6 +273,37 @@ pub fn render(
         }
     }
 
+    if pane == app.active
+        && let Some(search) = app.typeahead()
+    {
+        let mut row = parts[4];
+        if app.settings.view_mode() == crate::view::ViewMode::Columns {
+            let gap = row.width.min(8);
+            row.x += gap;
+            row.width -= gap;
+        }
+        if row.width > 3 {
+            let label = format!(
+                "{}: {}",
+                if search.matched {
+                    "Набор"
+                } else {
+                    "Нет совпадений"
+                },
+                search.text
+            );
+            frame.render_widget(ratatui::widgets::Clear, row);
+            frame.render_widget(Block::default().style(palette.text()), row);
+            frame.render_widget(
+                Paragraph::new(shorten_name(&label, row.width.saturating_sub(3) as usize))
+                    .style(palette.accent().add_modifier(Modifier::BOLD)),
+                Rect::new(row.x, row.y, row.width - 3, 1),
+            );
+            let close = Rect::new(row.right() - 3, row.y, 3, 1);
+            frame.render_widget(Paragraph::new(" × ").style(palette.accent()), close);
+            hit(app, close, Target::ClearTypeahead);
+        }
+    }
     if matches!(
         app.dialog,
         Some(crate::app::Dialog::Edit {
@@ -588,7 +619,7 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
                 frame.render_widget(
                     Paragraph::new(label)
                         .alignment(Alignment::Center)
-                        .style(base),
+                        .style(typeahead_style(app, pane, index, base)),
                     row,
                 );
             }
@@ -780,11 +811,16 @@ fn draw_name_row(
                 usize::from(field.width).saturating_sub(suffix.width())
             )
         ))
-        .style(if entry.directory {
-            style.fg(palette.color("folder_icon"))
-        } else {
-            style
-        }),
+        .style(typeahead_style(
+            app,
+            pane,
+            index,
+            if entry.directory {
+                style.fg(palette.color("folder_icon"))
+            } else {
+                style
+            },
+        )),
         field,
     );
     let slot = images.then(|| {
@@ -1015,5 +1051,16 @@ fn detail_list(
             Rect::new(area.right() - 1, area.y + 1 + (index - start) as u16, 1, 1),
             Target::EntryBackground,
         );
+    }
+}
+
+fn typeahead_style(app: &App, pane: usize, index: usize, style: Style) -> Style {
+    if pane == app.active
+        && app.file_tab(pane).selected == index
+        && app.typeahead().is_some_and(|s| s.matched)
+    {
+        style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+    } else {
+        style
     }
 }

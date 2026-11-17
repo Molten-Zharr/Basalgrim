@@ -2,6 +2,7 @@ use super::*;
 
 impl App {
     pub fn action(&mut self, action: Action) {
+        self.typeahead = None;
         self.finish_column_drag(true);
         self.cancel_file_drag();
         if action == Action::HistoryStorage

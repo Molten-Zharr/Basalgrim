@@ -17,7 +17,13 @@ pub fn key(app: &mut App, key: KeyEvent) {
     }
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
-    if app.text_input_active()
+    let press = convert_key(key.code).map(|code| KeyPress {
+        key: code,
+        ctrl,
+        alt,
+        shift: key.modifiers.contains(KeyModifiers::SHIFT),
+    });
+    if (app.text_input_active() || press.is_some_and(|p| app.file_text_key(p)))
         && !ctrl
         && !alt
         && let KeyCode::Char(c) = key.code

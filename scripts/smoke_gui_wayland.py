@@ -137,6 +137,28 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--typeahead-only' in sys.argv[2:]:
+                import typeahead_fixture
+                fixture=typeahead_fixture.Fixture(base);env.update(fixture.env)
+                process=launch(fixture.root)
+                def typeahead_shot(name,compact=False):
+                    path=out/('native-wayland-typeahead-'+name+'.png')
+                    run('grim','-g','0,0 400x360' if compact else '0,0 1360x860',str(path))
+                    return Image.open(path)
+                def typeahead_typing(value):run('wtype','-s','100',value,'-s','100')
+                try:
+                    typeahead_fixture.exercise(fixture,key,lambda s:run('wtype','-s','100',s,'-s','100'),click,typeahead_typing,typeahead_shot)
+                    key('q','ctrl');process.wait(timeout=5)
+                    process=launch(fixture.root)
+                    run('swaymsg',f'[pid={process.pid}] resize set 400 px 360 px, move absolute position 0 px 0 px');time.sleep(.4)
+                    typeahead_fixture.compact(fixture,key,lambda s:run('wtype','-s','100',s,'-s','100'),click,typeahead_typing,lambda n:typeahead_shot(n,True))
+                    key('q','ctrl');process.wait(timeout=5);assert process.returncode==0
+                except BaseException:
+                    run('grim',str(out/'native-wayland-typeahead-failure.png'));raise
+                finally:
+                    if process.poll() is None:process.terminate();process.wait(timeout=5)
+                    process=None;fixture.close()
+                return
             if '--columns-only' in sys.argv[2:]:
                 import columns_fixture
                 fixture=columns_fixture.Fixture(base);env.update(fixture.env)

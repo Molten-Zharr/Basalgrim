@@ -16,20 +16,23 @@ pub enum SettingsSection {
     Desktop,
     Panels,
     Profiles,
+    Navigation,
 }
 impl SettingsSection {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Themes,
         Self::Shortcuts,
         Self::Session,
         Self::Desktop,
         Self::Panels,
         Self::Profiles,
+        Self::Navigation,
     ];
     pub fn name(self) -> &'static str {
         match self {
             Self::Themes => "Темы",
             Self::Shortcuts => "Клавиши",
+            Self::Navigation => "Навигация",
             Self::Session => "Сессия",
             Self::Desktop => "Система",
             Self::Panels => "Панели",
@@ -84,6 +87,7 @@ pub enum SettingsEdit {
     PaletteImport(Theme),
     PaletteExport(crate::appearance::PaletteFile),
     FontSize,
+    TypeaheadTimeout,
     Color { theme: Theme, token: String },
 }
 impl SettingsEdit {
@@ -94,6 +98,7 @@ impl SettingsEdit {
             Self::PaletteImport(_) => "Импорт палитры · полный путь JSON",
             Self::PaletteExport(_) => "Экспорт палитры · новый JSON-файл",
             Self::FontSize => "Размер шрифта · 10–32",
+            Self::TypeaheadTimeout => "Сброс набора · секунды (0,1–30)",
             Self::Color { .. } => "Цвет · #RRGGBB",
         }
     }
@@ -101,6 +106,7 @@ impl SettingsEdit {
 #[derive(Clone)]
 pub enum SettingControl {
     Profile(ProfileControl),
+    TypeaheadTimeout,
     SidebarMode,
     PreviewMode,
     Animations,
@@ -192,6 +198,13 @@ impl App {
                     None,
                 );
             }
+        } else if self.settings_view.section == SettingsSection::Navigation {
+            push(
+                "Сброс набора".into(),
+                format!("{} с", self.settings.typeahead_timeout_ms as f64 / 1000.0),
+                "Подсветка файла по набранному имени. Пауза после последнего символа очищает набор. Например: 0,2 или 2 секунды. Backspace стирает набор; переход к родителю — по назначенной команде «Родительская папка» (по умолчанию Ctrl+Backspace). Нажмите значение, чтобы ввести время.".into(),
+                SettingControl::TypeaheadTimeout, true, None,
+            );
         } else if self.settings_view.section == SettingsSection::Panels {
             for (label, value, control, help) in [
                 (
@@ -425,6 +438,23 @@ impl App {
         }
         let appearance = &mut self.settings.appearance;
         match row.control {
+            SettingControl::TypeaheadTimeout if !activate => {
+                self.settings.typeahead_timeout_ms = self
+                    .settings
+                    .typeahead_timeout_ms
+                    .saturating_add_signed(direction.signum() as i64 * 100)
+                    .clamp(100, 30_000);
+            }
+            SettingControl::TypeaheadTimeout => {
+                let text = (self.settings.typeahead_timeout_ms as f64 / 1000.0).to_string();
+                let len = text.len();
+                self.begin_edit(
+                    EditKind::Setting(SettingsEdit::TypeaheadTimeout),
+                    text,
+                    0..len,
+                );
+                return;
+            }
             SettingControl::Profile(control) => {
                 self.profile_control(self.design.revision, control);
                 return;
@@ -503,6 +533,16 @@ impl App {
     }
     pub(super) fn submit_setting(&mut self, edit: SettingsEdit, text: &str) -> anyhow::Result<()> {
         match edit {
+            SettingsEdit::TypeaheadTimeout => {
+                let seconds = text.trim().replace(',', ".").parse::<f64>().map_err(|_| {
+                    anyhow::anyhow!("Введите секунды от 0,1 до 30, например 0,2 или 2")
+                })?;
+                anyhow::ensure!(
+                    (0.1..=30.0).contains(&seconds),
+                    "Введите секунды от 0,1 до 30"
+                );
+                self.settings.typeahead_timeout_ms = (seconds * 1000.0).round() as u64;
+            }
             SettingsEdit::PresetSave(saved) => self.save_preset(None, Some(saved), text)?,
             SettingsEdit::PresetRename(id) => self.save_preset(Some(id), None, text)?,
             SettingsEdit::PaletteImport(theme) => {

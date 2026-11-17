@@ -105,7 +105,11 @@ fn run() -> Result<()> {
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
-        ctx.request_repaint_after(Duration::from_millis(if app.loading() { 30 } else { 250 }));
+        let poll = Duration::from_millis(if app.loading() { 30 } else { 250 });
+        ctx.request_repaint_after(
+            app.typeahead_remaining()
+                .map_or(poll, |left| left.min(poll)),
+        );
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show_inside(root, |gui| {
@@ -249,18 +253,28 @@ fn run() -> Result<()> {
                         } => {
                             paste_into_text = app.text_input_active();
                             if let Some(key) = event_key(key, physical_key, modifiers.shift) {
-                                app.handle(Input::Key(KeyPress {
+                                let press = KeyPress {
                                     key,
                                     ctrl: modifiers.ctrl || modifiers.command,
                                     alt: modifiers.alt,
                                     shift: modifiers.shift,
-                                }));
+                                };
+                                let file_text = app.file_text_key(press);
+                                let shortcut =
+                                    !paste_into_text && app.settings.action_for(press).is_some();
+                                if !file_text {
+                                    app.handle(Input::Key(press));
+                                }
                                 // A plain shortcut such as / opens an editor;
                                 // its accompanying Text must not type / into it.
-                                suppress_text = !paste_into_text && app.text_input_active();
+                                suppress_text = !file_text
+                                    && (shortcut || (!paste_into_text && app.text_input_active()));
                             }
                         }
-                        egui::Event::Text(text) if app.text_input_active() && !suppress_text => {
+                        egui::Event::Text(text)
+                            if (app.text_input_active() || app.file_text_active())
+                                && !suppress_text =>
+                        {
                             app.handle(Input::Text(text))
                         }
                         egui::Event::Paste(text)

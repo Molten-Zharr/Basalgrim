@@ -1,4 +1,6 @@
 mod actions;
+mod typeahead;
+pub use typeahead::Typeahead;
 mod columns;
 pub use columns::{ColumnOwner, ColumnsMenu};
 mod tree;
@@ -69,6 +71,7 @@ use std::{
 
 #[derive(Clone)]
 pub enum Target {
+    ClearTypeahead,
     ColumnHeader {
         context: ColumnOwner,
         column: crate::columns::Column,
@@ -374,6 +377,7 @@ pub struct App {
     pub panes: [Pane; 2],
     pub active: usize,
     pub settings: Settings,
+    typeahead: Option<Typeahead>,
     pub settings_dirty: bool,
     pub settings_view: SettingsView,
     pub settings_save_error: Option<String>,
@@ -507,6 +511,7 @@ impl App {
             ],
             active: 0,
             settings,
+            typeahead: None,
             settings_dirty: false,
             settings_view: SettingsView::default(),
             settings_save_error: None,
@@ -716,6 +721,7 @@ impl App {
         self.update_preview();
     }
     pub(super) fn navigate_tab(&mut self, pane: usize, index: usize, path: PathBuf, history: bool) {
+        self.typeahead = None;
         let tab = &mut self.panes[pane].tabs[index];
         if history && tab.cwd != path {
             tab.back.push(tab.cwd.clone());
@@ -743,6 +749,7 @@ impl App {
         self.reload(pane, index);
     }
     pub fn tick(&mut self) {
+        self.tick_typeahead();
         self.validate_column_drag();
         self.tick_design();
         if self.terminal.poll() && matches!(self.dialog, Some(Dialog::CloseTerminal)) {

@@ -4,6 +4,13 @@ use ratatui::layout::Position;
 
 impl App {
     pub fn handle(&mut self, input: Input) {
+        self.tick_typeahead();
+        if matches!(
+            input,
+            Input::PointerDown { .. } | Input::Click { .. } | Input::SecondaryClick { .. }
+        ) {
+            self.typeahead = None;
+        }
         if self.terminal_input(&input) {
             return;
         }
@@ -110,6 +117,7 @@ impl App {
                 self.pointer = position;
                 return;
             }
+            Input::Text(text) if self.file_text_active() => self.typeahead_text(&text),
             Input::Text(text) | Input::Paste(text) => self.insert_text(&text),
             Input::Key(key) => self.key(key),
             Input::SecondaryClick { .. }
@@ -897,10 +905,26 @@ impl App {
             }
             return;
         }
+        if self.typeahead_key(press) {
+            return;
+        }
         let action = self.settings.action_for(press);
         if let Some(a) = action {
             self.action(a);
             return;
+        }
+        if matches!(
+            key,
+            Key::Up
+                | Key::Down
+                | Key::Left
+                | Key::Right
+                | Key::Home
+                | Key::End
+                | Key::PageUp
+                | Key::PageDown
+        ) {
+            self.typeahead = None;
         }
         if !ctrl
             && !alt

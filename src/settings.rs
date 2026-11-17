@@ -16,6 +16,7 @@ pub struct Settings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub view: Option<crate::view::ViewMode>,
     pub view_columns: u8,
+    pub typeahead_timeout_ms: u64,
     pub list_columns: crate::columns::Layout,
     pub preview: bool,
     pub dual: bool,
@@ -25,6 +26,9 @@ pub struct Settings {
     pub appearance_presets: Vec<crate::appearance::Preset>,
     #[serde(flatten)]
     pub appearance: Appearance,
+    // Missing in older JSON: migrate the old Parent default once, then respect edits.
+    #[serde(default)]
+    pub bindings_version: u8,
     pub bindings: Vec<Binding>,
 }
 impl Default for Settings {
@@ -33,6 +37,7 @@ impl Default for Settings {
             grid: true,
             view: None,
             view_columns: 2,
+            typeahead_timeout_ms: 1000,
             list_columns: Default::default(),
             preview: true,
             dual: false,
@@ -41,6 +46,7 @@ impl Default for Settings {
             history_retention: Default::default(),
             appearance_presets: Vec::new(),
             appearance: Appearance::default(),
+            bindings_version: 1,
             bindings: input::default_bindings(),
         }
     }
@@ -104,6 +110,7 @@ impl Settings {
         Ok(())
     }
     pub fn normalize(&mut self) -> Result<()> {
+        self.typeahead_timeout_ms = self.typeahead_timeout_ms.clamp(100, 30_000);
         self.view_columns = self.view_columns.clamp(1, 16);
         self.list_columns.normalize();
         crate::appearance::validate(&mut self.appearance_presets)?;
@@ -111,9 +118,25 @@ impl Settings {
         for binding in &mut self.bindings {
             binding.key = binding.key.normalized();
         }
+        if self.bindings_version == 0 {
+            let old = KeyPress::plain(input::Key::Backspace);
+            let new = KeyPress { ctrl: true, ..old };
+            if self.bindings.iter().any(|b| b.key == new) {
+                self.bindings
+                    .retain(|b| b.action != Action::Parent || b.key != old);
+            } else {
+                for binding in &mut self.bindings {
+                    if binding.action == Action::Parent && binding.key == old {
+                        binding.key = new;
+                    }
+                }
+            }
+            self.bindings_version = 1;
+        }
         // Older settings do not have these commands. Keep custom bindings intact,
         // including keys that were free before the commands were introduced.
         for action in [
+            Action::Parent,
             Action::View,
             Action::Extensions,
             Action::ExtensionCommands,
@@ -156,6 +179,12 @@ impl Settings {
                 .find(|binding| binding.action == action)
                 .unwrap();
             let mut candidates = vec![default.key];
+            if action == Action::Parent {
+                candidates.push(KeyPress {
+                    alt: true,
+                    ..KeyPress::plain(input::Key::Up)
+                });
+            }
             for n in 1..=12 {
                 for (ctrl, alt, shift) in [
                     (true, false, false),

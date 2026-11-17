@@ -356,7 +356,10 @@ pub fn default_bindings() -> Vec<Binding> {
     .into_iter()
     .map(|(action, key)| Binding {
         action,
-        key: KeyPress::plain(key),
+        key: KeyPress {
+            ctrl: action == Parent,
+            ..KeyPress::plain(key)
+        },
     })
     .collect();
     for (action, key, alt, shift) in [

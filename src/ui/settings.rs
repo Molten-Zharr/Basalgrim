@@ -73,7 +73,9 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     for (i, section) in SettingsSection::ALL.into_iter().enumerate() {
         let rect = Rect::new(
             menu.x,
-            menu.y + 2 + i as u16 * if menu.height < 13 { 1 } else { 2 },
+            menu.y
+                + if menu.height < 9 { 1 } else { 2 }
+                + i as u16 * if menu.height < 15 { 1 } else { 2 },
             menu.width,
             1,
         );
@@ -130,6 +132,8 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         frame.render_widget(
             Paragraph::new(if app.settings_view.section == SettingsSection::Profiles {
                 "СВОИ ТЕМЫ"
+            } else if app.settings_view.section == SettingsSection::Navigation {
+                "НАВИГАЦИЯ"
             } else if app.settings_view.section == SettingsSection::Panels {
                 "ПАНЕЛИ И ДВИЖЕНИЕ"
             } else if app.settings_view.section == SettingsSection::Desktop {

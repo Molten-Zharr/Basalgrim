@@ -185,7 +185,11 @@ fn run() -> Result<()> {
                 app.icon_backend = IconBackend::Symbols;
             }
         })?;
-        if !event::poll(Duration::from_millis(50))? {
+        let poll = Duration::from_millis(50);
+        if !event::poll(
+            app.typeahead_remaining()
+                .map_or(poll, |left| left.min(poll)),
+        )? {
             continue;
         }
         match event::read()? {

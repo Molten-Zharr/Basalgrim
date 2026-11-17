@@ -216,6 +216,34 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--typeahead-only' in sys.argv[2:]:
+            import typeahead_fixture
+            fixture=typeahead_fixture.Fixture(base);os.environ.update(fixture.env)
+            process,window,log=launch(fixture.root,config)
+            def typeahead_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
+            def typeahead_text(value):
+                subprocess.run([xclip,'-selection','clipboard','-in'],input=value.encode(),check=True)
+                time.sleep(.15);typeahead_key('v','ctrl');time.sleep(.3)
+            def typeahead_typing(value):
+                for c in value:
+                    if c.isascii():type_text(c)
+                    else:
+                        symbol=C.c_ulong(0x01000000|ord(c))
+                        x.XChangeKeyboardMapping.argtypes=[D,C.c_int,C.c_int,C.POINTER(C.c_ulong),C.c_int]
+                        x.XChangeKeyboardMapping(d,200,1,C.byref(symbol),1);x.XSync(d,0);time.sleep(.08)
+                        xt.XTestFakeKeyEvent(d,200,1,0);xt.XTestFakeKeyEvent(d,200,0,0);x.XFlush(d);time.sleep(.08)
+            try:
+                typeahead_fixture.exercise(fixture,typeahead_key,typeahead_text,lambda a,b,button=1:click(window,a,b,button),typeahead_typing,lambda n:screenshot(window,'native-x11-typeahead-'+n+'.png'))
+                quit_when_ready(process);log.close()
+                process,window,log=launch(fixture.root,config)
+                x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.4)
+                typeahead_fixture.compact(fixture,typeahead_key,typeahead_text,lambda a,b,button=1:click(window,a,b,button),typeahead_typing,lambda n:screenshot(window,'native-x11-typeahead-'+n+'.png'))
+                quit_when_ready(process)
+            except BaseException:
+                screenshot(window,'native-x11-typeahead-failure.png');raise
+            finally:
+                stop(process,log);fixture.close()
+            sys.exit(0)
         if '--columns-only' in sys.argv[2:]:
             import columns_fixture
             fixture=columns_fixture.Fixture(base);os.environ.update(fixture.env)
@@ -686,7 +714,7 @@ try:
             wait_for(lambda:(drag_root/'folder/c.txt').exists(),'native Ctrl drag copy');assert (drag_root/'c.txt').exists()
             band_begin(window,(34,12),(34,11));key('Escape');band_end();assert (drag_root/'c.txt').exists()
             tab_dest=base/'drop-target';tab_dest.mkdir();chord('t','Control_L');navigate(tab_dest);click(window,28,6)
-            band_begin(window,(34,12),(43,6));screenshot(window,'native-drag-tab.png');band_end()
+            band_begin(window,(34,12),(50,6));screenshot(window,'native-drag-tab.png');band_end()  # Inside the second tab, after the active tab's close cross.
             wait_for(lambda:(tab_dest/'c.txt').exists(),'native inactive tab drop');assert not (drag_root/'c.txt').exists()
             time.sleep(.25);chord('z','Control_L');wait_for(lambda:(drag_root/'c.txt').exists(),'native drag undo')
             time.sleep(.25);chord('y','Control_L');wait_for(lambda:not (drag_root/'c.txt').exists(),'native drag redo')
@@ -834,13 +862,13 @@ try:
             screenshot(window,'native-mouse-start.png')
             # 170x53 cells, first file row 11. Contextual file commands.
             click(window,34,13,3); screenshot(window,'native-context-menu.png')
-            click(window,36,15) # Open, Copy, Cut, Rename, Duplicate, Trash
+            click(window,36,17) # Open, Open With, Properties, Copy, Cut, ...
             click(window,34,11); click(window,34,11)
             # Directory background -> New File, New Folder, Paste, ...
             click(window,34,22,3); screenshot(window,'native-directory-menu.png'); click(window,36,25)
-            wait_for(lambda:(mouse/'destination/alpha.txt').exists(),'mouse context copy/paste')
+            wait_for(lambda:(mouse/'destination/alpha.txt').exists(),'mouse context copy/paste');time.sleep(.4)
             # Right click the pasted file -> Cut, navigate Parent via toolbar.
-            click(window,34,11,3); click(window,36,14)
+            click(window,34,11,3); screenshot(window,'native-context-cut.png'); click(window,36,16)
             click(window,21,3)
             # Open moved (row12), then Paste from the background menu.
             click(window,34,12); click(window,34,12)
@@ -851,7 +879,7 @@ try:
             # Compact layout retains a menu; its scrolling controls are clickable.
             x.XResizeWindow(d,window,560,416); x.XSync(d,0); time.sleep(.4)
             click(window,4,3); screenshot(window,'native-context-compact.png')
-            click(window,8,11) # NewFile index9 at y11 in full-height popup.
+            click(window,8,19) # New File after extensions, archive and trash commands.
             type_text('compact.txt')
             click(window,4,16) # Confirm: centered 10-row editor, bottom y16.
             wait_for(lambda:(mouse/'moved/compact.txt').exists(),'compact mouse New File and confirmation')
@@ -1061,16 +1089,16 @@ try:
             chord('F5','Shift_L')
             wait_for(lambda:all((pane_dest/n).exists() for n in ('a.txt','b.txt')),'GUI copy to other pane')
             assert not (pane_dest/'untouched').exists()
-            time.sleep(.4); click(window,34,11,3); screenshot(window,'native-pane-commands.png'); click(window,36,14)
+            time.sleep(.4); click(window,34,11,3); screenshot(window,'native-pane-commands.png'); click(window,36,15)
             wait_for(lambda:all((pane_source/n).exists() for n in ('a (1).txt','b (1).txt')),'GUI mouse group duplicate')
             time.sleep(.4); chord('F6','Shift_L'); time.sleep(.6); key('space'); key('Up'); key('Return'); time.sleep(.4)
             for name in ('a.txt','b.txt'): assert (pane_source/name).exists(); (pane_dest/name).unlink()
-            time.sleep(.5); click(window,34,12,3); click(window,36,17)
+            time.sleep(.5); click(window,34,12,3); click(window,36,18)
             wait_for(lambda:all(not (pane_source/n).exists() and (pane_dest/n).exists() for n in ('a.txt','b.txt')),'GUI mouse move to other pane')
             time.sleep(.4); key('Home'); chord('F5','Control_L')
             wait_for(lambda:(pane_source/'a (1) (1).txt').exists(),'GUI duplicate shortcut')
             time.sleep(.4); x.XResizeWindow(d,window,400,360); x.XFlush(d); time.sleep(.4)
-            chord('F10','Shift_L'); screenshot(window,'native-pane-compact.png'); click(window,12,15)
+            chord('F10','Shift_L'); screenshot(window,'native-pane-compact.png'); click(window,12,20); click(window,12,4) # Next page: Copy to pane, Move to pane, Duplicate.
             wait_for(lambda:(pane_source/'a (1) (2).txt').exists(),'GUI compact mouse duplicate')
             time.sleep(.3); chord('q','Control_L'); process.wait(timeout=5); assert process.returncode==0
             print('Native GUI panes: group copy/move, conflict skip, mouse duplicate, shortcuts and compact Actions passed',flush=True)
@@ -1095,7 +1123,7 @@ try:
             chord('c','Control_L');navigate(session_dirs[0]);chord('v','Control_L');time.sleep(.6);key('Return')
             wait_for(lambda:(session_dirs[0]/'marker (1).txt').exists(),'GUI restored active pane')
             assert (session_dirs[0]/'marker (1).txt').read_text()=='session-3'
-            time.sleep(.3);key('F6');time.sleep(.7)
+            time.sleep(.3);key('F6');time.sleep(.7);move(window,0,0);time.sleep(.1)
             journal_before=screenshot(window,'native-journal-before-restart.png').crop((0,16,1360,160))
             key('Escape');chord('t','Control_L');close_window(window);process.wait(timeout=5);assert process.returncode==0
             saved=json.loads(state.read_text());assert len(saved['panes'][1]['tabs'])==3 and saved['panes'][1]['active']==2
@@ -1106,10 +1134,10 @@ try:
         finally:stop(process,log)
         process,window,log=launch(None,config)
         try:
-            key('F6');time.sleep(.7)
+            key('F6');time.sleep(.7);move(window,0,0);time.sleep(.1)
             journal_after=screenshot(window,'native-journal-after-restart.png').crop((0,16,1360,160))
             assert journal_before.tobytes()==journal_after.tobytes(),'GUI journal list changed across restart'
-            click(window,4,1);move(window,36,17);time.sleep(.6)
+            click(window,4,1);move(window,0,0);time.sleep(.6)
             assert screenshot(window,'native-journal-refreshed.png').crop((0,16,1360,160)).tobytes()==journal_after.tobytes(),'GUI mouse refresh changed journal entries'
             chord('q','Control_L');process.wait(timeout=5);assert process.returncode==0
             print('Native GUI journal: persisted history pixels and mouse refresh passed',flush=True)
@@ -1183,8 +1211,8 @@ try:
             end_caret=screenshot(window,'native-path-caret-end.png').crop((200,128,1200,144))
             key('Left');left_caret=screenshot(window,'native-path-caret-left.png').crop((200,128,1200,144))
             assert end_caret.tobytes()!=left_caret.tobytes(),'GUI caret did not move on unchanged text'
-            type_text('x');chord('c','Control_L');wait_for(lambda:copied_path()=='/tmp/abcdexf','GUI insertion follows visible caret')
-            click(window,32,8);type_text('y');chord('c','Control_L');wait_for(lambda:copied_path()=='/tmp/abycdexf','GUI click positions insertion caret')
+            type_text('x');chord('a','Control_L');chord('c','Control_L');wait_for(lambda:copied_path()=='/tmp/abcdexf','GUI insertion follows visible caret')
+            click(window,32,8);type_text('y');chord('a','Control_L');chord('c','Control_L');wait_for(lambda:copied_path()=='/tmp/abycdexf','GUI click positions insertion caret')
             key('Escape')
             chord('l','Control_L');chord('c','Control_L');assert copied_path()==str(path_dir);key('Escape')
             parent_x=25+sum(len(part)+3 for part in path_parent.parts[:-1])+1
@@ -1214,7 +1242,7 @@ try:
             chord('y','Control_L');wait_for(lambda:a.exists() and tree.exists(),'GUI redo restoration');time.sleep(.3)
             subprocess.run(['gio','trash','--',str(a)],env=trash_env,check=True);a.write_text('occupied')
             chord('r','Control_L');time.sleep(.4);click(window,34,11);x.XResizeWindow(d,window,400,360);x.XFlush(d);time.sleep(.3)
-            click(window,12,19);click(window,6,14);time.sleep(.3);key('Return')
+            click(window,30,16);click(window,6,14);time.sleep(.3);key('Return')
             restored=trash_dir/'a (1).txt';wait_for(restored.exists,'GUI compact Keep Both restoration');time.sleep(.3)
             assert restored.read_text()=='native restore' and a.read_text()=='occupied'
             screenshot(window,'native-trash-compact.png');chord('q','Control_L');process.wait(timeout=5)
