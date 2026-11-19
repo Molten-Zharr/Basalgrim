@@ -147,6 +147,11 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                     run('grim','-g','0,0 1360x860',str(path))
                     return Image.open(path)
                 try:
+                    from io import BytesIO
+                    def grab():
+                        pixels = subprocess.check_output([commands['grim'], '-t', 'ppm', '-'], env=env)
+                        return Image.open(BytesIO(pixels))
+                    style.favorite_menu(fixture, key, lambda x,y:click(x,y,3), grab)
                     style.exercise(fixture,key,lambda value:run('wtype','-s','100',value,'-s','100'),click,style_shot)
                     key('q','ctrl'); process.wait(timeout=5)
                     process=launch(fixture.root)

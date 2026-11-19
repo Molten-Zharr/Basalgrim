@@ -14,6 +14,7 @@ import time
 
 sys.dont_write_bytecode = True
 from folder_style_fixture import Fixture, exercise, reset, wait
+from places_fixture import rows
 from pty_helpers import quit_when_ready
 from smoke_media import frames
 from smoke_watch import screen_text
@@ -48,14 +49,14 @@ def session(binary, fixture, env, restarted=False, protocol=None):
 
     def key(name, modifier=None):
         send({('Return', 'alt'): b'\x1b[13;3u', ('Return', None): b'\r',
-              ('F2', None): b'\x1bOQ'}[(name, modifier)])
+              ('F2', None): b'\x1bOQ', ('F4', None): b'\x1bOS'}[(name, modifier)])
 
     def text(value):
         send(f'\x1b[200~{value}\x1b[201~'.encode())
 
-    def click(x, y):
+    def click(x, y, button=0):
         for event in 'Mm':
-            send(f'\x1b[<0;{x+1};{y+1}{event}'.encode())
+            send(f'\x1b[<{button};{x+1};{y+1}{event}'.encode())
 
     def shot(_):
         pump()
@@ -75,6 +76,22 @@ def session(binary, fixture, env, restarted=False, protocol=None):
             if restarted:
                 reset(fixture, key, click, shot, (width, height))
             else:
+                file_row = next(i for i, line in enumerate(shot('list').splitlines()) if 'Проекты' in line)
+                # The compact menu abbreviates the remove action beside its shortcut.
+                for adding, label in [(True, 'В избранное'), (False, 'Убрать')]:
+                    click(8, file_row, button=2)
+                    send(b'\x1b[F')
+                    lines = shot('menu').splitlines()
+                    row = next(i for i, line in enumerate(lines) if label in line)
+                    expected_row = lines[row]
+                    column = lines[row].index(label)
+                    end = time.monotonic() + 3.4
+                    while time.monotonic() < end:
+                        pump(.015)
+                        assert screen_text(output, width, height).splitlines()[row] == expected_row
+                    click(column, row)
+                    wanted = [bytes(fixture.folder)] if adding else []
+                    wait(lambda: [r[0] for r in rows(fixture.base, 1)] == wanted, label)
                 exercise(fixture, key, text, click, shot, (width, height))
         quit_when_ready(process, send)
     except BaseException:

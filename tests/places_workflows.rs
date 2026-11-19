@@ -70,6 +70,53 @@ fn control(app: &mut App, c: PlaceControl) {
     );
     click(app, r);
 }
+
+#[test]
+fn folder_context_favorite_stays_clickable_during_places_refresh() {
+    let temp = tempfile::tempdir().unwrap();
+    let parent = temp.path().join("parent");
+    let folder = parent.join("folder");
+    fs::create_dir_all(&folder).unwrap();
+    let mut app = App::new(parent, Settings::default());
+    app.configure_places(config(temp.path()));
+    settle(&mut app);
+
+    for action in [Action::Favorite, Action::Unfavorite] {
+        render(&mut app, 100, 38);
+        let entry = hit(&app, |t| matches!(t, Target::Entry { pane: 0, index: 0 }));
+        app.handle(Input::SecondaryClick {
+            x: entry.x + entry.width / 2,
+            y: entry.y,
+        });
+        let before = render(&mut app, 100, 38);
+        assert!(before.contains(action.name()));
+        let index = app
+            .command_items()
+            .iter()
+            .position(|i| i.action == action)
+            .unwrap();
+        let row = hit(&app, |t| matches!(t, Target::Command(i) if *i == index));
+        assert!(app.library.send(Command::Refresh));
+        assert_eq!(before, render(&mut app, 100, 38), "refresh moved the menu");
+        assert_eq!(
+            row,
+            hit(&app, |t| matches!(t, Target::Command(i) if *i == index))
+        );
+        click(&mut app, row);
+        assert!(
+            !app.library.writable(),
+            "a favorite edit is already pending"
+        );
+        settle(&mut app);
+        let favorites = &app.library.snapshot.favorites;
+        if action == Action::Favorite {
+            assert_eq!(favorites.len(), 1);
+            assert_eq!(favorites[0].path, folder);
+        } else {
+            assert!(favorites.is_empty());
+        }
+    }
+}
 #[test]
 fn places_use_mouse_at_minimum_size_and_save_bookmark_labels_without_renaming_folders() {
     for grid in [false, true] {

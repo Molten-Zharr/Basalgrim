@@ -229,6 +229,8 @@ try:
             def style_shot(name):
                 return screenshot(window,'native-x11-folder-style-'+name+'.png')
             try:
+                style.favorite_menu(fixture, style_key, lambda x,y:click(window,x,y,3),
+                                    lambda:screenshot(window))
                 style.exercise(fixture,style_key,style_text,lambda x,y:click(window,x,y),style_shot)
                 quit_when_ready(process); log.close()
                 process,window,log = launch(fixture.root,config)

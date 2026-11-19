@@ -5,6 +5,7 @@ import time
 
 from PIL import Image
 from details_fixture import Fixture as DesktopFixture
+from places_fixture import rows
 from views_fixture import wait
 
 class Fixture(DesktopFixture):
@@ -30,17 +31,47 @@ class Fixture(DesktopFixture):
             row = con.execute('SELECT style FROM folder_styles').fetchone()
         return json.loads(row[0]) if row else None
 
+def favorite_menu(f, key, right_click, grab):
+    # The places worker reads its catalog every three seconds. Inspect the open
+    # menu itself across two reads, including the space around its last row.
+    for add in (True, False):
+        right_click(10, 11)
+        key('End')
+        time.sleep(.2)
+        region = (10 * 8, 11 * 16, 50 * 8, 30 * 16)
+        expected = grab().crop(region).tobytes()
+        deadline = time.monotonic() + 6.2
+        while time.monotonic() < deadline:
+            assert grab().crop(region).tobytes() == expected, 'open folder menu changed during refresh'
+            time.sleep(.01)
+        key('Return')
+        wanted = [bytes(f.folder)] if add else []
+        wait(lambda: [r[0] for r in rows(f.base, 1)] == wanted, 'contextual favorite toggle')
+
+
 def exercise(f, key, text, click, shot, cells=(170,53)):
     w,h = cells
     sx,sy = (w-min(w,56))//2+1, (h-min(h,14))//2+1
     px,py = (w-min(w,76))//2+1, (h-min(h,22))//2+1
-    def open_style():
+    def open_style(check_properties=False):
         key('Return','alt')
         time.sleep(.35)
+        if check_properties:
+            general = shot('properties')
+            key('F4')
+            time.sleep(.2)
+            permissions = shot('permissions')
+            if isinstance(general, str):
+                assert 'Оформление' in general and 'Права' in general, general
+                assert 'Сохранить' in permissions, permissions
+                for label in ('Права F4', 'Оформление F2', 'Сохранить · Ctrl+S'):
+                    assert label not in general and label not in permissions, label
+            key('F4')
+            time.sleep(.2)
         click(px+17, py+min(h,22)-4)
         time.sleep(.25)
 
-    open_style()
+    open_style(check_properties=True)
     click(sx+1, sy+3)  # Club preset.
     click(sx+11, sy+5)  # Green swatch.
     click(sx+8, sy+6)

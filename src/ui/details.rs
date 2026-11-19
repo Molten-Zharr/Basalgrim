@@ -182,9 +182,9 @@ pub fn render(app: &mut App, frame: &mut Frame, p: Palette) {
             p,
             Rect::new(inner.x + 11, inner.bottom() - 2, inner.width - 11, 1),
             if all {
-                " Рекомендуемые F4 "
+                " Рекомендуемые "
             } else {
-                " Все программы F4 "
+                " Все программы "
             },
             C::All,
             true,
@@ -204,7 +204,7 @@ pub fn render(app: &mut App, frame: &mut Frame, p: Palette) {
             frame,
             p,
             Rect::new(inner.x + 14, inner.y + 1, 14, 1),
-            " Права F4 ",
+            " Права ",
             C::Permissions,
             true,
         );
@@ -285,7 +285,7 @@ pub fn render(app: &mut App, frame: &mut Frame, p: Palette) {
                     frame,
                     p,
                     Rect::new(inner.x, inner.bottom() - 2, inner.width, 1),
-                    " Сохранить · Ctrl+S ",
+                    " Сохранить ",
                     C::Apply,
                     editable && mode != before & 0o777,
                 );
@@ -368,7 +368,7 @@ pub fn render(app: &mut App, frame: &mut Frame, p: Palette) {
                         frame,
                         p,
                         Rect::new(inner.x + 13, inner.bottom() - 2, inner.width - 13, 1),
-                        " Оформление F2 ",
+                        " Оформление ",
                         C::Style(crate::app::StyleControl::Open),
                         app.library.ready,
                     );

@@ -123,6 +123,7 @@ pub enum Command {
 }
 pub enum Event {
     StyleSaved(u64, Result<Snapshot, String>),
+    Refreshed(Result<Snapshot, String>),
     Updated(Result<Snapshot, String>),
     Resolved(u64, Result<bool, String>),
 }
@@ -144,6 +145,7 @@ pub struct Library {
     pub snapshot: Snapshot,
     pub revision: u64,
     pub pending: usize,
+    pending_refreshes: usize,
     pub ready: bool,
     pub error: Option<String>,
     runtime: Option<Runtime>,
@@ -156,6 +158,7 @@ impl Default for Library {
             snapshot: Snapshot::default(),
             revision: 0,
             pending: 0,
+            pending_refreshes: 0,
             ready: false,
             error: None,
             runtime: None,
@@ -182,6 +185,7 @@ impl Library {
                     if store.is_err() && matches!(command, Command::Refresh) {
                         store = Store::open(&config.database).map_err(|e| format!("{e:#}"));
                     }
+                    let refresh = matches!(command, Command::Refresh);
                     let token = match &command {
                         Command::SetStyle { token, .. } => Some(*token),
                         _ => None,
@@ -195,6 +199,7 @@ impl Library {
                     };
                     match token {
                         Some(token) => Event::StyleSaved(token, result),
+                        None if refresh => Event::Refreshed(result),
                         None => Event::Updated(result),
                     }
                 };
@@ -218,11 +223,13 @@ impl Library {
             self.error = Some("Хранилище мест не подключено".into());
             return false;
         };
+        let refresh = matches!(command, Command::Refresh);
         if runtime.sender.as_ref().unwrap().try_send(command).is_err() {
             self.error = Some("Места заняты; повторите действие".into());
             return false;
         }
         self.pending += 1;
+        self.pending_refreshes += usize::from(refresh);
         self.refresh_at = Instant::now() + Duration::from_secs(3);
         true
     }
@@ -231,20 +238,27 @@ impl Library {
         if let Some(runtime) = &self.runtime {
             while let Ok(event) = runtime.events.try_recv() {
                 self.pending = self.pending.saturating_sub(1);
-                let event = match event {
+                let result = match event {
                     Event::StyleSaved(token, result) => {
                         self.style_result =
                             Some((token, result.as_ref().map(|_| ()).map_err(Clone::clone)));
                         if result.is_err() {
                             continue;
                         }
-                        Event::Updated(result)
+                        result
                     }
-                    other => other,
+                    Event::Refreshed(result) => {
+                        self.pending_refreshes -= 1;
+                        result
+                    }
+                    Event::Updated(result) => result,
+                    Event::Resolved(id, result) => {
+                        resolved.push((id, result));
+                        continue;
+                    }
                 };
-                match event {
-                    Event::StyleSaved(..) => unreachable!(),
-                    Event::Updated(Ok(snapshot)) => {
+                match result {
+                    Ok(snapshot) => {
                         if snapshot != self.snapshot {
                             self.revision += 1;
                             self.snapshot = snapshot;
@@ -252,10 +266,9 @@ impl Library {
                         self.ready = true;
                         self.error = None;
                     }
-                    Event::Updated(Err(error)) => {
+                    Err(error) => {
                         self.error = Some(error);
                     }
-                    Event::Resolved(id, result) => resolved.push((id, result)),
                 }
             }
         }
@@ -265,7 +278,9 @@ impl Library {
         resolved
     }
     pub fn writable(&self) -> bool {
-        self.ready && self.pending == 0 && self.error.is_none()
+        // A refresh reads the catalog. The serial worker can accept edits to the
+        // last published snapshot while that read is in flight.
+        self.ready && self.pending == self.pending_refreshes && self.error.is_none()
     }
 }
 
