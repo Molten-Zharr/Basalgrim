@@ -40,6 +40,7 @@ pub fn render(app: &mut App, frame: &mut Frame, p: Palette) {
         return;
     };
     let chooser = v.chooser;
+    let styling = v.style.is_some();
     let name = fs::clean(
         &v.source
             .path
@@ -49,8 +50,8 @@ pub fn render(app: &mut App, frame: &mut Frame, p: Palette) {
     );
 
     let area = frame.area();
-    let width = area.width.min(76);
-    let height = area.height.min(22);
+    let width = area.width.min(if styling { 56 } else { 76 });
+    let height = area.height.min(if styling { 14 } else { 22 });
     let rect = Rect::new(
         area.x + (area.width - width) / 2,
         area.y + (area.height - height) / 2,
@@ -63,7 +64,9 @@ pub fn render(app: &mut App, frame: &mut Frame, p: Palette) {
     frame.render_widget(Clear, rect);
     let block = panel(
         p,
-        if chooser {
+        if styling {
+            " Оформление папки "
+        } else if chooser {
             " Открыть с помощью "
         } else {
             " Свойства "
@@ -86,6 +89,10 @@ pub fn render(app: &mut App, frame: &mut Frame, p: Palette) {
             .style(p.text().add_modifier(Modifier::BOLD)),
         Rect::new(inner.x, inner.y, inner.width, 1),
     );
+    if styling {
+        folder_style(app, frame, p, inner);
+        return;
+    }
     let body = Rect::new(inner.x, inner.y + 3, inner.width, inner.height - 6);
     if chooser {
         frame.render_widget(
@@ -350,6 +357,21 @@ pub fn render(app: &mut App, frame: &mut Frame, p: Palette) {
                         C::OpenWith,
                         true,
                     );
+                } else if app
+                    .detail_view
+                    .as_ref()
+                    .and_then(|v| v.properties.as_ref())
+                    .is_some_and(|p| p.folder.is_some())
+                {
+                    button(
+                        app,
+                        frame,
+                        p,
+                        Rect::new(inner.x + 13, inner.bottom() - 2, inner.width - 13, 1),
+                        " Оформление F2 ",
+                        C::Style(crate::app::StyleControl::Open),
+                        app.library.ready,
+                    );
                 }
             }
         }
@@ -406,4 +428,114 @@ pub fn render(app: &mut App, frame: &mut Frame, p: Palette) {
     if chooser {
         super::text_edit::menu(app, frame, p);
     }
+}
+
+fn folder_style(app: &mut App, frame: &mut Frame, p: Palette, inner: Rect) {
+    use crate::app::{Dialog, EditKind, StyleControl as S, StyleField as F};
+    use crate::folder_style::{COLORS, SYMBOLS};
+    let v = app.detail_view.as_ref().unwrap();
+    let draft = v.style.as_ref().unwrap();
+    let fields = draft.fields.clone();
+    let error = draft.error.clone();
+    let saving = draft.saving;
+    let active = match &app.dialog {
+        Some(Dialog::Edit {
+            kind: EditKind::FolderStyle(f),
+            ..
+        }) => Some(*f),
+        _ => None,
+    };
+    let row = |y| Rect::new(inner.x, inner.y + y, inner.width, 1);
+    frame.render_widget(
+        Paragraph::new("Значок · символ или путь PNG/SVG").style(p.muted()),
+        row(1),
+    );
+    for (field, y, label) in [
+        (F::Icon, 2, ""),
+        (F::Color, 4, "Цвет HEX  "),
+        (F::Tag, 6, "Тег  "),
+    ] {
+        let w = label.width() as u16;
+        frame.render_widget(
+            Paragraph::new(label).style(p.muted()),
+            Rect::new(inner.x, inner.y + y, w, 1),
+        );
+        let area = Rect::new(inner.x + w, inner.y + y, inner.width - w, 1);
+        if Some(field) == active {
+            super::text_edit::field(app, frame, area, p);
+        } else {
+            let value = &fields[field.index()];
+            button(
+                app,
+                frame,
+                p,
+                area,
+                if value.is_empty() { "—" } else { value },
+                C::Style(S::Field(field)),
+                !saving,
+            );
+        }
+    }
+    for (i, symbol) in SYMBOLS.iter().enumerate() {
+        button(
+            app,
+            frame,
+            p,
+            Rect::new(inner.x + i as u16 * 5, inner.y + 3, 4, 1),
+            &format!(" {symbol} "),
+            C::Style(S::Symbol(i)),
+            !saving,
+        );
+    }
+    for (i, [r, g, b]) in COLORS.iter().copied().enumerate() {
+        let rect = Rect::new(inner.x + i as u16 * 5, inner.y + 5, 4, 1);
+        button(app, frame, p, rect, " ■■ ", C::Style(S::Color(i)), !saving);
+        frame.render_widget(
+            Paragraph::new(" ■■ ").style(p.text().fg(ratatui::style::Color::Rgb(r, g, b))),
+            rect,
+        );
+    }
+    let msg = if saving {
+        "Сохранение…"
+    } else {
+        error.as_deref().unwrap_or("Tab — поле · Enter — сохранить")
+    };
+    frame.render_widget(
+        Paragraph::new(msg)
+            .style(if error.is_some() {
+                p.accent()
+            } else {
+                p.muted()
+            })
+            .wrap(Wrap { trim: true }),
+        Rect::new(
+            inner.x,
+            inner.y + 7,
+            inner.width,
+            inner.height.saturating_sub(8),
+        ),
+    );
+    let y = inner.bottom() - 1;
+    button(
+        app,
+        frame,
+        p,
+        Rect::new(inner.x, y, 11, 1),
+        " Сохранить ",
+        C::Style(S::Save),
+        !saving,
+    );
+    button(
+        app,
+        frame,
+        p,
+        Rect::new(inner.x + 12, y, 8, 1),
+        " Сброс ",
+        C::Style(S::Reset),
+        !saving,
+    );
+    let close = Rect::new(inner.right() - 9, y, 9, 1);
+    frame.render_widget(Paragraph::new(" Отмена ").style(p.accent()), close);
+    hit(app, close, Target::Cancel);
+    super::text_edit::menu(app, frame, p);
 }

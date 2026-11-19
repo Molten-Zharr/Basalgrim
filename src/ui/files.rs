@@ -8,6 +8,7 @@ use ratatui::{
 fn image_slot(
     entry: &fs::Entry,
     request: u64,
+    decoration: Option<&crate::folder_style::Decoration>,
     area: Rect,
     palette: Palette,
 ) -> crate::icons::IconSlot {
@@ -18,11 +19,13 @@ fn image_slot(
     };
     crate::icons::IconSlot {
         source: crate::thumbnails::Source::new(entry, request),
-        content: None,
+        content: decoration.and_then(|d| d.image.clone()),
         kind,
         area,
         foreground: rgb("text"),
-        accent: rgb(kind.color_role()),
+        accent: decoration
+            .and_then(|d| d.style.color)
+            .unwrap_or_else(|| rgb(kind.color_role())),
         background: rgb("background"),
     }
 }
@@ -622,6 +625,9 @@ fn draw_tile(
         return;
     }
     let entry = &app.file_tab(pane).entries[app.file_tab(pane).visible[index]];
+    let decoration = app.folder_decoration(entry);
+    let symbol = decoration.and_then(|d| d.style.symbol());
+    let color = folder_color(decoration, palette);
     let renaming = app.renaming(pane, &entry.path);
     let selected = app.file_tab(pane).selected == index && !app.file_tab(pane).explicit_selection;
     let marked = app.file_tab(pane).marked.contains(&entry.path);
@@ -636,18 +642,19 @@ fn draw_tile(
     } else {
         [" ┌────┐ ", " │ ≡≡ │ "]
     };
-    let icon_style = base.fg(palette.color(if entry.directory {
-        "folder_icon"
+    let icon_style = base.fg(if entry.directory {
+        color
     } else {
-        "folder_path"
-    }));
+        palette.color("folder_path")
+    });
     let icon_area = Rect::new(
         rect.x,
         rect.y,
         rect.width,
         2.min(rect.height.saturating_sub(1)),
     );
-    let slot = if !icon_area.is_empty()
+    let slot = if symbol.is_none()
+        && !icon_area.is_empty()
         && app.icon_backend.supports_images()
         && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images
     {
@@ -655,6 +662,7 @@ fn draw_tile(
         Some(image_slot(
             entry,
             app.file_tab(pane).request,
+            decoration,
             Rect::new(
                 icon_area.x + (icon_area.width - width) / 2,
                 icon_area.y,
@@ -665,7 +673,7 @@ fn draw_tile(
         ))
     } else {
         frame.render_widget(
-            Paragraph::new(icon.join("\n"))
+            Paragraph::new(symbol.map_or_else(|| icon.join("\n"), str::to_owned))
                 .alignment(Alignment::Center)
                 .style(icon_style),
             icon_area,
@@ -703,14 +711,31 @@ fn draw_tile(
             );
             rename_area = Some(field);
         } else {
+            let tag = if app.file_tab(pane).filtered() || rect.height < 4 {
+                folder_tag(decoration, label_width)
+            } else {
+                String::new()
+            };
             let label = format!(
-                "{prefix}{}{suffix}",
-                shorten_name(app.entry_name(pane, entry), name_width)
+                "{prefix}{}{suffix}{tag}",
+                shorten_name(
+                    app.entry_name(pane, entry),
+                    name_width.saturating_sub(tag.width())
+                )
             );
             frame.render_widget(
                 Paragraph::new(label)
                     .alignment(Alignment::Center)
-                    .style(typeahead_style(app, pane, index, base)),
+                    .style(typeahead_style(
+                        app,
+                        pane,
+                        index,
+                        if decoration.and_then(|d| d.style.color).is_some() {
+                            base.fg(color)
+                        } else {
+                            base
+                        },
+                    )),
                 row,
             );
         }
@@ -718,6 +743,8 @@ fn draw_tile(
     if rect.height > 3 {
         let detail = if app.file_tab(pane).filtered() {
             location_label(app, pane, entry)
+        } else if let Some(tag) = decoration.map(|d| &d.style.tag).filter(|t| !t.is_empty()) {
+            format!("#{tag}")
         } else if entry.directory {
             "Папка".into()
         } else {
@@ -763,6 +790,24 @@ fn draw_tile(
         mark_area,
     );
     hit(app, mark_area, Target::EntryMark { pane, index });
+}
+
+fn folder_tag(decoration: Option<&crate::folder_style::Decoration>, width: u16) -> String {
+    decoration
+        .map(|d| d.style.tag.as_str())
+        .filter(|tag| !tag.is_empty() && width >= 8)
+        .map(|tag| format!(" #{}", shorten_name(tag, usize::from(width / 2) - 2)))
+        .unwrap_or_default()
+}
+
+fn folder_color(
+    decoration: Option<&crate::folder_style::Decoration>,
+    palette: Palette,
+) -> ratatui::style::Color {
+    decoration.and_then(|d| d.style.color).map_or_else(
+        || palette.color("folder_icon"),
+        |[r, g, b]| ratatui::style::Color::Rgb(r, g, b),
+    )
 }
 
 fn row_style(app: &App, pane: usize, index: usize, palette: Palette) -> Style {
@@ -840,7 +885,11 @@ fn draw_name_row(
     let entry = &tab.entries[tab.visible[index]];
     let style = row_style(app, pane, index, palette);
     let marked = tab.marked.contains(&entry.path);
+    let decoration = app.folder_decoration(entry);
+    let color = folder_color(decoration, palette);
+    let symbol = decoration.and_then(|d| d.style.symbol());
     let images = rect.width >= 10
+        && symbol.is_none()
         && app.icon_backend.supports_images()
         && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images;
     let depth = if tree {
@@ -856,7 +905,8 @@ fn draw_name_row(
         .min(32) as u16;
     let mark_width = if rect.width >= 6 { 3 } else { 1 };
     let toggle_x = rect.x + mark_width + indent;
-    let prefix = mark_width + indent + if tree { 2 } else { 0 } + if images { 3 } else { 0 };
+    let has_icon = images || (rect.width >= 8 && symbol.is_some());
+    let prefix = mark_width + indent + if tree { 2 } else { 0 } + if has_icon { 3 } else { 0 };
     let field = Rect::new(
         rect.x + prefix.min(rect.width),
         rect.y,
@@ -910,12 +960,23 @@ fn draw_name_row(
             Rect::new(rect.x + 3, rect.y, 1, 1),
         );
     }
+    let tag = if app.renaming(pane, &path) {
+        String::new()
+    } else {
+        folder_tag(decoration, field.width)
+    };
+    if has_icon && let Some(symbol) = symbol {
+        frame.render_widget(
+            Paragraph::new(symbol).style(style.fg(color)),
+            Rect::new(field.x - 3, rect.y, 2, 1),
+        );
+    }
     frame.render_widget(
         Paragraph::new(format!(
-            "{}{suffix}",
+            "{}{suffix}{tag}",
             shorten_name(
                 name,
-                usize::from(field.width).saturating_sub(suffix.width())
+                usize::from(field.width).saturating_sub(suffix.width() + tag.width())
             )
         ))
         .style(typeahead_style(
@@ -923,7 +984,7 @@ fn draw_name_row(
             pane,
             index,
             if entry.directory {
-                style.fg(palette.color("folder_icon"))
+                style.fg(color)
             } else {
                 style
             },
@@ -934,6 +995,7 @@ fn draw_name_row(
         image_slot(
             entry,
             tab.request,
+            decoration,
             Rect::new(field.x - 3, rect.y, 2, 1),
             palette,
         )

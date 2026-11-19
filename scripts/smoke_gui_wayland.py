@@ -137,6 +137,24 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
             settings.write_text(json.dumps({"preview": False, "grid": False, "font_size": 16, "theme": "light"}))
+            if '--folder-style-only' in sys.argv[2:]:
+                import folder_style_fixture as style
+                fixture=style.Fixture(base)
+                env.update(fixture.env)
+                process=launch(fixture.root)
+                def style_shot(name):
+                    path=out/('native-wayland-folder-style-'+name+'.png')
+                    run('grim','-g','0,0 1360x860',str(path))
+                    return Image.open(path)
+                try:
+                    style.exercise(fixture,key,lambda value:run('wtype','-s','100',value,'-s','100'),click,style_shot)
+                    key('q','ctrl'); process.wait(timeout=5)
+                    process=launch(fixture.root)
+                    style.reset(fixture,key,click,style_shot)
+                    key('q','ctrl'); process.wait(timeout=5)
+                finally:
+                    fixture.close()
+                return
             if '--filter-only' in sys.argv[2:]:
                 import filter_fixture
                 fixture=filter_fixture.Fixture(base);env.update(fixture.env)

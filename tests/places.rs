@@ -296,7 +296,7 @@ fn bookmark_hiding_migrates_v1_without_losing_existing_places_or_recent_suppress
     assert_eq!(
         db.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        2
+        3
     );
     // Bad hidden-path data is rejected before allocating unbounded row contents.
     db.execute("INSERT INTO hidden_bookmarks VALUES(zeroblob(65537))", [])

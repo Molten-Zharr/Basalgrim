@@ -216,6 +216,27 @@ try:
         config=base/'config'; settings=config/'molten-zharr/basalgrim/settings.json'
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({'preview':False, 'grid':False,'font_size':16,'theme':'light'}))
+        if '--folder-style-only' in sys.argv[2:]:
+            import folder_style_fixture as style
+            fixture = style.Fixture(base)
+            os.environ.update(fixture.env)
+            process,window,log = launch(fixture.root,config)
+            def style_key(name,*mods):
+                chord(name,*[{'alt':'Alt_L','ctrl':'Control_L'}[m] for m in mods])
+            def style_text(value):
+                subprocess.run([xclip,'-selection','clipboard','-in'],input=value.encode(),check=True)
+                style_key('v','ctrl'); time.sleep(.25)
+            def style_shot(name):
+                return screenshot(window,'native-x11-folder-style-'+name+'.png')
+            try:
+                style.exercise(fixture,style_key,style_text,lambda x,y:click(window,x,y),style_shot)
+                quit_when_ready(process); log.close()
+                process,window,log = launch(fixture.root,config)
+                style.reset(fixture,style_key,lambda x,y:click(window,x,y),style_shot)
+                quit_when_ready(process)
+            finally:
+                stop(process,log); fixture.close()
+            sys.exit(0)
         if '--filter-only' in sys.argv[2:]:
             import filter_fixture
             fixture=filter_fixture.Fixture(base);os.environ.update(fixture.env)

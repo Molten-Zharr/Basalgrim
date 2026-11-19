@@ -5,6 +5,7 @@ pub mod clipboard;
 pub mod conflicts;
 pub mod dnd;
 pub mod folder_size;
+pub mod folder_style;
 pub mod fs;
 pub mod icons;
 pub mod input;

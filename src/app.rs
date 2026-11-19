@@ -18,6 +18,8 @@ mod desktop;
 pub use desktop::DesktopState;
 mod palette;
 pub use palette::{PaletteControl, PaletteView};
+mod folder_styles;
+pub use folder_styles::{StyleControl, StyleEditor, StyleField};
 mod details;
 pub use details::{DetailControl, DetailView};
 mod archive;
@@ -277,6 +279,7 @@ pub enum EditKind {
     ExtensionInstall,
     CommandFilter,
     ApplicationFilter,
+    FolderStyle(StyleField),
     Network(NetworkField),
     PlaceFilter,
     PlaceLabel {
@@ -311,6 +314,7 @@ impl EditKind {
             Self::FilterExtension { .. } => "Расширение файла",
             Self::ExtensionInstall => "Папка расширения (полный путь)",
             Self::CommandFilter => "Поиск команды",
+            Self::FolderStyle(_) => "Оформление папки",
             Self::ApplicationFilter => "Поиск программы",
             Self::Network(_) => "Подключение к серверу",
             Self::PlaceFilter => "Фильтр мест",

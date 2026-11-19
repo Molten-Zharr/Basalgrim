@@ -7,6 +7,7 @@ use crate::{
 
 #[derive(Clone, Copy)]
 pub enum DetailControl {
+    Style(StyleControl),
     General,
     Permissions,
     Toggle(u32),
@@ -21,6 +22,7 @@ pub enum DetailControl {
     Scroll(isize),
 }
 pub struct DetailView {
+    pub style: Option<StyleEditor>,
     pub owner: PathOwner,
     pub request: u64,
     pub source: Source,
@@ -51,7 +53,7 @@ impl App {
             Some(
                 Dialog::Details
                     | Dialog::Edit {
-                        kind: EditKind::ApplicationFilter,
+                        kind: EditKind::ApplicationFilter | EditKind::FolderStyle(_),
                         ..
                     }
             )
@@ -95,6 +97,7 @@ impl App {
         self.finish_marquee(true);
         self.close_details();
         self.detail_view = Some(DetailView {
+            style: None,
             owner: PathOwner::current(self, self.active),
             request: self.tab().request,
             source,
@@ -264,6 +267,13 @@ impl App {
             self.close_details();
             return;
         }
+        if let DetailControl::Style(control) = control {
+            self.style_control(control);
+            return;
+        }
+        if v.style.is_some() {
+            return;
+        }
         use DetailControl::*;
         match control {
             Apply => {
@@ -399,6 +409,13 @@ impl App {
             return true;
         };
         let revision = v.revision;
+        if v.style.is_some() {
+            return self.style_key(press);
+        }
+        if !v.chooser && press == KeyPress::plain(Key::F(2)) {
+            self.detail_control(revision, DetailControl::Style(StyleControl::Open));
+            return true;
+        }
         if press.key == Key::Escape {
             self.close_details();
             return true;

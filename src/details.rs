@@ -23,6 +23,7 @@ pub struct Source {
 }
 #[derive(Clone, Debug)]
 pub struct Properties {
+    pub folder: Option<crate::folder_style::FolderId>,
     pub source: Source,
     pub identity: Option<Identity>,
     pub parent: Option<(u64, u64)>,
@@ -196,6 +197,7 @@ pub fn inspect(source: &Source, cancel: &Cancellation) -> Result<Properties> {
                 .context("Элемент архива не найден")?
         };
         return Ok(Properties {
+            folder: None,
             source: source.clone(),
             identity: None,
             parent: None,
@@ -235,6 +237,7 @@ pub fn inspect(source: &Source, cancel: &Cancellation) -> Result<Properties> {
         "Объект изменился во время чтения свойств"
     );
     Ok(Properties {
+        folder: crate::folder_style::FolderId::capture(&source.path, &meta),
         source: source.clone(),
         parent: Some(pinned.parent_id()?),
         kind: if meta.is_symlink() {

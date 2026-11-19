@@ -111,6 +111,8 @@ fn extension(e: &Entry) -> String {
 }
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Details {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<crate::folder_style::FolderId>,
     pub created: Option<SystemTime>,
     pub accessed: Option<SystemTime>,
     pub mode: Option<u32>,

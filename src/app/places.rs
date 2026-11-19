@@ -169,6 +169,9 @@ impl App {
     pub(super) fn poll_places(&mut self) {
         let old_error = self.library.error.clone();
         let results = self.library.poll();
+        if let Some((token, result)) = self.library.style_result.take() {
+            self.finish_folder_style(token, result);
+        }
         if self.library.error != old_error
             && let Some(error) = &self.library.error
         {

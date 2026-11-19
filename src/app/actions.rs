@@ -498,7 +498,9 @@ impl App {
             if let Some(v) = &self.detail_view {
                 self.detail_control(
                     v.revision,
-                    if v.chooser {
+                    if v.style.is_some() {
+                        DetailControl::Style(StyleControl::Save)
+                    } else if v.chooser {
                         DetailControl::Launch
                     } else {
                         DetailControl::Apply
@@ -646,6 +648,7 @@ impl App {
                         unreachable!()
                     }
                     EditKind::CommandFilter
+                    | EditKind::FolderStyle(_)
                     | EditKind::ApplicationFilter
                     | EditKind::Network(_)
                     | EditKind::PlaceFilter

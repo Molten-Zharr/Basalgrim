@@ -10,7 +10,9 @@ use std::{
 };
 
 pub struct Store {
-    db: Connection,
+    pub(super) db: Connection,
+    pub(super) style_images:
+        std::cell::RefCell<BTreeMap<i64, std::sync::Arc<crate::preview::ImagePreview>>>,
 }
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
@@ -31,6 +33,7 @@ impl Store {
             meta.is_file() && meta.uid() == rustix::process::getuid().as_raw(),
             "Хранилище мест должно быть вашим обычным файлом"
         );
+        drop(file);
         let db = Connection::open(path)?;
         let current = fs::symlink_metadata(path)?;
         ensure!(
@@ -40,7 +43,7 @@ impl Store {
         db.busy_timeout(Duration::from_millis(500))?;
         let version: i64 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         ensure!(
-            (0..=2).contains(&version),
+            (0..=3).contains(&version),
             "Неподдерживаемая версия хранилища мест"
         );
         let application: i64 = db.query_row("PRAGMA application_id", [], |r| r.get(0))?;
@@ -64,11 +67,20 @@ impl Store {
         if version < 2 {
             db.execute_batch("BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS hidden_bookmarks(path BLOB PRIMARY KEY NOT NULL); PRAGMA user_version=2; COMMIT;")?;
         }
+        if version < 3 {
+            super::styles::migrate(&db)?;
+        }
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.pragma_update(None, "synchronous", "FULL")?;
-        Ok(Self { db })
+        Ok(Self {
+            db,
+            style_images: Default::default(),
+        })
     }
     pub fn apply(&mut self, command: Command) -> Result<()> {
+        if let Command::SetStyle { change, .. } = command {
+            return self.apply_style(change);
+        }
         if matches!(command, Command::Refresh | Command::Resolve { .. }) {
             return Ok(());
         }
@@ -83,6 +95,7 @@ impl Store {
             Ok(())
         };
         match command {
+            Command::SetStyle { .. } => unreachable!(),
             Command::Refresh | Command::Resolve { .. } => return Ok(()),
             Command::Bookmark(path) => {
                 ensure!(
@@ -196,7 +209,10 @@ impl Store {
                 && bytes <= 8 * 1024 * 1024,
             "Хранилище мест превышает ограничения"
         );
-        let mut snapshot = Snapshot::default();
+        let mut snapshot = Snapshot {
+            styles: self.styles()?,
+            ..Default::default()
+        };
         let mut query = self
             .db
             .prepare("SELECT section,path,label,visited FROM places ORDER BY rowid")?;

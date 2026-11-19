@@ -8,6 +8,7 @@ use std::{
 };
 mod desktop;
 mod store;
+mod styles;
 pub use store::Store;
 
 pub const MAX_ITEMS: usize = 10_000;
@@ -60,6 +61,8 @@ impl Item {
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Snapshot {
+    pub styles:
+        std::collections::BTreeMap<crate::folder_style::FolderId, crate::folder_style::Decoration>,
     pub bookmarks: Vec<Item>,
     pub favorites: Vec<Item>,
     pub recent: Vec<Item>,
@@ -93,6 +96,10 @@ impl Config {
 }
 #[derive(Clone, Debug)]
 pub enum Command {
+    SetStyle {
+        token: u64,
+        change: crate::folder_style::Change,
+    },
     Refresh,
     Bookmark(PathBuf),
     Favorite {
@@ -115,6 +122,7 @@ pub enum Command {
     },
 }
 pub enum Event {
+    StyleSaved(u64, Result<Snapshot, String>),
     Updated(Result<Snapshot, String>),
     Resolved(u64, Result<bool, String>),
 }
@@ -132,6 +140,7 @@ impl Drop for Runtime {
     }
 }
 pub struct Library {
+    pub style_result: Option<(u64, Result<(), String>)>,
     pub snapshot: Snapshot,
     pub revision: u64,
     pub pending: usize,
@@ -143,6 +152,7 @@ pub struct Library {
 impl Default for Library {
     fn default() -> Self {
         Self {
+            style_result: None,
             snapshot: Snapshot::default(),
             revision: 0,
             pending: 0,
@@ -172,6 +182,10 @@ impl Library {
                     if store.is_err() && matches!(command, Command::Refresh) {
                         store = Store::open(&config.database).map_err(|e| format!("{e:#}"));
                     }
+                    let token = match &command {
+                        Command::SetStyle { token, .. } => Some(*token),
+                        _ => None,
+                    };
                     let result = match &mut store {
                         Ok(store) => store
                             .apply(command)
@@ -179,7 +193,10 @@ impl Library {
                             .map_err(|e| format!("{e:#}")),
                         Err(e) => Err(e.clone()),
                     };
-                    Event::Updated(result)
+                    match token {
+                        Some(token) => Event::StyleSaved(token, result),
+                        None => Event::Updated(result),
+                    }
                 };
                 if done.send(event).is_err() {
                     break;
@@ -214,7 +231,19 @@ impl Library {
         if let Some(runtime) = &self.runtime {
             while let Ok(event) = runtime.events.try_recv() {
                 self.pending = self.pending.saturating_sub(1);
+                let event = match event {
+                    Event::StyleSaved(token, result) => {
+                        self.style_result =
+                            Some((token, result.as_ref().map(|_| ()).map_err(Clone::clone)));
+                        if result.is_err() {
+                            continue;
+                        }
+                        Event::Updated(result)
+                    }
+                    other => other,
+                };
                 match event {
+                    Event::StyleSaved(..) => unreachable!(),
                     Event::Updated(Ok(snapshot)) => {
                         if snapshot != self.snapshot {
                             self.revision += 1;

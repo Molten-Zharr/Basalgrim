@@ -103,6 +103,7 @@ pub(crate) fn read_directory_until(
         let directory = metadata.is_dir() || (symlink && path.is_dir());
         let raw = entry.file_name();
         let name = clean(&raw.to_string_lossy());
+        let folder = crate::folder_style::FolderId::capture(&path, &metadata);
         entries.push(Entry {
             path,
             hidden: raw.as_encoded_bytes().starts_with(b"."),
@@ -114,6 +115,7 @@ pub(crate) fn read_directory_until(
             details: {
                 use std::os::unix::fs::MetadataExt;
                 crate::columns::Details {
+                    folder,
                     created: metadata.created().ok(),
                     accessed: metadata.accessed().ok(),
                     mode: Some(metadata.mode()),
@@ -148,6 +150,7 @@ pub(crate) fn search_entry(
         size: metadata.len(),
         modified: metadata.modified().ok(),
         details: crate::columns::Details {
+            folder: crate::folder_style::FolderId::capture(&path, &metadata),
             created: metadata.created().ok(),
             accessed: metadata.accessed().ok(),
             mode: Some(metadata.mode()),
@@ -238,6 +241,9 @@ pub(crate) fn read_tree_directory(
     );
     for entry in &mut entries {
         entry.path = path.join(entry.path.file_name().unwrap());
+        if let Some(id) = &mut entry.details.folder {
+            id.rebind_scan_path(&entry.path);
+        }
     }
     Ok(Some(entries))
 }
