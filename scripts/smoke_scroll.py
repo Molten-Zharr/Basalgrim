@@ -49,12 +49,12 @@ def main():
                 for _ in range(1 if grid else 3): send(b"\x1b[<65;51;21M")
             try:
                 wait_for(lambda:b"file-000.txt" in output,"initial directory")
-                click(34,12 if grid else 11,True); click(52 if grid else 34,12,True)
+                click(34,12 if grid else 10,True); click(52 if grid else 34,12 if grid else 11,True)
                 scroll(); send(b"\x03")
                 protected=base/"protected"; protected.mkdir(); navigate(protected); send(b"\x16")
                 wait_for(lambda:all((protected/n).exists() for n in ("file-000.txt","file-001.txt")),"wheel must preserve Ctrl-selected files")
                 assert sorted(p.name for p in protected.iterdir())==["file-000.txt","file-001.txt"]
-                navigate(source); scroll(); click(34,12 if grid else 11)
+                navigate(source); scroll(); click(34,12 if grid else 10)
                 expected=f"file-{8 if grid else 9:03}.txt"
                 clicked=base/"clicked"; clicked.mkdir(); send(b"\x03"); navigate(clicked); send(b"\x16")
                 wait_for(lambda:(clicked/expected).exists(),"first visible file must reflect viewport scrolling")

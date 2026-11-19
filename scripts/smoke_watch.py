@@ -56,7 +56,10 @@ def main():
             for i in range(100): (source / f"file-{i:03}.txt").write_text(str(i))
             settings = base / "config/molten-zharr/basalgrim/settings.json"
             settings.parent.mkdir(parents=True)
-            settings.write_text(json.dumps({"grid": grid, "preview": False}))
+            settings.write_text(json.dumps({
+                "grid": grid, "preview": False,
+                "list_columns": {"columns": [{"column": c, "share": 500_000} for c in ("name", "size")]},
+            }))
             env = dict(os.environ, TERM="xterm-256color", XDG_STATE_HOME=str(base / "state"), XDG_CONFIG_HOME=str(base / "config"))
             for key in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "TERM_PROGRAM", "LC_TERMINAL", "TMUX", "WEZTERM_EXECUTABLE", "KONSOLE_VERSION"):
                 env.pop(key, None)
@@ -90,7 +93,7 @@ def main():
 
             try:
                 wait_for(lambda: b"file-000.txt" in output, "initial directory")
-                click(34, 12 if grid else 11, True); click(52 if grid else 34, 12, True)
+                click(34, 12 if grid else 10, True); click(52 if grid else 34, 12 if grid else 11, True)
                 scroll()
                 created = source / "file-020-new.txt"; created.write_text("external")
                 wait_for(lambda: "file-020-new.txt" in screen_text(output), "external create must repaint without any input")
@@ -107,7 +110,7 @@ def main():
                 navigate(source); scroll()
                 for i in range(8 if grid else 1): (source / f"file--new-{i:03}").write_text("x")
                 pump(1)
-                click(34, 12 if grid else 11); send(b"\x03")
+                click(34, 12 if grid else 10); send(b"\x03")
                 clicked = base / "clicked"; clicked.mkdir(); navigate(clicked); send(b"\x16")
                 expected = f"file-{8 if grid else 9:03}.txt"
                 wait_for(lambda: (clicked / expected).exists(), "inserting before the viewport must preserve its first visible file")

@@ -52,8 +52,20 @@ pub fn render(
             )
         }
     });
+    let is_trash = app.trash_in(pane);
+    let detail_list = app.settings.view_mode() == crate::view::ViewMode::List && !is_trash;
+    let tab = app.file_tab(pane);
+    let count = tab
+        .filter_run
+        .as_ref()
+        .map_or(tab.visible.len(), |r| r.worker.results.total);
+    let counter = if detail_list && (!tab.loading || tab.refreshing) && tab.error.is_none() {
+        format!(" ({count})")
+    } else {
+        String::new()
+    };
     let title = format!(
-        " {} · {} ",
+        " {}{counter} · {} ",
         if pane == 0 {
             "ФАЙЛЫ"
         } else {
@@ -70,7 +82,7 @@ pub fn render(
         .saturating_sub(toggle.as_ref().map_or(0, |s| s.width() as u16) + 3);
     let title = if title.width() > usize::from(room) {
         format!(
-            " {} ",
+            " {}{counter} ",
             if pane == 0 {
                 "ФАЙЛЫ"
             } else {
@@ -101,7 +113,7 @@ pub fn render(
     let parts = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(if compact { 1 } else { 2 }),
-        Constraint::Length(if compact { 0 } else { 1 }),
+        Constraint::Length(u16::from(!compact && !detail_list)),
         Constraint::Min(1),
         Constraint::Length(if compact { 0 } else { 1 }),
         Constraint::Length(1),
@@ -116,33 +128,43 @@ pub fn render(
         palette,
     );
     super::filtering::bar(app, frame, parts[5], pane, palette);
-    let is_trash = app.trash_in(pane);
     let tab = app.file_tab(pane);
-    let filter = if tab.filter.is_empty() {
-        String::new()
-    } else {
-        format!("  / {}", tab.filter)
-    };
-    let archive_label = if tab.archive.is_some() {
-        " · Архив: только чтение"
-    } else {
-        ""
-    };
-    frame.render_widget(
-        Paragraph::new(format!(
-            " {}  ·  {} элементов{}{}",
-            tab.sort.label(),
-            tab.filter_run
-                .as_ref()
-                .map_or(tab.visible.len(), |r| r.worker.results.total),
-            filter,
-            archive_label
-        ))
-        .style(palette.text().fg(palette.color("separator"))),
-        parts[2],
-    );
     if is_trash {
         super::trash::controls(app, frame, parts[2], palette);
+    } else if !compact {
+        let mut labels = Vec::new();
+        if !detail_list
+            || !app
+                .settings
+                .list_columns
+                .columns
+                .iter()
+                .any(|c| c.column == tab.sort.field().0)
+        {
+            labels.push(tab.sort.label());
+        }
+        if !detail_list {
+            labels.push(format!("{count} элементов"));
+            if !tab.filter.is_empty() {
+                labels.push(format!("/ {}", tab.filter));
+            }
+        }
+        if tab.archive.is_some() {
+            labels.push("Архив: только чтение".into());
+        }
+        if !labels.is_empty() {
+            let row = if detail_list {
+                // The spare line above the breadcrumbs can show archive or hidden-sort details.
+                Rect::new(parts[1].x, parts[1].y, parts[1].width, 1)
+            } else {
+                parts[2]
+            };
+            frame.render_widget(
+                Paragraph::new(format!(" {}", labels.join("  ·  ")))
+                    .style(palette.text().fg(palette.color("separator"))),
+                row,
+            );
+        }
     }
     let tab = app.file_tab(pane);
     if tab.loading && !tab.refreshing {

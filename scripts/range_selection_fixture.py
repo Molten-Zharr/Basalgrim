@@ -35,7 +35,7 @@ def exercise(base, source, key, navigate, click, wheel, capture, wait_for, wheel
         mode = 'grid' if grid else 'list'
 
         def entry(index, *mods):
-            cx, cy = (34 + (index % 8) * 18, 12 + (index // 8) * 5) if grid else (34, 11 + index)
+            cx, cy = (34 + (index % 8) * 18, 12 + (index // 8) * 5) if grid else (34, 10 + index)
             click(cx, cy, *mods)
 
         key('Home');key('Down')

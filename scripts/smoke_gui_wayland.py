@@ -561,17 +561,17 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                     wait_for(lambda:not storage_rows("SELECT id FROM operations WHERE state='running'"),'durable replay completion')
                 try:
                     arrange(left,0);right=launch(target);arrange(right,800)
-                    focus(left);click(34,15);key('c','ctrl')
+                    focus(left);click(34,14);key('c','ctrl')
                     before=run('wl-paste','--no-newline','--type','text/plain;charset=utf-8').stdout
-                    click(34,11);hold_ctrl(lambda:(click(34,12),click(34,13)))
-                    click(34,13,10);click(145,25,11)
+                    click(34,10);hold_ctrl(lambda:(click(34,11),click(34,12)))
+                    click(34,12,10);click(145,25,11)
                     run('grim',str(out/'native-wayland-external-dnd.png'));click(145,25,12)
                     wait_for(lambda:all((target/n).exists() for n in ('a.txt','b.txt')),'Wayland native group drop into another window')
                     assert not (source/'a.txt').exists() and not (source/'b.txt').exists()
                     assert run('wl-paste','--no-newline','--type','text/plain;charset=utf-8').stdout==before,'Wayland DnD replaced clipboard'
-                    focus(left);hold_ctrl(lambda:(click(34,12,10),click(145,25,11),click(145,25,12)))
+                    focus(left);hold_ctrl(lambda:(click(34,11,10),click(145,25,11),click(145,25,12)))
                     wait_for(lambda:(target/'copy.txt').exists(),'Wayland external Ctrl-copy');assert (source/'copy.txt').exists()
-                    focus(left);click(34,13,10);click(145,25,11);key('Escape');click(105,25,11);click(105,25,12);time.sleep(.3)
+                    focus(left);click(34,12,10);click(145,25,11);key('Escape');click(105,25,11);click(105,25,12);time.sleep(.3)
                     assert (source/'keep.txt').exists() and not (target/'keep.txt').exists(),'Wayland rejected drop moved a file'
                     focus(right);replay('z',lambda:not (target/'copy.txt').exists(),'Wayland external copy undo')
                     replay('z',lambda:(source/'a.txt').exists() and (source/'b.txt').exists(),'Wayland external move undo')
@@ -595,7 +595,7 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                         run('grim',str(out/'native-wayland-gtk-drag.png'));click(145,25,12)
                         wait_for(lambda:(target/'gtk-input.txt').exists(),'Wayland GTK -> Basalgrim drop');assert (gtk_source/'gtk-input.txt').exists()
                         wait_for(lambda:'DRAG_FINISHED' in (out/'native-wayland.log').read_text(),'GTK native completion acknowledgement')
-                        focus(right);click(134,13,10);click(50,25,11);click(50,25,12)
+                        focus(right);click(134,12,10);click(50,25,11);click(50,25,12)
                         wait_for(lambda:(gtk_target/'gtk-input.txt').exists(),'Wayland Basalgrim -> GTK drop');assert (target/'gtk-input.txt').exists()
                         run('grim',str(out/'native-wayland-external-dnd-gtk.png'))
                         print('Native Wayland GTK4 interoperability: incoming and outgoing file-list Copy passed',flush=True)
@@ -611,11 +611,11 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                 process=launch(inside);session=base/'state/molten-zharr/basalgrim/session.json'
                 def snapshot():return json.loads(session.read_text()) if session.exists() else None
                 parent_x=25+3+1+5+1+len(base.name)+2+1+1
-                click(34,11,10);click(parent_x,8,11)
+                click(34,10,10);click(parent_x,8,11)
                 run('grim','-g','0,0 1360x860',str(out/'native-wayland-breadcrumb-drop.png'));click(parent_x,8,12)
                 wait_for(lambda:(parent/'ancestor.txt').exists(),'Wayland breadcrumb move several levels up');assert not (inside/'ancestor.txt').exists()
                 held=subprocess.Popen([commands['wtype'],'-s','100','-M','ctrl','-s','2500','-m','ctrl'],env=env,stdout=app_log,stderr=app_log)
-                try:time.sleep(.3);click(34,11,10);click(parent_x,8,11);click(parent_x,8,12)
+                try:time.sleep(.3);click(34,10,10);click(parent_x,8,11);click(parent_x,8,12)
                 finally:held.wait(timeout=5)
                 wait_for(lambda:(parent/'peer.txt').exists(),'Wayland Ctrl breadcrumb copy');assert (inside/'peer.txt').exists()
                 wait_for(lambda:snapshot() and snapshot()['panes'][0]['tabs']==[str(inside)],'breadcrumb drop preserves view')
@@ -641,22 +641,22 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                 held=subprocess.Popen([commands['wtype'],'-s','100','-M','ctrl','-s','2500','-m','ctrl'],env=env,stdout=app_log,stderr=app_log)
                 try:time.sleep(.3);callback()
                 finally:held.wait(timeout=5)
-            control_mouse(lambda:(click(34,12),click(34,13)))
-            click(34,13,10);click(34,11,11)
-            run('grim','-g','0,0 1360x860',str(out/'native-wayland-drag-group.png'));click(34,11,12)
+            control_mouse(lambda:(click(34,11),click(34,12)))
+            click(34,12,10);click(34,10,11)
+            run('grim','-g','0,0 1360x860',str(out/'native-wayland-drag-group.png'));click(34,10,12)
             wait_for(lambda:all((drag_root/'folder'/n).exists() for n in ('a.txt','b.txt')),'Wayland marked group drag')
             assert not (drag_root/'a.txt').exists() and not (drag_root/'b.txt').exists();time.sleep(.25)
-            control_mouse(lambda:(click(34,12,10),click(34,11,11),click(34,11,12)))
+            control_mouse(lambda:(click(34,11,10),click(34,10,11),click(34,10,12)))
             wait_for(lambda:(drag_root/'folder/c.txt').exists(),'Wayland Ctrl drag copy');assert (drag_root/'c.txt').exists()
-            click(34,12,10);click(34,11,11);key('Escape');click(34,11,12);assert (drag_root/'c.txt').exists()
+            click(34,11,10);click(34,10,11);key('Escape');click(34,10,12);assert (drag_root/'c.txt').exists()
             tab_dest=base/'drop-target';tab_dest.mkdir();key('t','ctrl');navigate(tab_dest);click(28,6)
-            click(34,12,10);click(43,6,11);click(43,6,12)
+            click(34,11,10);click(43,6,11);click(43,6,12)
             wait_for(lambda:(tab_dest/'c.txt').exists(),'Wayland inactive tab drop');assert not (drag_root/'c.txt').exists()
             time.sleep(.25);key('z','ctrl');wait_for(lambda:(drag_root/'c.txt').exists(),'Wayland drag undo')
             time.sleep(.25);key('y','ctrl');wait_for(lambda:not (drag_root/'c.txt').exists(),'Wayland drag redo')
             (drag_root/'pane.txt').write_text('pane drag');time.sleep(.5);key('d','ctrl');click(110,25)
             pane_dest=base/'drop-pane';pane_dest.mkdir();navigate(pane_dest)
-            click(34,12,10);click(110,25,11);click(110,25,12)
+            click(34,11,10);click(110,25,11);click(110,25,12)
             wait_for(lambda:(pane_dest/'pane.txt').exists(),'Wayland other pane drop')
             key('q','ctrl');process.wait(timeout=5)
             settings.write_text(json.dumps({'preview':False,'grid':True,'font_size':16,'theme':'light'}))
@@ -724,23 +724,23 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             (mouse / "destination").mkdir(parents=True); (mouse / "moved").mkdir()
             (mouse / "alpha.txt").write_text("native Wayland mouse")
             process = launch(mouse)
-            click(34, 13, 3); click(36, 15)  # alpha -> Copy
-            click(34, 11); click(34, 11)  # destination
+            click(34, 12, 3); click(36, 14)  # alpha -> Copy
+            click(34, 10); click(34, 10)  # destination
             click(34, 22, 3); click(36, 25)  # background -> Paste
             wait_for(lambda: (mouse / "destination/alpha.txt").exists(), "Wayland mouse Copy/Paste")
-            click(34, 11, 3); click(36, 14)  # Cut
+            click(34, 10, 3); click(36, 13)  # Cut
             click(21, 3)  # Parent
-            click(34, 12); click(34, 12)  # moved
+            click(34, 11); click(34, 11)  # moved
             click(34, 22, 3); click(36, 25)  # Paste
             wait_for(lambda: (mouse / "moved/alpha.txt").exists(), "Wayland mouse Cut/Paste")
             assert not (mouse / "destination/alpha.txt").exists()
             run("grim", "-g", "0,0 1360x860", str(out / "native-wayland-mouse.png"))
             # Hold the primary button across motion events in the file list.
             key("l", "ctrl"); key("u", "ctrl"); run("wtype", "-s", "100", str(mouse), "-s", "100"); key("Return")
-            # Folder rows 11/12, file row 13: a rectangle selects both folders.
-            click(168,12,10); click(26,11,11)
+            # Folder rows 10/11, file row 12: a rectangle selects both folders.
+            click(168,11,10); click(26,10,11)
             run("grim", "-g", "0,0 1360x860", str(out / "native-wayland-selection.png"))
-            click(26,11,12)
+            click(26,10,12)
             destination = base / "wayland-selection"; destination.mkdir()
             key("c", "ctrl"); navigate(destination); key("v", "ctrl")
             wait_for(lambda: (destination / "destination").is_dir() and (destination / "moved/alpha.txt").exists(), "Wayland rectangle selects exactly both folders")
@@ -751,10 +751,10 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             for index in range(100): (files/f"file-{index:03}.txt").write_text(str(index))
             process=launch(files)
             for _ in range(3): click(50,20,21)
-            run("grim", "-g", "208,176 800x16", str(out/"native-wayland-watch-before.png"))
+            run("grim", "-g", "208,160 800x16", str(out/"native-wayland-watch-before.png"))
             (files/"file--new.txt").write_text("external")
             time.sleep(1)
-            run("grim", "-g", "208,176 800x16", str(out/"native-wayland-watch-after.png"))
+            run("grim", "-g", "208,160 800x16", str(out/"native-wayland-watch-after.png"))
             assert (out/"native-wayland-watch-before.png").read_bytes()==(out/"native-wayland-watch-after.png").read_bytes(), "Wayland auto refresh moved the viewport"
             protected=base/"wheel-protected"; protected.mkdir()
             key("c","ctrl"); navigate(protected); key("v","ctrl")
@@ -762,7 +762,7 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             assert sorted(p.name for p in protected.iterdir())==["file-000.txt"]
             navigate(files)
             for _ in range(3): click(50,20,21)
-            click(34,11)
+            click(34,10)
             clicked=base/"wheel-clicked"; clicked.mkdir()
             key("c","ctrl"); navigate(clicked); key("v","ctrl")
             # One externally inserted entry now sorts before file-000.
@@ -807,11 +807,11 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             key("Tab");navigate(pane_dest);key("Tab");key("a","ctrl")
             key("F5","shift")
             wait_for(lambda:all((pane_dest/n).exists() for n in ("a.txt","b.txt")),"Wayland copy to other pane")
-            time.sleep(.3);click(34,11,3);click(36,14)
+            time.sleep(.3);click(34,10,3);click(36,13)
             wait_for(lambda:all((pane_source/n).exists() for n in ("a (1).txt","b (1).txt")),"Wayland mouse duplicate")
             key("F6","shift");time.sleep(.5);key("space");key("Up");key("Return");time.sleep(.3)
             for name in ("a.txt","b.txt"): assert (pane_source/name).exists();(pane_dest/name).unlink()
-            time.sleep(.4);click(34,12,3);click(36,17)
+            time.sleep(.4);click(34,11,3);click(36,16)
             wait_for(lambda:all(not (pane_source/n).exists() and (pane_dest/n).exists() for n in ("a.txt","b.txt")),"Wayland mouse move to other pane")
             key("Home");key("F5","ctrl")
             wait_for(lambda:(pane_source/"a (1) (1).txt").exists(),"Wayland duplicate shortcut")

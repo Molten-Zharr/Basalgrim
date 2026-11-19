@@ -78,8 +78,8 @@ def exercise(folder, target, key, type_text, put, get, click, drag, capture, wai
     time.sleep(.3)
     key('c','ctrl');time.sleep(.2)  # Retain the file clipboard through later text copies.
     key('F2');capture('inline-rename')
-    # 170x53, Fira Code 16px, image icons: first file name starts at cell 31,11.
-    drag(32,11,35,11);key('c','ctrl')
+    # 170x53, Fira Code 16px, image icons: first file name starts at cell 31,10.
+    drag(32,10,35,10);key('c','ctrl')
     wait_for(lambda:get()=='ena','mouse text range copied exactly once')
     key('x','ctrl');time.sleep(.15)
     key('Home');key('End','shift');key('c','ctrl')
@@ -89,7 +89,7 @@ def exercise(folder, target, key, type_text, put, get, click, drag, capture, wai
     assert (target/'renamed.txt').read_text()=='editor data'
     time.sleep(.3);navigate(folder);key('Home');key('F2')
     put('отчёт 画像');time.sleep(.2)
-    click(34,11,3);capture('text-edit-menu');click(36,14)
+    click(34,10,3);capture('text-edit-menu');click(36,13)
     time.sleep(.35);key('Return')
     final=folder/'отчёт 画像.txt'
     wait_for(final.exists,'mouse context-menu Unicode paste into filename')

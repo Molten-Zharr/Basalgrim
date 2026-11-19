@@ -67,7 +67,7 @@ def main():
             send(f'\x1b[<{code};{point[0]+1};{point[1]+1}M');send(f'\x1b[<{code};{point[0]+1};{point[1]+1}m')
         def navigate(path):send(b'\x0c\x15\x1b[200~'+str(path).encode()+b'\x1b[201~\r');pump(.2)
         def uri(paths):return ''.join('file://'+quote_from_bytes(os.fsencode(p),safe='/')+'\r\n' for p in paths).encode()
-        def start_drop(point=(34,11),action=3):
+        def start_drop(point=(34,10),action=3):
             session=wire();osc(f't=m:x={point[0]}:y={point[1]}:o={action}',b'text/uri-list')
             osc(f't=M:x={point[0]}:y={point[1]}:o={action}',b'text/uri-list')
             wait(lambda:f't=r:x=1:i={session};'.encode() in output,'request URI-list after drop');return session
@@ -79,7 +79,7 @@ def main():
             wait(lambda:f't=r:o={operation}:i={session};'.encode() in output,'protocol completion');wait(lambda:wire()!=session,'new session identity')
         try:
             wait(lambda:wire() is not None,'Kitty DnD negotiation')
-            mouse((34,12));send(b'\x03')
+            mouse((34,11));send(b'\x03')
             session=start_drop();data(uri([foreign/'a.txt',raw]),session)
             settled(lambda:(local/'folder/a.txt').exists() and (local/'folder'/raw.name).exists(),'URI batch move with raw Unix name');acknowledged(session,2)
             assert not (foreign/'a.txt').exists() and not raw.exists()
@@ -101,8 +101,8 @@ def main():
             # The terminal's native offer gesture captures the same marked group as an internal drag.
             outgoing=root/'outgoing';outgoing.mkdir();(outgoing/'folder').mkdir()
             for name in ('one.txt','two.txt'):(outgoing/name).write_text(name)
-            navigate(outgoing);mouse((34,12),True);mouse((34,13),True)
-            session=wire();offset=len(output);osc('t=o:x=34:y=13')
+            navigate(outgoing);mouse((34,11),True);mouse((34,12),True)
+            session=wire();offset=len(output);osc('t=o:x=34:y=12')
             wait(lambda:b't=P:x=-1:' in output[offset:],'terminal native source offer')
             packets=re.findall(rb'\x1b\]72;t=p:x=0:m=1:i=\d+;([^\x1b]*)\x1b\\',output[offset:])
             offered=base64.b64decode(b''.join(packets));assert uri([outgoing/'one.txt',outgoing/'two.txt'])==offered,offered

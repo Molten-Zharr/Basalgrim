@@ -46,9 +46,9 @@ def exercise(base, root, key, type_text, click, capture, wait_for):
     gtk = (base / "config/gtk-3.0/bookmarks").read_bytes()
     xbel = (base / "data/recently-used.xbel").read_bytes()
     # Favorite from the actual file context menu, not a direct App call.
-    click(34, 11, 3)
+    click(34, 10, 3)
     capture("context")
-    click(36, 19)
+    click(36, 18)
     wait_for(lambda: len(rows(base, 1)) == 1, "context-menu add to favorites")
     key("b", "ctrl")
     time.sleep(.3)

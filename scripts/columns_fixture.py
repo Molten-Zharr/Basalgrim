@@ -22,7 +22,7 @@ def first_width(specs,width):
     return widths[0]
 
 def exercise(f,key,text,click,drag,screenshot,cells=(170,53)):
-    w,h=cells;y=7 if h<20 else 8 if h<30 else 10
+    w,h=cells;y=7 if h<20 else 8 if h<30 else 9
     my=min(y,h-13)+1
     click(2,y,3);time.sleep(.2);screenshot('menu')
     for index in [1,5,4]:click(5,my+index);time.sleep(.2)

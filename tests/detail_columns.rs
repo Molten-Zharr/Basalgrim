@@ -111,6 +111,25 @@ fn drag(app: &mut App, c: Column, delta: u16) {
     });
 }
 #[test]
+fn list_count_tracks_filtered_entries_and_header_follows_breadcrumbs() {
+    let (_t, mut app) = setup();
+    for (query, count) in [("", 3), ("b.txt", 1), ("absent", 0)] {
+        app.tab_mut().filter = query.into();
+        app.tab_mut().rebuild(false);
+        for (w, h) in [(34, 14), (170, 53)] {
+            let screen = render(&mut app, w, h);
+            assert!(screen.contains(&format!("ФАЙЛЫ ({count})")));
+            assert_eq!(screen.matches("Имя ↑").count(), 1);
+            let path = hit(&app, |t| matches!(t, Target::PathEdit(_)));
+            assert_eq!(header(&app, Column::Name).y, path.bottom());
+        }
+    }
+    app.tab_mut().sort = Sort::Size;
+    let screen = render(&mut app, 170, 53);
+    assert!(screen.contains("Размер ↓"));
+}
+
+#[test]
 fn equal_shares_custom_widths_and_double_click_follow_the_requested_example() {
     let mut l = Layout::default();
     assert_eq!(l.widths(100), [100]);

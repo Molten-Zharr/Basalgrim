@@ -663,18 +663,18 @@ try:
             try:
                 x.XMoveResizeWindow(d,lwin,0,0,800,860);x.XFlush(d);time.sleep(.25)
                 right,rwin,rlog=launch(target,config);x.XMoveResizeWindow(d,rwin,800,0,800,860);x.XFlush(d);time.sleep(.3)
-                focus(lwin);click(lwin,34,15);chord('c','Control_L');time.sleep(.25)
+                focus(lwin);click(lwin,34,14);chord('c','Control_L');time.sleep(.25)
                 before=subprocess.check_output([xclip,'-selection','clipboard','-out'],timeout=3)
-                click(lwin,34,11);key('Control_L',True);click(lwin,34,12);click(lwin,34,13);key('Control_L',False)
-                band_begin(lwin,(34,13),(145,25));screenshot(root,'native-external-dnd.png');band_end()
+                click(lwin,34,10);key('Control_L',True);click(lwin,34,11);click(lwin,34,12);key('Control_L',False)
+                band_begin(lwin,(34,12),(145,25));screenshot(root,'native-external-dnd.png');band_end()
                 wait_for(lambda:all((target/n).exists() for n in ('a.txt','b.txt')),'X11 native group drop into another window')
                 assert not (source/'a.txt').exists() and not (source/'b.txt').exists()
                 assert subprocess.check_output([xclip,'-selection','clipboard','-out'],timeout=3)==before,'DnD replaced the system clipboard'
                 focus(lwin);key('Control_L',True)
-                try:band_begin(lwin,(34,12),(145,25));band_end()
+                try:band_begin(lwin,(34,11),(145,25));band_end()
                 finally:key('Control_L',False)
                 wait_for(lambda:(target/'copy.txt').exists(),'X11 Ctrl-copy to another window');assert (source/'copy.txt').exists()
-                focus(lwin);band_begin(lwin,(34,13),(145,25));key('Escape');time.sleep(.2);band_end();time.sleep(.2)
+                focus(lwin);band_begin(lwin,(34,12),(145,25));key('Escape');time.sleep(.2);band_end();time.sleep(.2)
                 assert (source/'keep.txt').exists() and not (target/'keep.txt').exists(),'X11 external Escape moved a file'
                 focus(rwin);time.sleep(.3);chord('z','Control_L');wait_for(lambda:not (target/'copy.txt').exists(),'X11 external copy undo')
                 time.sleep(.3);chord('z','Control_L');wait_for(lambda:(source/'a.txt').exists() and (source/'b.txt').exists(),'X11 external group move undo')
@@ -695,7 +695,7 @@ try:
                         focus(gwin);band_begin(gwin,(50,25),(145,25));screenshot(root,'native-external-dnd-gtk-drag.png');band_end()
                         wait_for(lambda:(target/'gtk-input.txt').exists(),'GTK -> Basalgrim URI-list drop');assert (gtk_source/'gtk-input.txt').exists()
                         wait_for(lambda:'DRAG_FINISHED' in Path('target/preview/native-gtk-peer.log').read_text(),'GTK completion acknowledgement')
-                        focus(rwin);band_begin(rwin,(34,13),(-50,25));band_end()
+                        focus(rwin);band_begin(rwin,(34,12),(-50,25));band_end()
                         wait_for(lambda:(gtk_target/'gtk-input.txt').exists(),'Basalgrim -> GTK drop');assert (target/'gtk-input.txt').exists()
                         screenshot(root,'native-external-dnd-gtk.png')
                         print('Native X11 GTK4 interoperability: incoming and outgoing file-list Copy passed',flush=True)
@@ -714,10 +714,10 @@ try:
             def snapshot():return json.loads(session.read_text()) if session.exists() else None
             try:
                 parent_x=25+3+1+5+1+len(base.name)+2+1+1
-                band_begin(window,(34,11),(parent_x,8));screenshot(window,'native-breadcrumb-drop.png');band_end()
+                band_begin(window,(34,10),(parent_x,8));screenshot(window,'native-breadcrumb-drop.png');band_end()
                 wait_for(lambda:(parent/'ancestor.txt').exists(),'native breadcrumb move several levels up')
                 assert not (inside/'ancestor.txt').exists();time.sleep(.25)
-                key('Control_L',True);band_begin(window,(34,11),(parent_x,8));band_end();key('Control_L',False)
+                key('Control_L',True);band_begin(window,(34,10),(parent_x,8));band_end();key('Control_L',False)
                 wait_for(lambda:(parent/'peer.txt').exists(),'native Ctrl breadcrumb copy');assert (inside/'peer.txt').exists()
                 wait_for(lambda:snapshot() and snapshot()['panes'][0]['tabs']==[str(inside)],'breadcrumb drop preserves current directory')
                 click(window,37,6);wait_for(lambda:len(snapshot()['panes'][0]['tabs'])==2,'native plus creates left tab')
@@ -742,21 +742,21 @@ try:
         for name in ('a.txt','b.txt','c.txt'):(drag_root/name).write_text(name)
         process,window,log=launch(drag_root,config)
         try:
-            key('Control_L',True);click(window,34,12);click(window,34,13);key('Control_L',False)
-            band_begin(window,(34,13),(34,11));screenshot(window,'native-drag-group.png');band_end()
+            key('Control_L',True);click(window,34,11);click(window,34,12);key('Control_L',False)
+            band_begin(window,(34,12),(34,10));screenshot(window,'native-drag-group.png');band_end()
             wait_for(lambda:all((drag_root/'folder'/n).exists() for n in ('a.txt','b.txt')),'native group drag into folder')
             assert not (drag_root/'a.txt').exists() and not (drag_root/'b.txt').exists();time.sleep(.25)
-            key('Control_L',True);band_begin(window,(34,12),(34,11));band_end();key('Control_L',False)
+            key('Control_L',True);band_begin(window,(34,11),(34,10));band_end();key('Control_L',False)
             wait_for(lambda:(drag_root/'folder/c.txt').exists(),'native Ctrl drag copy');assert (drag_root/'c.txt').exists()
-            band_begin(window,(34,12),(34,11));key('Escape');band_end();assert (drag_root/'c.txt').exists()
+            band_begin(window,(34,11),(34,10));key('Escape');band_end();assert (drag_root/'c.txt').exists()
             tab_dest=base/'drop-target';tab_dest.mkdir();chord('t','Control_L');navigate(tab_dest);click(window,28,6)
-            band_begin(window,(34,12),(50,6));screenshot(window,'native-drag-tab.png');band_end()  # Inside the second tab, after the active tab's close cross.
+            band_begin(window,(34,11),(50,6));screenshot(window,'native-drag-tab.png');band_end()  # Inside the second tab, after the active tab's close cross.
             wait_for(lambda:(tab_dest/'c.txt').exists(),'native inactive tab drop');assert not (drag_root/'c.txt').exists()
             time.sleep(.25);chord('z','Control_L');wait_for(lambda:(drag_root/'c.txt').exists(),'native drag undo')
             time.sleep(.25);chord('y','Control_L');wait_for(lambda:not (drag_root/'c.txt').exists(),'native drag redo')
             (drag_root/'pane.txt').write_text('pane drag');time.sleep(.5);chord('d','Control_L');click(window,110,25)
             pane_dest=base/'drop-pane';pane_dest.mkdir();navigate(pane_dest)
-            band_begin(window,(34,12),(110,25));band_end();wait_for(lambda:(pane_dest/'pane.txt').exists(),'native other-pane drop')
+            band_begin(window,(34,11),(110,25));band_end();wait_for(lambda:(pane_dest/'pane.txt').exists(),'native other-pane drop')
             quit_when_ready(process)
         finally:stop(process,log)
         settings.write_text(json.dumps({'preview':False,'grid':True,'font_size':16,'theme':'light'}))
@@ -896,18 +896,18 @@ try:
             assert screenshot(window,'native-menu-hover-padding.png').tobytes()==baseline.tobytes(), 'Menu background flashed on hover'
             click(window,6,10,3) # Dismiss the complete command palette.
             screenshot(window,'native-mouse-start.png')
-            # 170x53 cells, first file row 11. Contextual file commands.
-            click(window,34,13,3); screenshot(window,'native-context-menu.png')
-            click(window,36,17) # Open, Open With, Properties, Copy, Cut, ...
-            click(window,34,11); click(window,34,11)
+            # 170x53 cells, first file row 10. Contextual file commands.
+            click(window,34,12,3); screenshot(window,'native-context-menu.png')
+            click(window,36,16) # Open, Open With, Properties, Copy, Cut, ...
+            click(window,34,10); click(window,34,10)
             # Directory background -> New File, New Folder, Paste, ...
             click(window,34,22,3); screenshot(window,'native-directory-menu.png'); click(window,36,25)
             wait_for(lambda:(mouse/'destination/alpha.txt').exists(),'mouse context copy/paste');time.sleep(.4)
             # Right click the pasted file -> Cut, navigate Parent via toolbar.
-            click(window,34,11,3); screenshot(window,'native-context-cut.png'); click(window,36,16)
+            click(window,34,10,3); screenshot(window,'native-context-cut.png'); click(window,36,15)
             click(window,21,3)
-            # Open moved (row12), then Paste from the background menu.
-            click(window,34,12); click(window,34,12)
+            # Open moved (row11), then Paste from the background menu.
+            click(window,34,11); click(window,34,11)
             click(window,34,22,3); click(window,36,25)
             wait_for(lambda:(mouse/'moved/alpha.txt').exists(),'mouse context cut/paste')
             assert not (mouse/'destination/alpha.txt').exists()
@@ -927,10 +927,10 @@ try:
         for name in ('alpha.txt','beta.txt','gamma.txt'): (group/name).write_text(name)
         process,window,log=launch(group,config)
         try:
-            key('Control_L',True); click(window,34,12); click(window,34,13); key('Control_L',False)
-            click(window,34,12,3); screenshot(window,'native-group-menu.png')
-            click(window,36,13) # Group: Copy, Cut, Duplicate, Trash.
-            click(window,34,11); click(window,34,11)
+            key('Control_L',True); click(window,34,11); click(window,34,12); key('Control_L',False)
+            click(window,34,11,3); screenshot(window,'native-group-menu.png')
+            click(window,36,12) # Group: Copy, Cut, Duplicate, Trash.
+            click(window,34,10); click(window,34,10)
             click(window,34,22,3); click(window,36,25)
             wait_for(lambda:all((group/'destination'/n).exists() for n in ('alpha.txt','beta.txt')),'Ctrl-selected group copy')
             assert not (group/'destination/gamma.txt').exists(), 'Copied an unmarked file'
@@ -942,19 +942,19 @@ try:
         for name in ('alpha.txt','beta.txt','gamma.txt'): (band_files/name).write_text(name)
         process,window,log=launch(band_files,config)
         try:
-            band_begin(window,(168,13),(26,12)); screenshot(window,'native-selection-list.png'); band_end()
+            band_begin(window,(168,12),(26,11)); screenshot(window,'native-selection-list.png'); band_end()
             chord('c','Control_L'); navigate(band_files/'destination'); chord('v','Control_L')
             wait_for(lambda:all((band_files/'destination'/n).exists() for n in ('alpha.txt','beta.txt')),'list rectangle copy')
             assert not (band_files/'destination/gamma.txt').exists()
             navigate(band_files)
-            band_begin(window,(168,13),(26,12)); band_end()
-            key('Control_L',True); band_begin(window,(168,14),(26,14)); band_end(); key('Control_L',False)
+            band_begin(window,(168,12),(26,11)); band_end()
+            key('Control_L',True); band_begin(window,(168,13),(26,13)); band_end(); key('Control_L',False)
             screenshot(window,'native-selection-ctrl.png')
             all_files=base/'band-all'; all_files.mkdir()
             chord('c','Control_L'); navigate(all_files); chord('v','Control_L')
             wait_for(lambda:all((all_files/n).exists() for n in ('alpha.txt','beta.txt','gamma.txt')),'Ctrl additive rectangle')
-            navigate(band_files); band_begin(window,(168,13),(26,12)); band_end()
-            band_begin(window,(168,14),(26,14)); key('Escape'); band_end()
+            navigate(band_files); band_begin(window,(168,12),(26,11)); band_end()
+            band_begin(window,(168,13),(26,13)); key('Escape'); band_end()
             cancelled=base/'band-cancelled'; cancelled.mkdir()
             chord('c','Control_L'); navigate(cancelled); chord('v','Control_L')
             wait_for(lambda:all((cancelled/n).exists() for n in ('alpha.txt','beta.txt')),'Escape restores original rectangle selection')
@@ -997,7 +997,7 @@ try:
                 assert sorted(p.name for p in protected.iterdir())==['file-000.txt'], sorted(p.name for p in protected.iterdir())
                 navigate(wheel_files)
                 for _ in range(notches): click(window,50,20,5)
-                click(window,34,12 if grid else 11)
+                click(window,34,12 if grid else 10)
                 # XTest emits legacy wheel press/release pairs; winit maps
                 # both to wheel events. Wayland and PTY test one event per notch.
                 expected=f'file-{16 if grid else 18:03}.txt'
@@ -1020,7 +1020,7 @@ try:
                 for index in range(8 if grid else 1): (watched/f'file--new-{index:03}').write_text('x')
                 time.sleep(1)
                 after=screenshot(window,f'native-watch-{mode}-after.png')
-                top=(200,10*16,1000,14*16) if grid else (200,11*16,1300,12*16)
+                top=(200,10*16,1000,14*16) if grid else (200,10*16,1300,11*16)
                 assert before.crop(top).tobytes()==after.crop(top).tobytes(), 'Watch refresh moved the viewport'
                 protected=base/f'watch-protected-{mode}'; protected.mkdir()
                 chord('c','Control_L'); navigate(protected); chord('v','Control_L')
@@ -1030,7 +1030,7 @@ try:
                 # without navigation, refresh keys or any pointer input.
                 live=base/f'live-{mode}'; live.mkdir(); (live/'beta.txt').write_text('original')
                 navigate(live); (live/'alpha.txt').write_text('created externally'); time.sleep(1)
-                click(window,34,12 if grid else 11); chord('c','Control_L')
+                click(window,34,12 if grid else 10); chord('c','Control_L')
                 added=base/f'watch-added-{mode}'; added.mkdir(); navigate(added); chord('v','Control_L')
                 wait_for(lambda:(added/'alpha.txt').exists(),'new external entry has a correct hit region')
                 print(f'Native GUI watch: {mode}, preserved pixels and selection, external entry click passed',flush=True)
@@ -1121,15 +1121,15 @@ try:
         process,window,log=launch(pane_source,config)
         try:
             key('Tab'); navigate(pane_dest); key('Tab')
-            key('Control_L',True); click(window,34,11); click(window,34,12); key('Control_L',False)
+            key('Control_L',True); click(window,34,10); click(window,34,11); key('Control_L',False)
             chord('F5','Shift_L')
             wait_for(lambda:all((pane_dest/n).exists() for n in ('a.txt','b.txt')),'GUI copy to other pane')
             assert not (pane_dest/'untouched').exists()
-            time.sleep(.4); click(window,34,11,3); screenshot(window,'native-pane-commands.png'); click(window,36,15)
+            time.sleep(.4); click(window,34,10,3); screenshot(window,'native-pane-commands.png'); click(window,36,14)
             wait_for(lambda:all((pane_source/n).exists() for n in ('a (1).txt','b (1).txt')),'GUI mouse group duplicate')
             time.sleep(.4); chord('F6','Shift_L'); time.sleep(.6); key('space'); key('Up'); key('Return'); time.sleep(.4)
             for name in ('a.txt','b.txt'): assert (pane_source/name).exists(); (pane_dest/name).unlink()
-            time.sleep(.5); click(window,34,12,3); click(window,36,18)
+            time.sleep(.5); click(window,34,11,3); click(window,36,17)
             wait_for(lambda:all(not (pane_source/n).exists() and (pane_dest/n).exists() for n in ('a.txt','b.txt')),'GUI mouse move to other pane')
             time.sleep(.4); key('Home'); chord('F5','Control_L')
             wait_for(lambda:(pane_source/'a (1) (1).txt').exists(),'GUI duplicate shortcut')
