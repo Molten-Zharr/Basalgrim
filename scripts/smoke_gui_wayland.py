@@ -941,13 +941,13 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
             click(165,8);wait_for(lambda:copied_path()==str(path_dir),"Wayland copy full Unicode path")
             current_x=25+sum(len(part)+3 for part in path_dir.parts[:-1])+1
             click(current_x,8);key("c","ctrl");assert copied_path()==str(path_dir);key("Escape")
-            click(current_x,8);run("wtype","-s","100","/tmp/abcdef","-s","100");key("End")
+            click(160,8);run("wtype","-s","100","/tmp/abcdef","-s","100");key("End")
             run("grim","-g","200,128 1000x16",str(out/"native-wayland-caret-end.png"))
             key("Left");run("grim","-g","200,128 1000x16",str(out/"native-wayland-caret-left.png"))
             with Image.open(out/"native-wayland-caret-end.png") as end_caret, Image.open(out/"native-wayland-caret-left.png") as left_caret:
                 assert end_caret.tobytes()!=left_caret.tobytes(),"Wayland caret did not move on unchanged text"
-            run("wtype","x");key("c","ctrl");wait_for(lambda:copied_path()=="/tmp/abcdexf","Wayland insertion follows visible caret")
-            click(32,8);run("wtype","y");key("c","ctrl");wait_for(lambda:copied_path()=="/tmp/abycdexf","Wayland mouse positions caret");key("Escape")
+            run("wtype","x");key("a","ctrl");key("c","ctrl");wait_for(lambda:copied_path()=="/tmp/abcdexf","Wayland insertion follows visible caret")
+            click(32,8);run("wtype","y");key("a","ctrl");key("c","ctrl");wait_for(lambda:copied_path()=="/tmp/abycdexf","Wayland mouse positions caret");key("Escape")
             key("l","ctrl");key("c","ctrl");assert copied_path()==str(path_dir);key("Escape")
             parent_x=25+sum(len(part)+3 for part in path_parent.parts[:-1])+1
             click(parent_x,8);click(165,8);wait_for(lambda:copied_path()==str(path_parent),"Wayland ancestor breadcrumb")

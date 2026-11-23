@@ -12,30 +12,6 @@ pub struct GroupMenu {
     pub selected: usize,
 }
 impl App {
-    pub fn group_checkbox(&mut self, owner: PathOwner, request: u64, enabled: bool) {
-        if !matches!(self.dialog, Some(Dialog::Commands(_)))
-            || !owner.valid(self)
-            || self.file_tab(owner.pane).request != request
-            || self.settings.grouping.enabled != enabled
-        {
-            return;
-        }
-        let Some(index) = self
-            .command_items()
-            .iter()
-            .position(|i| i.action == Action::Grouping && i.enabled)
-        else {
-            return;
-        };
-        if !enabled {
-            self.choose_command(index);
-            return;
-        }
-        self.dialog = None;
-        let mut policy = self.settings.grouping;
-        policy.enabled = false;
-        self.set_grouping(policy);
-    }
     pub fn set_grouping(&mut self, policy: Grouping) {
         self.finish_column_drag(true);
         self.cancel_file_drag();
@@ -64,12 +40,13 @@ impl App {
         }
         self.cancel_file_drag();
         self.finish_marquee(true);
+        self.hits.clear();
         self.dialog = Some(Dialog::Grouping(GroupMenu {
             token: self.token(),
             owner: PathOwner::current(self, self.active),
             request: self.tab().request,
             anchor,
-            selected: 0,
+            selected: self.settings.grouping.selected_row(),
         }));
     }
     fn group_valid(&self, m: &GroupMenu) -> bool {
@@ -84,22 +61,22 @@ impl App {
         }
         let mut policy = self.settings.grouping;
         if row == 0 {
-            policy.enabled = !policy.enabled;
-        } else if !policy.enabled {
-            return;
-        } else if row == 1 {
+            policy.enabled = false;
+        } else if let Some(&field) = Column::ALL.get(row - 1) {
+            if field != policy.field {
+                policy.field = field;
+                policy.descending = policy.date();
+            }
+            policy.enabled = true;
+        } else if row == Grouping::ORDER_ROW && policy.enabled {
             policy.descending = !policy.descending;
-        } else if let Some(field) = Column::ALL.get(row - 2) {
-            policy.field = *field;
-            policy.descending = policy.date();
         } else {
             return;
         }
-        self.set_grouping(policy);
-        let token = self.token();
-        if let Some(Dialog::Grouping(m)) = &mut self.dialog {
-            m.token = token;
-            m.selected = row;
+        self.dialog = None;
+        self.hits.clear();
+        if policy != self.settings.grouping {
+            self.set_grouping(policy);
         }
     }
     pub(super) fn grouping_input(&mut self, input: &Input) -> bool {
@@ -115,16 +92,13 @@ impl App {
         };
         if let Input::Key(k) = input {
             let token = m.token;
+            let last = Column::ALL.len() + usize::from(self.settings.grouping.enabled);
             match k.key {
                 Key::Escape => self.cancel_dialog(),
+                Key::Home => m.selected = 0,
+                Key::End => m.selected = last,
                 Key::Up => m.selected = m.selected.saturating_sub(1),
-                Key::Down => {
-                    m.selected = (m.selected + 1).min(if self.settings.grouping.enabled {
-                        11
-                    } else {
-                        0
-                    })
-                }
+                Key::Down => m.selected = (m.selected + 1).min(last),
                 Key::Enter | Key::Char(' ') => {
                     let row = m.selected;
                     self.group_control(token, row);

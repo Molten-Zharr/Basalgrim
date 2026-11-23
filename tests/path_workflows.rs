@@ -305,7 +305,7 @@ fn new_path_shortcut_preserves_existing_clipboard_bindings() {
 }
 
 #[test]
-fn clicking_current_component_edits_in_place_without_hidden_buttons() {
+fn current_component_and_trailing_space_edit_in_place_up_to_the_copy_button() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("opt");
     let dest = root.path().join("Другая папка");
@@ -322,20 +322,16 @@ fn clicking_current_component_edits_in_place_without_hidden_buttons() {
         .filter(|(_, t)| matches!(t, Target::PathEdit(_)))
         .collect();
     assert_eq!(edit_hits.len(), 1);
-    assert_eq!(
-        current.width, 5,
-        "only the visible 'opt' component edits the path"
-    );
-    app.handle(Input::Pointer(Some(
-        (current.right() + 2, current.y).into(),
-    )));
+    let copy = hit(&app, |t| matches!(t, Target::PathCopy(_)));
+    assert_eq!(current.right(), copy.x);
+    assert!(current.width > 5);
+    let blank = Rect::new(copy.x - 1, current.y, 1, 1);
+    assert_eq!(before[(blank.x, blank.y)].symbol(), " ");
+    app.handle(Input::Pointer(Some((blank.x, blank.y).into())));
     render(&mut app, 150, 44);
-    assert_eq!(
-        app.hovered_area(),
-        None,
-        "blank space must not be an invisible button"
-    );
-    click(&mut app, current);
+    assert_eq!(app.hovered_area(), Some(current));
+    assert!(app.dialog.is_none());
+    click(&mut app, blank);
     let editing = render(&mut app, 150, 44);
     let field = hit(&app, |t| matches!(t, Target::TextSelect { .. }));
     assert_eq!(field.y, current.y);

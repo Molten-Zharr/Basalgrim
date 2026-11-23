@@ -96,7 +96,13 @@ impl App {
             Action::Extensions => self.open_extensions(false, false),
             Action::ExtensionCommands => self.open_extensions(true, false),
             Action::Palette => self.open_palette(),
-            Action::Grouping => self.open_grouping(self.pointer.unwrap_or(Position::new(2, 4))),
+            Action::Grouping => {
+                let anchor = self.hits.iter().find_map(|(r, target)| {
+                    matches!(target, Target::Action(Action::Grouping))
+                        .then(|| Position::new(r.x, r.bottom()))
+                });
+                self.open_grouping(anchor.unwrap_or(Position::new(2, 4)));
+            }
             Action::Devices => self.open_devices(),
             Action::Properties => self.open_details(false, false),
             Action::OpenWith => self.open_details(false, true),

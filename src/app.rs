@@ -102,11 +102,6 @@ pub enum Target {
         menu: Option<u64>,
         control: FilterControl,
     },
-    GroupCheck {
-        owner: PathOwner,
-        request: u64,
-        enabled: bool,
-    },
     GroupControl {
         token: u64,
         row: usize,

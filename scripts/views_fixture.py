@@ -33,7 +33,7 @@ def exercise(f,key,text,click,screenshot,cells=(170,53),wheel=None):
         wait(lambda:f.config().get('view')==['icons','list','columns','tree'][index],'view choice')
     def rename(name):key('F2');key('u','ctrl');text(name);key('Return');time.sleep(.4)
     # The toolbar's View button is always a visible mouse target, even at 34x14.
-    click(55 if w>=80 else 29,2 if h<20 else 3)
+    click(55 if w>=80 else 29 if w>=42 else 19,2 if h<20 else 3)
     screenshot('chooser')
     click(x+5,y+2)
     wait(lambda:f.config().get('view')=='columns','toolbar view chooser')

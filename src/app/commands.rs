@@ -320,11 +320,6 @@ impl App {
             };
             self.dialog = None;
             if action == Action::Grouping {
-                if !self.settings.grouping.enabled {
-                    let mut p = self.settings.grouping;
-                    p.enabled = true;
-                    self.set_grouping(p);
-                }
                 self.open_grouping(anchor);
                 return;
             }
@@ -371,18 +366,6 @@ impl App {
         let Some(Dialog::Commands(menu)) = &mut self.dialog else {
             return;
         };
-        if press.key == Key::Char(' ')
-            && items
-                .get(menu.selected)
-                .is_some_and(|i| i.action == Action::Grouping)
-        {
-            self.group_checkbox(
-                PathOwner::current(self, self.active),
-                self.tab().request,
-                self.settings.grouping.enabled,
-            );
-            return;
-        }
         if press.key == Key::Enter {
             let index = menu.selected;
             self.choose_command(index);

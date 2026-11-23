@@ -433,17 +433,27 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
 
 fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
     if width < 80 {
-        return vec![
+        let shortcut = app.settings.shortcut(Action::Search);
+        let search = if shortcut.width() > 5 {
+            "Поиск"
+        } else {
+            &shortcut
+        };
+        let mut commands = vec![
             (" Действия ".into(), Action::Commands),
             (" ← ".into(), Action::Back),
             (" ↑ ".into(), Action::Parent),
             (" ⌂ ".into(), Action::Home),
-            (
-                format!(" {} ", app.settings.shortcut(Action::Search)),
-                Action::Search,
-            ),
+            (format!(" {search} "), Action::Search),
             (" Вид ".into(), Action::View),
+            (" Группы ".into(), Action::Grouping),
         ];
+        if toolbar_rows(width, &commands) > 1 {
+            for (label, _) in &mut commands {
+                *label = label.trim().to_owned();
+            }
+        }
+        return commands;
     }
     let mut commands = vec![
         (" Действия ".into(), Action::Commands),
@@ -460,10 +470,35 @@ fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
             format!(" Вид: {} ", app.settings.view_mode().name()),
             Action::View,
         ),
+        (
+            if width >= 110 {
+                let policy = app.settings.grouping;
+                format!(
+                    " Группировка: {} ",
+                    if policy.enabled {
+                        policy.field.label()
+                    } else {
+                        "нет"
+                    }
+                )
+            } else {
+                " Группы ".into()
+            },
+            Action::Grouping,
+        ),
     ];
     if app.in_trash() {
         commands.retain(|(_, action)| !matches!(action, Action::NewFolder));
         commands.insert(5, (" Очистить корзину ".into(), Action::EmptyTrash));
+    }
+    if toolbar_rows(width, &commands) > 1 {
+        for (label, action) in &mut commands {
+            match action {
+                Action::Search => *label = " Поиск ".into(),
+                Action::View => *label = " Вид ".into(),
+                _ => {}
+            }
+        }
     }
     commands
 }

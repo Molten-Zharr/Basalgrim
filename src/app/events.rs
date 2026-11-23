@@ -246,11 +246,6 @@ impl App {
                         revision,
                         path,
                     }) => self.toggle_tree(owner, request, revision, path),
-                    Some(Target::GroupCheck {
-                        owner,
-                        request,
-                        enabled,
-                    }) => self.group_checkbox(owner, request, enabled),
                     Some(Target::GroupControl { token, row }) => self.group_control(token, row),
                     Some(Target::ViewChoose { token, mode }) => {
                         self.view_control(token, Some(mode), 0)

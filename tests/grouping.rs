@@ -264,11 +264,75 @@ fn grouping_is_independent_of_sort_columns_and_survives_settings_reload() {
     assert_eq!(app.tab().entry().unwrap().path, path);
 }
 #[test]
-fn contextual_checkbox_dropdown_is_compact_and_rejects_old_controls() {
+fn toolbar_opens_all_group_choices_and_applies_only_the_selected_row() {
     let (_tmp, mut app) = setup(ViewMode::List);
-    let mut p = app.settings.grouping;
-    p.enabled = false;
-    app.set_grouping(p);
+    let off = Grouping {
+        enabled: false,
+        ..app.settings.grouping
+    };
+    app.set_grouping(off);
+    for (view_mode, w, h) in [
+        (ViewMode::List, 34, 14),
+        (ViewMode::List, 50, 22),
+        (ViewMode::List, 80, 24),
+        (ViewMode::Tree, 80, 24),
+        (ViewMode::Icons, 170, 53),
+    ] {
+        app.settings.view = Some(view_mode);
+        render(&mut app, w, h);
+        let view = hit(&app, |t| matches!(t, Target::Action(Action::View)));
+        let button = hit(&app, |t| matches!(t, Target::Action(Action::Grouping)));
+        assert_eq!(button.y, view.y);
+        assert!(button.x >= view.right() && button.right() <= w);
+        click(&mut app, button);
+        let buffer = render(&mut app, w, h);
+        assert_eq!(app.settings.grouping, off);
+        for row in 0..=Column::ALL.len() {
+            let area = hit(
+                &app,
+                |t| matches!(t, Target::GroupControl {row: r,..} if *r == row),
+            );
+            assert!(area.bottom() <= h && area.width > 15);
+        }
+        let text: String = buffer.content.iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("● Без группировки"));
+        assert!(text.contains("Дата изменения · месяц"));
+        let old = match &app.dialog {
+            Some(Dialog::Grouping(m)) => m.token,
+            _ => panic!(),
+        };
+        key(&mut app, Key::Escape);
+        assert_eq!(app.settings.grouping, off);
+
+        render(&mut app, w, h);
+        app.handle(Input::Key(KeyPress {
+            alt: true,
+            ..KeyPress::ctrl('g')
+        }));
+        render(&mut app, w, h);
+        app.group_control(old, 1);
+        assert_eq!(app.settings.grouping, off);
+        let r = hit(&app, |t| matches!(t, Target::GroupControl { row: 6, .. }));
+        click(&mut app, r);
+        assert!(app.dialog.is_none() && !app.tab().groups.is_empty());
+        assert_eq!(app.settings.grouping.field, Column::Modified);
+
+        render(&mut app, w, h);
+        click(&mut app, button);
+        assert!(matches!(&app.dialog, Some(Dialog::Grouping(m)) if m.selected == 6));
+        key(&mut app, Key::Home);
+        key(&mut app, Key::Enter);
+        assert!(app.dialog.is_none() && app.tab().groups.is_empty());
+        assert_eq!(app.settings.grouping, off);
+    }
+}
+
+#[test]
+fn grouping_from_directory_menu_opens_without_changing_policy() {
+    let (_tmp, mut app) = setup(ViewMode::List);
+    let mut policy = app.settings.grouping;
+    policy.enabled = false;
+    app.set_grouping(policy);
     render(&mut app, 34, 14);
     let area = app.file_areas[0];
     app.handle(Input::SecondaryClick {
@@ -282,35 +346,14 @@ fn contextual_checkbox_dropdown_is_compact_and_rejects_old_controls() {
         .unwrap();
     if let Some(Dialog::Commands(m)) = &mut app.dialog {
         m.selected = index;
-        m.offset = index;
     }
-    render(&mut app, 34, 14);
-    let r = hit(&app, |t| {
-        matches!(t, Target::GroupCheck { enabled: false, .. })
-    });
-    click(&mut app, r);
-    assert!(app.settings.grouping.enabled);
-    render(&mut app, 34, 14);
-    let old = match &app.dialog {
-        Some(Dialog::Grouping(m)) => m.token,
-        _ => panic!("group menu"),
-    };
-    for row in 0..12 {
-        assert!(
-            app.hits
-                .iter()
-                .any(|(_, t)| matches!(t,Target::GroupControl{row:r,..}if *r==row))
-        );
-    }
-    let r = hit(&app, |t| matches!(t, Target::GroupControl { row: 5, .. }));
-    click(&mut app, r);
-    assert_eq!(app.settings.grouping.field, Column::Extension);
-    app.group_control(old, 0);
-    assert!(app.settings.grouping.enabled, "stale checkbox ignored");
-    render(&mut app, 34, 14);
-    let r = hit(&app, |t| matches!(t, Target::GroupControl { row: 0, .. }));
-    click(&mut app, r);
-    assert!(!app.settings.grouping.enabled);
+    key(&mut app, Key::Enter);
+    assert!(matches!(app.dialog, Some(Dialog::Grouping(_))));
+    assert_eq!(app.settings.grouping, policy);
+    key(&mut app, Key::End);
+    key(&mut app, Key::Enter);
+    assert!(app.dialog.is_none() && app.settings.grouping.enabled);
+    assert_eq!(app.settings.grouping.field, Column::Location);
 }
 #[test]
 fn tree_roots_keep_descendants_and_headers_never_become_entries() {

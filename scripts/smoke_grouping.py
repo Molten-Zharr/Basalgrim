@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real 34x14 PTY visual grouping, contextual controls and persistence."""
+"""Exercise file grouping via the toolbar and keyboard across a restart in a 34x14 PTY."""
 import fcntl
 import os
 from pathlib import Path
@@ -42,7 +42,14 @@ with tempfile.TemporaryDirectory(prefix='basalgrim-grouping-pty-') as tmp:
     def drag(start,end):
         send(f'\x1b[<0;{start[0]+1};{start[1]+1}M');send(f'\x1b[<32;{end[0]+1};{end[1]+1}M');send(f'\x1b[<0;{end[0]+1};{end[1]+1}m')
     def screen():pump(.15);return screen_text(output,34,14)
-    def shot(name):Path('target/preview/grouping-pty-'+name+'.txt').write_text(screen())
+    def shot(name):
+        visible = screen()
+        Path('target/preview/grouping-pty-'+name+'.txt').write_text(visible)
+        if name in ('menu-off', 'menu'):
+            for label in ('Без группировки','Дата изменения · месяц','Расположение','Порядок'):
+                assert label in visible, visible
+        elif name == 'off':
+            assert 'Группы' in visible and 'Ноябрь' not in visible, visible
     try:
         import grouping_fixture
         def wait(predicate,label):

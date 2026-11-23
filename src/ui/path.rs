@@ -71,11 +71,15 @@ fn crumb(
     if rect.is_empty() {
         return 0;
     }
-    let label = files::shorten_name(&item.label, usize::from(rect.width.saturating_sub(2)));
+    let label_rect = Rect {
+        width: (item.label.width() + 2).min(usize::from(rect.width)) as u16,
+        ..rect
+    };
+    let label = files::shorten_name(&item.label, usize::from(label_rect.width.saturating_sub(2)));
     label_button(
         app,
         frame,
-        rect,
+        if current { rect } else { label_rect },
         &format!(" {label} "),
         if current {
             Target::PathEdit(owner.clone())
@@ -91,8 +95,14 @@ fn crumb(
             palette.muted()
         },
     );
-    app.drop_region(rect, owner.pane, owner.tab, Some(item.path.clone()), false);
-    rect.width
+    app.drop_region(
+        label_rect,
+        owner.pane,
+        owner.tab,
+        Some(item.path.clone()),
+        false,
+    );
+    label_rect.width
 }
 fn separator(frame: &mut Frame, row: Rect, x: &mut u16, palette: Palette) {
     frame.render_widget(
@@ -128,11 +138,12 @@ pub fn bar(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Pa
         palette.accent(),
     );
     let available = row.width - 6;
+    let remaining = |x| Rect::new(x, row.y, copy.x.saturating_sub(x), 1);
     if app.trash_in(pane) {
         label_button(
             app,
             frame,
-            Rect::new(row.x, row.y, available.min(9), 1),
+            remaining(row.x),
             " Корзина ",
             Target::PathEdit(owner),
             palette.accent().add_modifier(Modifier::BOLD),
@@ -154,7 +165,7 @@ pub fn bar(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Pa
             x += crumb(
                 app,
                 frame,
-                Rect::new(x, row.y, (item.label.width() + 2) as u16, 1),
+                remaining(x),
                 item,
                 &owner,
                 index + 1 == items.len(),
@@ -174,11 +185,10 @@ pub fn bar(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Pa
             );
             separator(frame, row, &mut x, palette);
         }
-        let width = (row.x + available).saturating_sub(x);
         crumb(
             app,
             frame,
-            Rect::new(x, row.y, width, 1),
+            remaining(x),
             items.last().unwrap(),
             &owner,
             true,
@@ -220,13 +230,10 @@ pub fn bar(app: &mut App, frame: &mut Frame, row: Rect, pane: usize, palette: Pa
             if index > start {
                 separator(frame, row, &mut x, palette);
             }
-            let width = ((item.label.width() + 2)
-                .min(usize::from((row.x + available).saturating_sub(x))))
-                as u16;
             x += crumb(
                 app,
                 frame,
-                Rect::new(x, row.y, width, 1),
+                remaining(x),
                 item,
                 &owner,
                 index + 1 == items.len(),

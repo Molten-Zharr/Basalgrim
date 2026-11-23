@@ -1287,7 +1287,7 @@ try:
             click(window,165,8);wait_for(lambda:copied_path()==str(path_dir),'GUI copy full Unicode path')
             current_x=25+sum(len(part)+3 for part in path_dir.parts[:-1])+1
             click(window,current_x,8);screenshot(window,'native-path-inline.png');chord('c','Control_L');assert copied_path()==str(path_dir);key('Escape')
-            click(window,current_x,8);type_text('/tmp/abcdef');key('End')
+            click(window,160,8);type_text('/tmp/abcdef');key('End')
             end_caret=screenshot(window,'native-path-caret-end.png').crop((200,128,1200,144))
             key('Left');left_caret=screenshot(window,'native-path-caret-left.png').crop((200,128,1200,144))
             assert end_caret.tobytes()!=left_caret.tobytes(),'GUI caret did not move on unchanged text'

@@ -71,6 +71,9 @@ def main():
             click_label("Кириллица spaces",lambda row:"Коп." in row)
             assert "Ввод" in text(),"current breadcrumb must edit inline"
             send(b"\x03");send(b"\x1b")
+            click_label("   Коп.")
+            assert "Ввод" in text(), "trailing address-bar space must edit inline"
+            send(b"\x1b")
             click_label("path parent",lambda row:"Коп." in row);pump(.2);copy(folder.parent)
             send(b"\x1b[1;3D");pump(.2);copy(folder)
             send(b"\x0c\x03")
@@ -88,6 +91,9 @@ def main():
             send(b"\x1b[H");pump(.1)
             click_label(" / ",lambda row:row.startswith("│ / ") and "›" not in row)
             pump(.2);copy(Path("/"))
+            click_label("   Коп.")
+            assert "Ввод" in text(), "compact root address-bar space must edit inline"
+            send(b"\x1b")
             quit_when_ready(child, send)
             print("Paths PTY: breadcrumbs, history, Unicode clipboard, editor, file clipboard and compact parents passed")
             width,height=170,40

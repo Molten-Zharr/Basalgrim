@@ -18,26 +18,36 @@ class Fixture(DesktopFixture):
         self.settings.write_text(json.dumps({'view':'list','preview':False,'sidebar_mode':'hidden','preview_mode':'hidden','theme':'molten-zharr','font_size':16,'icon_mode':'images'}))
     def config(self):return json.loads(self.settings.read_text())
 
+def controls(cells):
+    w, h = cells
+    button_x = 62 if w >= 80 else 34 if w >= 42 else 22
+    button_y = 2 if h < 20 else 3
+    first_x = min(button_x, w - 34) + 2
+    first_y = min(button_y + 1, h - 14) + 1
+    return button_x + 2, button_y, first_x, first_y
+
 def exercise(f,key,text,click,screenshot,cells=(170,53)):
-    w,h=cells
-    # Last cell of a list row is deliberately a background hit, even at 34x14.
-    click(w-2,8 if h<20 else h-8,3);key('Home')
-    for _ in range(6):key('Down')
-    key('Return')
-    wait(lambda:f.config().get('grouping',{}).get('enabled'),'background grouping checkbox')
-    x=w-32;y=h-13
-    click(x,y+7);wait(lambda:f.config()['grouping']['field']=='modified','month of modification')
-    screenshot('menu');key('Escape');time.sleep(.2);screenshot('months')
+    bx,by,x,y = controls(cells)
+    click(bx,by)
+    screenshot('menu-off')
+    assert not f.config().get('grouping',{}).get('enabled',False)
+    key('Escape')
+    click(bx,by)
+    click(x,y+6)
+    wait(lambda:f.config().get('grouping')=={'enabled':True,'field':'modified','descending':True},
+         'toolbar enables month grouping in one selection')
+    screenshot('months')
     key('Home');key('F2');key('a','ctrl');text('newest.txt');key('Return')
     wait(lambda:(f.root/'newest.txt').exists(),'newest group first');assert not (f.root/'b-new.txt').exists()
     time.sleep(.3)
     key('g','ctrl','alt');time.sleep(.2)
-    # Shortcut uses the current pointer as its anchor; same lower-right placement.
-    click(x,y+1);wait(lambda:not f.config()['grouping']['descending'],'oldest group order')
-    key('Escape');key('Home');key('F2');key('a','ctrl');text('oldest.txt');key('Return')
+    screenshot('menu')
+    key('End');key('Return')
+    wait(lambda:not f.config()['grouping']['descending'],'keyboard changes group order')
+    key('Home');key('F2');key('a','ctrl');text('oldest.txt');key('Return')
     wait(lambda:(f.root/'oldest.txt').exists(),'oldest group first');assert not (f.root/'a-old.txt').exists()
     time.sleep(.3);screenshot('oldest')
-    print('Grouping: background checkbox, month criterion, mouse order and real first-file operations passed',flush=True)
+    print('Grouping: toolbar, month criterion, keyboard order and real first-file operations passed',flush=True)
 
 def compact(f,key,text,click,screenshot,cells=(50,22)):
     w,h=cells
@@ -52,13 +62,17 @@ def compact(f,key,text,click,screenshot,cells=(50,22)):
         for _ in range(mode):key('Down')
         key('Return');time.sleep(.2);key('End');time.sleep(.2);screenshot('view-'+str(mode))
         key('Home');time.sleep(.2)
-    # Return to List, then turn grouping off through its own checkbox.
+    # Reopen via toolbar after restart and choose the named first row to turn it off.
     key('g','ctrl','shift')
     for _ in range(4):key('Up')
     key('Down');key('Return')
-    click(w-2,8 if h<20 else h-8,3);key('Home')
-    for _ in range(6):key('Down')
-    key('Return');time.sleep(.2)
-    click(w-32,h-13);wait(lambda:not f.config()['grouping']['enabled'],'compact grouping off')
-    key('Escape');screenshot('off')
-    print('Grouping: restart, four views and compact mouse checkbox passed',flush=True)
+    bx,by,x,y = controls(cells)
+    click(bx,by)
+    click(x,y);wait(lambda:not f.config()['grouping']['enabled'],'Без группировки')
+    screenshot('off')
+    key('g','ctrl','alt');key('End');key('Return')
+    wait(lambda:f.config()['grouping']['enabled'] and f.config()['grouping']['field']=='location',
+         'last field accessible by keyboard while grouping was off')
+    key('g','ctrl','alt');key('Home');key('Return')
+    wait(lambda:not f.config()['grouping']['enabled'],'keyboard disables grouping')
+    print('Grouping: restart, four views, compact toolbar and direct disabling passed',flush=True)
