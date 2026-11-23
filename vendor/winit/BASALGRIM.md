@@ -8,3 +8,6 @@ messages to the original window after its first proxy lookup; forwarding keeps
 the operation in the application's worker and avoids a second, inconsistent
 Copy/Private handler in winit. Windows without a valid proxy retain upstream
 behavior. No new public API or Wayland behavior is introduced.
+
+Legacy X11 wheel buttons 4–7 emit one scroll event on press. Their paired
+release completes the same detent. XInput2 scroll axes use their usual motion events.

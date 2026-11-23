@@ -69,6 +69,153 @@ fn point(app: &App, pane: usize) -> Position {
     (r.x + 1, r.y + 1).into()
 }
 
+fn entry_rect(app: &App, pane: usize, index: usize) -> ratatui::layout::Rect {
+    app.hits
+        .iter()
+        .find_map(|(rect, target)| {
+            matches!(target, Target::Entry { pane: p, index: i } if (*p,*i)==(pane,index))
+                .then_some(*rect)
+        })
+        .unwrap()
+}
+
+#[test]
+fn ctrl_wheel_reflows_only_the_pointed_canvas_and_rebuilds_its_hits() {
+    use basalgrim::{grouping::Grouping, icons::IconBackend, view::ViewMode};
+    let (_root, mut app) = setup(false);
+    app.icon_backend = IconBackend::Gui;
+    app.settings.dual = true;
+    for grouped in [false, true] {
+        app.set_grouping(Grouping {
+            enabled: grouped,
+            ..Default::default()
+        });
+        for mode in ViewMode::ALL {
+            app.select_view(mode);
+            render(&mut app, 220, 52);
+            let left = entry_rect(&app, 0, 0);
+            let before = entry_rect(&app, 1, 0);
+            let original_font = app.settings.appearance.font_size;
+            let folder = app.file_tab(1).entry().unwrap().path.clone();
+            app.file_tab_mut(1).marked.insert(folder.clone());
+            let icon_before = app
+                .icon_slots
+                .iter()
+                .find(|s| before.contains(s.area.as_position()))
+                .unwrap()
+                .area;
+            let p = before.as_position();
+            let sizes = app.file_areas;
+            app.handle(Input::wheel(p.x, p.y, -1, true));
+            render(&mut app, 220, 52);
+            let after = entry_rect(&app, 1, 0);
+            assert_eq!(
+                after.height,
+                before.height + 1,
+                "{mode:?}, grouped={grouped}"
+            );
+            if mode == ViewMode::Icons {
+                assert!(after.width > before.width);
+            }
+            assert!(app.icon_slots.iter().any(
+                |s| after.contains(s.area.as_position()) && s.area.height > icon_before.height
+            ));
+            assert_eq!(entry_rect(&app, 0, 0), left);
+            assert_eq!(app.file_areas, sizes);
+            assert_eq!(app.active, 0);
+            assert_eq!(app.settings.appearance.font_size, original_font);
+            assert_eq!(app.file_tab(1).entry().unwrap().path, folder);
+            assert!(app.file_tab(1).marked.contains(&folder));
+            // Right above the bottom gap in a tile, or on the new padded line in a row.
+            let new_hit = Position::new(
+                after.x + after.width / 2,
+                after.bottom() - if mode == ViewMode::Icons { 2 } else { 1 },
+            );
+            assert!(
+                app.hits
+                    .iter()
+                    .rev()
+                    .find(|(r, _)| r.contains(new_hit))
+                    .is_some_and(|(_, t)| matches!(t, Target::Entry { pane: 1, index: 0 }))
+            );
+            app.handle(Input::wheel(p.x, p.y, 1, true));
+            render(&mut app, 220, 52);
+            assert_eq!(entry_rect(&app, 1, 0), before);
+            // The pointer is still in the right pane. Keys target the focused left pane.
+            app.handle(Input::Key(KeyPress::ctrl('+')));
+            render(&mut app, 220, 52);
+            assert_eq!(entry_rect(&app, 0, 0).height, left.height + 1);
+            assert_eq!(entry_rect(&app, 1, 0), before);
+            assert!(app.dialog.is_none());
+            assert_eq!(app.settings.appearance.font_size, original_font);
+            app.handle(Input::Key(KeyPress::ctrl('-')));
+            render(&mut app, 220, 52);
+            assert_eq!(entry_rect(&app, 0, 0), left);
+        }
+    }
+}
+
+#[test]
+fn canvas_zoom_bounds_persist_and_modals_keep_the_wheel() {
+    use basalgrim::view::{FileZoom, ViewMode};
+    let (_root, mut app) = setup(true);
+    render(&mut app, 34, 14);
+    let p = point(&app, 0);
+    for _ in 0..8 {
+        app.handle(Input::wheel(p.x, p.y, -1, true));
+    }
+    assert_eq!(
+        app.settings.file_zoom,
+        [FileZoom::from(3), FileZoom::default()]
+    );
+    let config = tempfile::tempdir().unwrap();
+    let path = config.path().join("settings.json");
+    app.settings.save(&path).unwrap();
+    assert_eq!(
+        Settings::load(&path).unwrap().file_zoom,
+        app.settings.file_zoom
+    );
+    for mode in ViewMode::ALL {
+        app.select_view(mode);
+        render(&mut app, 34, 14);
+        app.handle(Input::Key(KeyPress::plain(Key::End)));
+        render(&mut app, 34, 14);
+        assert!(app.file_areas[0].contains(entry_rect(&app, 0, 99).as_position()));
+        assert!(
+            app.hits
+                .iter()
+                .filter(|(_, t)| matches!(t, Target::Entry { .. }))
+                .all(|(r, _)| r.bottom() <= app.file_areas[0].bottom())
+        );
+    }
+    app.open_view_menu();
+    render(&mut app, 34, 14);
+    app.handle(Input::Key(KeyPress::ctrl('-')));
+    assert_eq!(app.settings.file_zoom[0], FileZoom::from(3));
+    app.cancel_dialog();
+    app.handle(Input::Key(KeyPress::ctrl('-')));
+    assert_eq!(app.settings.file_zoom[0], FileZoom::from(2));
+    app.action(Action::Help);
+    render(&mut app, 34, 14);
+    app.handle(Input::wheel(p.x, p.y, 1, true));
+    assert!(app.help_offset > 0);
+    assert_eq!(app.settings.file_zoom[0], FileZoom::from(2));
+    app.cancel_dialog();
+    app.select_view(ViewMode::Icons);
+    render(&mut app, 34, 14);
+    for _ in 0..8 {
+        app.handle(Input::wheel(p.x, p.y, 1, true));
+    }
+    assert_eq!(app.settings.file_zoom[0], FileZoom::from(-1));
+    app.select_view(ViewMode::List);
+    render(&mut app, 34, 14);
+    let p = point(&app, 0);
+    app.handle(Input::wheel(p.x, p.y, 1, true));
+    assert_eq!(app.settings.file_zoom[0], FileZoom::from(-1));
+    app.handle(Input::wheel(p.x, p.y, -1, true));
+    assert_eq!(app.settings.file_zoom[0].row_height(), 2);
+}
+
 #[test]
 fn wheel_scrolls_visible_files_without_changing_any_selection_or_snapping_back() {
     for grid in [true, false] {

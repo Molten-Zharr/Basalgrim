@@ -248,6 +248,26 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                     if process.poll() is None:process.terminate();process.wait(timeout=5)
                     process=None;fixture.close()
                 return
+            if '--canvas-zoom-only' in sys.argv[2:]:
+                import canvas_zoom_fixture
+                for grid in (False, True):
+                    source = canvas_zoom_fixture.prepare(base, settings, grid)
+                    process = launch(source)
+                    def zoom_wheel(up):
+                        with subprocess.Popen([commands['wtype'], '-s', '100', '-M', 'ctrl', '-s', '850', '-m', 'ctrl'], env=env) as held:
+                            time.sleep(.4)
+                            click(105, 28, 20 if up else 21)
+                            assert held.wait(timeout=4) == 0
+                    def capture():
+                        path = out / 'native-wayland-canvas-zoom.png'
+                        run('grim', '-g', '0,0 1360x860', str(path))
+                        with Image.open(path) as image:
+                            return image.copy()
+                    canvas_zoom_fixture.exercise(settings, zoom_wheel, key, capture, wait_for)
+                    key('q','ctrl'); process.wait(timeout=5); assert process.returncode==0
+                    process = None
+                print("Wayland keyboard and wheel zoom: matching list and grid pixels, toolbar preserved")
+                return
             if '--views-only' in sys.argv[2:]:
                 import views_fixture
                 fixture=views_fixture.Fixture(base);env.update(fixture.env)

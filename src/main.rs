@@ -73,6 +73,8 @@ fn run() -> Result<()> {
     let mut native_source = None;
     eframe::run_ui_native("Basalgrim · Molten-Zharr", options, move |root, frame| {
         let ctx = root.ctx().clone();
+        // Basalgrim handles zoom bindings; egui otherwise zooms the entire raster too.
+        ctx.options_mut(|options| options.zoom_with_keyboard = false);
         app.handle(Input::DragModifiers {
             copy: ctx.input(|i| i.modifiers.ctrl),
         });
@@ -361,16 +363,23 @@ fn run() -> Result<()> {
                                 app.handle(Input::CancelDrag);
                             }
                         }
-                        egui::Event::MouseWheel { delta, .. } => {
+                        egui::Event::MouseWheel {
+                            delta, modifiers, ..
+                        } => {
                             if let Some((x, y)) =
                                 ctx.input(|i| i.pointer.hover_pos()).and_then(to_cell)
                                 && delta.y != 0.0
                             {
-                                app.handle(Input::Scroll {
+                                previous_click = None;
+                                app.handle(Input::wheel(
                                     x,
                                     y,
-                                    delta: if delta.y > 0.0 { -1 } else { 1 },
-                                });
+                                    if delta.y > 0.0 { -1 } else { 1 },
+                                    modifiers.ctrl
+                                        && !modifiers.alt
+                                        && !modifiers.shift
+                                        && !modifiers.mac_cmd,
+                                ));
                             }
                         }
                         egui::Event::PointerGone => {

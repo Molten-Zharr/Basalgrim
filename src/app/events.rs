@@ -5,6 +5,22 @@ use ratatui::layout::Position;
 impl App {
     pub fn handle(&mut self, input: Input) {
         self.tick_typeahead();
+        let input = if let Input::CtrlScroll { x, y, delta } = input {
+            let point = Position::new(x, y);
+            if (self.dialog.is_none() || self.inline_filter())
+                && self.editor_menu.is_none()
+                && let Some(pane) = self.file_areas.iter().position(|r| r.contains(point))
+            {
+                self.pointer = Some(point);
+                if delta != 0 {
+                    self.zoom_file_pane(pane, -delta.signum() as i8);
+                }
+                return;
+            }
+            Input::Scroll { x, y, delta }
+        } else {
+            input
+        };
         if matches!(
             input,
             Input::PointerDown { .. } | Input::Click { .. } | Input::SecondaryClick { .. }

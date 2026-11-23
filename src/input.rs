@@ -123,6 +123,20 @@ pub enum Input {
         y: u16,
         delta: i32,
     },
+    CtrlScroll {
+        x: u16,
+        y: u16,
+        delta: i32,
+    },
+}
+impl Input {
+    pub fn wheel(x: u16, y: u16, delta: i32, ctrl_only: bool) -> Self {
+        if ctrl_only {
+            Self::CtrlScroll { x, y, delta }
+        } else {
+            Self::Scroll { x, y, delta }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -184,6 +198,8 @@ pub enum Action {
     Open,
     Mark,
     NextPane,
+    ZoomIn,
+    ZoomOut,
     FontLarger,
     FontSmaller,
     CopyPath,
@@ -236,6 +252,8 @@ impl Action {
         Self::Open,
         Self::Mark,
         Self::NextPane,
+        Self::ZoomIn,
+        Self::ZoomOut,
         Self::FontLarger,
         Self::FontSmaller,
         Self::Operations,
@@ -327,6 +345,8 @@ impl Action {
             Self::Open => "Открыть",
             Self::Mark => "Отметить",
             Self::NextPane => "Сменить панель",
+            Self::ZoomIn => "Увеличить ячейки файлов",
+            Self::ZoomOut => "Уменьшить ячейки файлов",
             Self::FontLarger => "Увеличить шрифт GUI",
             Self::FontSmaller => "Уменьшить шрифт GUI",
         }
@@ -539,13 +559,40 @@ pub fn default_bindings() -> Vec<Binding> {
         (Refresh, 'r'),
         (NewFile, 'n'),
         (Settings, ','),
-        (FontLarger, '+'),
-        (FontLarger, '='),
-        (FontSmaller, '-'),
+        (ZoomIn, '+'),
+        (ZoomIn, '='),
+        (ZoomOut, '-'),
     ] {
         result.push(Binding {
             action,
             key: KeyPress::ctrl(c),
+        });
+    }
+    // Legacy terminals can send Alt+punctuation even when they capture Ctrl+punctuation.
+    for (action, c) in [(ZoomIn, '+'), (ZoomIn, '='), (ZoomOut, '-')] {
+        result.push(Binding {
+            action,
+            key: KeyPress {
+                alt: true,
+                ..KeyPress::plain(Key::Char(c))
+            },
+        });
+    }
+    // CSI-u can report the unshifted equals key with explicit Ctrl+Shift.
+    result.push(Binding {
+        action: ZoomIn,
+        key: KeyPress {
+            shift: true,
+            ..KeyPress::ctrl('=')
+        },
+    });
+    for (action, c) in [(FontLarger, '+'), (FontLarger, '='), (FontSmaller, '-')] {
+        result.push(Binding {
+            action,
+            key: KeyPress {
+                alt: true,
+                ..KeyPress::ctrl(c)
+            },
         });
     }
     for (action, key) in [

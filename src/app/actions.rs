@@ -161,6 +161,8 @@ impl App {
             }
             Action::CopyPath => self.copy_path(&self.tab().cwd.clone()),
             Action::View => self.open_view_menu(),
+            Action::ZoomIn => self.zoom_file_pane(self.active, 1),
+            Action::ZoomOut => self.zoom_file_pane(self.active, -1),
             Action::Grid => {
                 let mode = if self.settings.view_mode() == crate::view::ViewMode::Icons {
                     crate::view::ViewMode::List

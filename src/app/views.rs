@@ -11,6 +11,19 @@ pub struct ViewMenu {
     pub selected: usize,
 }
 impl App {
+    pub(super) fn zoom_file_pane(&mut self, pane: usize, direction: i8) {
+        let zoom = self.settings.file_zoom[pane];
+        let next = zoom.step(self.settings.view_mode(), direction);
+        if next == zoom || self.external_drag_active() {
+            return;
+        }
+        self.cancel_file_drag();
+        self.finish_marquee(true);
+        self.finish_column_drag(true);
+        self.settings.file_zoom[pane] = next;
+        self.invalidate_tree_hits();
+        self.preferences_changed();
+    }
     pub(super) fn duplicate_destination(&self) -> Option<PathBuf> {
         let sources = self.tab().targets();
         let parent = sources.first()?.parent()?;

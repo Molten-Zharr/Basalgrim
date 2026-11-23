@@ -232,14 +232,36 @@ impl Viewport {
         columns: usize,
         entry_height: usize,
     ) -> Self {
-        let rows = (usize::from(height.saturating_sub(1)) / entry_height.max(1)).max(1);
+        Self::new_with_item_height(
+            groups,
+            mode,
+            width,
+            height,
+            columns,
+            if mode == ViewMode::Icons {
+                crate::view::FileZoom::default().tile_height()
+            } else {
+                entry_height
+            },
+        )
+    }
+    pub fn new_with_item_height(
+        groups: &[Group],
+        mode: ViewMode,
+        width: u16,
+        height: u16,
+        columns: usize,
+        entry_height: usize,
+    ) -> Self {
+        let entry_height = entry_height.max(1);
+        let rows = (usize::from(height.saturating_sub(1)) / entry_height).max(1);
         let mut total = 0;
         let sections = groups
             .iter()
             .map(|g| {
                 let start = total;
                 total += match mode {
-                    ViewMode::Icons => 1 + g.range.len().div_ceil(columns) * 5,
+                    ViewMode::Icons => 1 + g.range.len().div_ceil(columns) * entry_height,
                     ViewMode::Columns => g.range.len().div_ceil(rows),
                     _ => 1 + g.range.len() * entry_height,
                 };
@@ -276,7 +298,10 @@ impl Viewport {
         };
         let local = index - s.range.start;
         match self.mode {
-            ViewMode::Icons => (local % self.columns, s.start + 1 + local / self.columns * 5),
+            ViewMode::Icons => (
+                local % self.columns,
+                s.start + 1 + local / self.columns * self.entry_height,
+            ),
             ViewMode::Columns => (
                 s.start + local / self.rows,
                 1 + (local % self.rows) * self.entry_height,
@@ -288,15 +313,8 @@ impl Viewport {
         let (x, y) = self.position(index);
         if self.mode == ViewMode::Columns { x } else { y }
     }
-    fn item_lines(&self) -> usize {
-        if self.mode == ViewMode::Icons {
-            5
-        } else {
-            self.entry_height
-        }
-    }
     fn snap(&self, offset: usize, up: bool) -> usize {
-        if self.mode == ViewMode::Columns || self.item_lines() == 1 {
+        if self.mode == ViewMode::Columns || self.entry_height == 1 {
             return offset;
         }
         let n = self.sections.partition_point(|s| s.end <= offset);
@@ -304,35 +322,35 @@ impl Viewport {
             return self
                 .sections
                 .last()
-                .map_or(0, |s| s.end.saturating_sub(self.item_lines()));
+                .map_or(0, |s| s.end.saturating_sub(self.entry_height));
         };
         if offset <= s.start {
             return s.start;
         }
         let local = offset - s.start - 1;
         if up {
-            (s.start + 1 + local.div_ceil(self.item_lines()) * self.item_lines()).min(s.end)
+            (s.start + 1 + local.div_ceil(self.entry_height) * self.entry_height).min(s.end)
         } else {
-            s.start + 1 + local / self.item_lines() * self.item_lines()
+            s.start + 1 + local / self.entry_height * self.entry_height
         }
     }
     fn maximum(&self) -> usize {
         self.snap(self.total.saturating_sub(self.extent()), true)
     }
     pub fn scroll(&mut self, delta: isize) {
-        if self.mode != ViewMode::Columns && self.item_lines() > 1 {
-            // A title is one row, a tile band five: visit both instead of
+        if self.mode != ViewMode::Columns && self.entry_height > 1 {
+            // A title is one row, an entry band can be taller: visit both instead of
             // jumping from a title straight past its first band of files.
             let mut current = 0;
             let mut bands = 0;
             for s in &self.sections {
-                let count = 1 + (s.end - s.start - 1) / self.item_lines();
+                let count = 1 + (s.end - s.start - 1) / self.entry_height;
                 if self.offset >= s.start {
                     current = bands
                         + if self.offset == s.start {
                             0
                         } else {
-                            1 + (self.offset - s.start - 1) / self.item_lines()
+                            1 + (self.offset - s.start - 1) / self.entry_height
                         };
                 }
                 bands += count;
@@ -341,13 +359,13 @@ impl Viewport {
                 .saturating_add_signed(delta)
                 .min(bands.saturating_sub(1));
             for s in &self.sections {
-                let count = 1 + (s.end - s.start - 1) / self.item_lines();
+                let count = 1 + (s.end - s.start - 1) / self.entry_height;
                 if wanted < count {
                     self.offset = s.start
                         + if wanted == 0 {
                             0
                         } else {
-                            1 + (wanted - 1) * self.item_lines()
+                            1 + (wanted - 1) * self.entry_height
                         };
                     break;
                 }
@@ -369,7 +387,7 @@ impl Viewport {
         let size = if self.mode == ViewMode::Columns {
             1
         } else {
-            self.item_lines().min(self.extent())
+            self.entry_height.min(self.extent())
         };
         if unit < self.offset {
             self.offset = self.snap(unit, false);
@@ -403,7 +421,10 @@ impl Viewport {
             let skip = match self.mode {
                 ViewMode::Columns => self.offset.saturating_sub(s.start) * self.rows,
                 ViewMode::Icons => {
-                    self.offset.saturating_sub(s.start + 1).div_ceil(5) * self.columns
+                    self.offset
+                        .saturating_sub(s.start + 1)
+                        .div_ceil(self.entry_height)
+                        * self.columns
                 }
                 _ => self
                     .offset
@@ -441,8 +462,12 @@ impl Viewport {
                 ),
                 ViewMode::Icons => (
                     s.range.start
-                        + self.offset.saturating_sub(s.start + 1).div_ceil(5) * self.columns,
-                    (usize::from(self.height) / 5 + 2) * self.columns,
+                        + self
+                            .offset
+                            .saturating_sub(s.start + 1)
+                            .div_ceil(self.entry_height)
+                            * self.columns,
+                    (usize::from(self.height) / self.entry_height + 2) * self.columns,
                 ),
                 _ => (
                     s.range.start

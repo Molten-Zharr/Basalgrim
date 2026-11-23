@@ -224,7 +224,10 @@ fn parent_default_migrates_once_without_overwriting_custom_bindings() {
     assert_eq!(upgraded.action_for(control), Some(Action::Parent));
     assert_eq!(upgraded.bindings, defaults.bindings);
     upgraded.save(&path).unwrap();
-    assert_eq!(Settings::load(&path).unwrap().bindings_version, 1);
+    assert_eq!(
+        Settings::load(&path).unwrap().bindings_version,
+        defaults.bindings_version
+    );
     // Explicit changes made after migration remain user choices on restart.
     upgraded
         .bindings

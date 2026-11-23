@@ -324,6 +324,26 @@ try:
             finally:
                 stop(process,log);fixture.close()
             sys.exit(0)
+        if '--canvas-zoom-only' in sys.argv[2:]:
+            import canvas_zoom_fixture
+            for grid in (False, True):
+                source = canvas_zoom_fixture.prepare(base, settings, grid)
+                process, window, log = launch(source, config)
+                def zoom_wheel(up):
+                    key('Control_L', True)
+                    try:
+                        click(window, 105, 28, 4 if up else 5)
+                    finally:
+                        key('Control_L', False)
+                try:
+                    def zoom_key(name, *mods):
+                        chord(name, *[{'ctrl':'Control_L', 'shift':'Shift_L', 'alt':'Alt_L'}[m] for m in mods])
+                    canvas_zoom_fixture.exercise(settings, zoom_wheel, zoom_key, lambda: screenshot(window), wait_for)
+                    quit_when_ready(process)
+                finally:
+                    stop(process, log)
+            print("X11 keyboard and wheel zoom: matching list and grid pixels, toolbar preserved")
+            sys.exit(0)
         if '--views-only' in sys.argv[2:]:
             import views_fixture
             fixture=views_fixture.Fixture(base);os.environ.update(fixture.env)
@@ -610,8 +630,7 @@ try:
             try:
                 range_selection_fixture.exercise(base,source,range_key,navigate,range_click,
                     lambda cx,cy:click(window,cx,cy,5),
-                    # Xvfb/XTest's wheel button press/release produces two scroll steps.
-                    lambda name:screenshot(window,'native-x11-'+name+'.png'),wait_for,wheel_steps=2)
+                    lambda name:screenshot(window,'native-x11-'+name+'.png'),wait_for)
                 quit_when_ready(process)
             finally:stop(process,log)
             print('Native X11 range selection passed',flush=True)
@@ -1025,9 +1044,7 @@ try:
                 navigate(wheel_files)
                 for _ in range(notches): click(window,50,20,5)
                 click(window,34,12 if grid else 10)
-                # XTest emits legacy wheel press/release pairs; winit maps
-                # both to wheel events. Wayland and PTY test one event per notch.
-                expected=f'file-{16 if grid else 18:03}.txt'
+                expected=f'file-{8 if grid else 9:03}.txt'
                 clicked=base/f'wheel-clicked-{mode}'; clicked.mkdir()
                 chord('c','Control_L'); navigate(clicked); chord('v','Control_L')
                 wait_for(lambda:(clicked/expected).exists(),'click resolves the newly scrolled first entry')

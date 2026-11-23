@@ -11,7 +11,8 @@ use basalgrim::{
 use crossterm::{
     event::{
         self, DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
-        EnableFocusChange, EnableMouseCapture, Event,
+        EnableFocusChange, EnableMouseCapture, Event, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -19,13 +20,19 @@ use crossterm::{
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{
     io::{IsTerminal, Write, stdin, stdout},
+    sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
 
 struct Session(bool);
+// The panic hook and the session guard can both restore the same terminal.
+static KEYBOARD_MODE_PUSHED: AtomicBool = AtomicBool::new(false);
 fn restore(console: bool) {
     let _ = disable_raw_mode();
     if !console {
+        if KEYBOARD_MODE_PUSHED.swap(false, Ordering::Relaxed) {
+            let _ = execute!(stdout(), PopKeyboardEnhancementFlags);
+        }
         let _ = execute!(
             stdout(),
             DisableMouseCapture,
@@ -91,8 +98,10 @@ fn run() -> Result<()> {
             stdout(),
             EnableMouseCapture,
             EnableBracketedPaste,
-            EnableFocusChange
+            EnableFocusChange,
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
         )?;
+        KEYBOARD_MODE_PUSHED.store(true, Ordering::Relaxed);
     }
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {

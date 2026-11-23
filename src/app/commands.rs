@@ -144,6 +144,8 @@ impl App {
                 Forward,
                 Parent,
                 Home,
+                ZoomIn,
+                ZoomOut,
                 FontLarger,
                 FontSmaller,
                 Settings,

@@ -124,8 +124,20 @@ impl Mouse {
                 self.previous_click = None;
                 app.handle(Input::SecondaryClick { x, y });
             }
-            MouseEventKind::ScrollUp => app.handle(Input::Scroll { x, y, delta: -1 }),
-            MouseEventKind::ScrollDown => app.handle(Input::Scroll { x, y, delta: 1 }),
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                self.previous_click = None;
+                let delta = if mouse.kind == MouseEventKind::ScrollUp {
+                    -1
+                } else {
+                    1
+                };
+                app.handle(Input::wheel(
+                    x,
+                    y,
+                    delta,
+                    mouse.modifiers == KeyModifiers::CONTROL,
+                ));
+            }
             _ => {}
         }
     }

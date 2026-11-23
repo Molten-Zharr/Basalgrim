@@ -1109,6 +1109,8 @@ impl EventProcessor {
             // those. In practice, even clicky scroll wheels appear to be reported by
             // evdev (and XInput2 in turn) as axis motion, so we don't otherwise
             // special-case these button presses.
+            // Legacy devices deliver a press/release pair for one wheel detent.
+            4..=7 if state == ElementState::Released => return,
             4..=7 => WindowEvent::MouseWheel {
                 device_id,
                 delta: match event.detail {

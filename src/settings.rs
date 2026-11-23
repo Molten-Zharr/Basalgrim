@@ -16,6 +16,7 @@ pub struct Settings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub view: Option<crate::view::ViewMode>,
     pub view_columns: u8,
+    pub file_zoom: [crate::view::FileZoom; 2],
     pub grouping: crate::grouping::Grouping,
     pub typeahead_timeout_ms: u64,
     pub keep_filters_on_navigation: bool,
@@ -29,7 +30,7 @@ pub struct Settings {
     pub appearance_presets: Vec<crate::appearance::Preset>,
     #[serde(flatten)]
     pub appearance: Appearance,
-    // Missing in older JSON: migrate the old Parent default once, then respect edits.
+    // Missing in older JSON. Migrate defaults once, then respect the user's bindings.
     #[serde(default)]
     pub bindings_version: u8,
     pub bindings: Vec<Binding>,
@@ -40,6 +41,7 @@ impl Default for Settings {
             grid: true,
             view: None,
             view_columns: 2,
+            file_zoom: Default::default(),
             grouping: Default::default(),
             typeahead_timeout_ms: 1000,
             keep_filters_on_navigation: false,
@@ -52,7 +54,7 @@ impl Default for Settings {
             history_retention: Default::default(),
             appearance_presets: Vec::new(),
             appearance: Appearance::default(),
-            bindings_version: 1,
+            bindings_version: 2,
             bindings: input::default_bindings(),
         }
     }
@@ -139,9 +141,47 @@ impl Settings {
             }
             self.bindings_version = 1;
         }
+        let defaults = input::default_bindings();
+        if self.bindings_version == 1 {
+            // Transfer only the original font shortcuts. Preserve custom font keys
+            // and shortcuts already assigned to a different command.
+            for binding in &mut self.bindings {
+                if binding.action == Action::FontLarger
+                    && [KeyPress::ctrl('+'), KeyPress::ctrl('=')].contains(&binding.key)
+                {
+                    binding.action = Action::ZoomIn;
+                } else if binding.action == Action::FontSmaller
+                    && binding.key == KeyPress::ctrl('-')
+                {
+                    binding.action = Action::ZoomOut;
+                }
+            }
+            for action in [
+                Action::ZoomIn,
+                Action::ZoomOut,
+                Action::FontLarger,
+                Action::FontSmaller,
+            ] {
+                if matches!(action, Action::FontLarger | Action::FontSmaller)
+                    && self.bindings.iter().any(|b| b.action == action)
+                {
+                    continue;
+                }
+                for binding in defaults.iter().filter(|b| b.action == action) {
+                    if !self.bindings.iter().any(|b| b.key == binding.key) {
+                        self.bindings.push(binding.clone());
+                    }
+                }
+            }
+            self.bindings_version = 2;
+        }
         // Older settings do not have these commands. Keep custom bindings intact,
         // including keys that were free before the commands were introduced.
         for action in [
+            Action::ZoomIn,
+            Action::ZoomOut,
+            Action::FontLarger,
+            Action::FontSmaller,
             Action::Parent,
             Action::View,
             Action::Grouping,
@@ -181,8 +221,8 @@ impl Settings {
             if self.bindings.iter().any(|binding| binding.action == action) {
                 continue;
             }
-            let default = input::default_bindings()
-                .into_iter()
+            let default = defaults
+                .iter()
                 .find(|binding| binding.action == action)
                 .unwrap();
             let mut candidates = vec![default.key];

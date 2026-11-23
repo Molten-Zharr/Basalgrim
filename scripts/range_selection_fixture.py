@@ -10,7 +10,7 @@ def prepare(base):
     return source
 
 
-def exercise(base, source, key, navigate, click, wheel, capture, wait_for, wheel_steps=1):
+def exercise(base, source, key, navigate, click, wheel, capture, wait_for):
     check_number = 0
 
     def verify(indices, label):
@@ -56,7 +56,7 @@ def exercise(base, source, key, navigate, click, wheel, capture, wait_for, wheel
         # The wheel leaves focus/anchor at their original paths. Shift-click the
         # first newly visible file, spanning rows outside the viewport as well.
         entry(0, 'shift')
-        verify(range(2, (8 if grid else 9) * wheel_steps + 1), mode + ' offscreen anchor after wheel scrolling')
+        verify(range(2, (8 if grid else 9) + 1), mode + ' offscreen anchor after wheel scrolling')
 
         entry(0, 'ctrl');entry(7, 'ctrl')
         key('Home', 'ctrl', 'shift');key('Down', 'ctrl', 'shift')

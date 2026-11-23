@@ -65,6 +65,49 @@ fn legacy_settings_keep_font_size_and_receive_default_themes_and_bindings() {
 }
 
 #[test]
+fn saved_font_shortcuts_migrate_to_canvas_once_and_preserve_custom_keys() {
+    use Action::{FontLarger, FontSmaller, ZoomIn, ZoomOut};
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("settings.json");
+    let mut old = Settings {
+        bindings_version: 1,
+        ..Default::default()
+    };
+    old.bindings
+        .retain(|b| !matches!(b.action, FontLarger | FontSmaller | ZoomIn | ZoomOut));
+    for (action, key) in [
+        (FontLarger, KeyPress::ctrl('+')),
+        (FontLarger, KeyPress::plain(Key::F(12))),
+        (FontSmaller, KeyPress::ctrl('-')),
+        (Action::Search, KeyPress::ctrl('=')),
+    ] {
+        old.bindings.push(input::Binding { action, key });
+    }
+    fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
+    let mut loaded = Settings::load(&path).unwrap();
+    assert_eq!(loaded.action_for(KeyPress::ctrl('+')), Some(ZoomIn));
+    assert_eq!(loaded.action_for(KeyPress::ctrl('-')), Some(ZoomOut));
+    assert_eq!(loaded.action_for(KeyPress::ctrl('=')), Some(Action::Search));
+    assert_eq!(
+        loaded.action_for(KeyPress::plain(Key::F(12))),
+        Some(FontLarger)
+    );
+    let font_key = KeyPress {
+        alt: true,
+        ..KeyPress::ctrl('-')
+    };
+    assert_eq!(loaded.action_for(font_key), Some(FontSmaller));
+    loaded
+        .bindings
+        .iter_mut()
+        .find(|b| b.key == KeyPress::ctrl('-'))
+        .unwrap()
+        .action = FontSmaller;
+    loaded.save(&path).unwrap();
+    assert_eq!(Settings::load(&path).unwrap().bindings, loaded.bindings);
+}
+
+#[test]
 fn icon_mode_is_editable_and_persists_independently_of_backend_capabilities() {
     use basalgrim::icons::IconBackend;
 
