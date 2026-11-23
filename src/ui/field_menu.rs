@@ -1,16 +1,16 @@
 use super::*;
-use crate::{app::Dialog, columns::Column, grouping::Grouping};
+use crate::app::Dialog;
 use ratatui::widgets::Clear;
 pub fn menu(app: &mut App, frame: &mut Frame, palette: Palette) {
-    let Some(Dialog::Grouping(m)) = &app.dialog else {
+    let Some(Dialog::FieldMenu(m)) = &app.dialog else {
         return;
     };
     let token = m.token;
     let selected = m.selected;
-    let policy = app.settings.grouping;
+    let title = m.title;
     let screen = frame.area();
     let w = 34.min(screen.width);
-    let h = (Grouping::ORDER_ROW as u16 + 3).min(screen.height);
+    let h = (m.rows.len() as u16 + 2).min(screen.height);
     let rect = Rect::new(
         m.anchor.x.min(screen.right() - w),
         m.anchor.y.min(screen.bottom() - h),
@@ -30,38 +30,25 @@ pub fn menu(app: &mut App, frame: &mut Frame, palette: Palette) {
     hit(app, screen, Target::DismissMenu);
     hit(app, rect, Target::MenuBackground);
     frame.render_widget(Clear, rect);
-    let block = panel(palette, " Группировка ", true);
+    let block = panel(palette, format!(" {title} "), true);
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
-    let active = policy.selected_row();
-    let mut labels = vec!["Без группировки".to_owned()];
-    labels.extend(Column::ALL.map(|field| {
-        if matches!(field, Column::Created | Column::Modified | Column::Accessed) {
-            format!("{} · месяц", field.label())
-        } else {
-            field.label().to_owned()
-        }
-    }));
-    labels.push(format!("Порядок: {}", policy.order_label()));
-    for (i, label) in labels
-        .into_iter()
-        .enumerate()
-        .take(usize::from(inner.height))
-    {
+    let Some(Dialog::FieldMenu(menu)) = &app.dialog else {
+        return;
+    };
+    for (i, option) in menu.rows.iter().enumerate().take(usize::from(inner.height)) {
         let row = Rect::new(inner.x, inner.y + i as u16, inner.width, 1);
-        let order = i == Grouping::ORDER_ROW;
-        let enabled = !order || policy.enabled;
-        let marker = if order {
-            "↕"
-        } else if i == active {
-            "●"
-        } else {
-            "○"
+        let enabled = option.enabled();
+        let marker = match option.checked {
+            Some(true) => "●",
+            Some(false) => "○",
+            None => "↕",
         };
+        let label = &option.label;
         frame.render_widget(
             Paragraph::new(format!(
                 " {marker} {}",
-                files::shorten_name(&label, usize::from(row.width.saturating_sub(3)))
+                files::shorten_name(label, usize::from(row.width.saturating_sub(3)))
             ))
             .style(if !enabled {
                 palette.muted()
@@ -73,7 +60,7 @@ pub fn menu(app: &mut App, frame: &mut Frame, palette: Palette) {
             row,
         );
         if enabled {
-            hit(app, row, Target::GroupControl { token, row: i });
+            app.hits.push((row, Target::FieldMenuRow { token, row: i }));
         }
     }
     let close = Rect::new(rect.right().saturating_sub(4), rect.y, 3.min(w), 1);

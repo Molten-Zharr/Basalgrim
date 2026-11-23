@@ -96,12 +96,12 @@ impl App {
             Action::Extensions => self.open_extensions(false, false),
             Action::ExtensionCommands => self.open_extensions(true, false),
             Action::Palette => self.open_palette(),
-            Action::Grouping => {
+            Action::Grouping | Action::Sort => {
                 let anchor = self.hits.iter().find_map(|(r, target)| {
-                    matches!(target, Target::Action(Action::Grouping))
+                    matches!(target, Target::Action(a) if *a == action)
                         .then(|| Position::new(r.x, r.bottom()))
                 });
-                self.open_grouping(anchor.unwrap_or(Position::new(2, 4)));
+                self.open_field_menu(action, anchor.unwrap_or(Position::new(2, 4)));
             }
             Action::Devices => self.open_devices(),
             Action::Properties => self.open_details(false, false),
@@ -195,13 +195,6 @@ impl App {
                     tab.rebuild(self.settings.hidden);
                 }
                 self.preferences_changed();
-            }
-            Action::Sort => {
-                let hidden = self.settings.hidden;
-                let tab = self.tab_mut();
-                tab.sort = tab.sort.next();
-                tab.follow_selection = true;
-                tab.rebuild(hidden);
             }
             Action::Copy | Action::Cut => {
                 let paths = self.tab().targets();
@@ -591,7 +584,7 @@ impl App {
             Dialog::Panel(_)
             | Dialog::View(_)
             | Dialog::Columns(_)
-            | Dialog::Grouping(_)
+            | Dialog::FieldMenu(_)
             | Dialog::FilterMenu(_) => {}
             Dialog::Extensions => {}
             Dialog::Network => {}

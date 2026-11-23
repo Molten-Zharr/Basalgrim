@@ -11,8 +11,8 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         super::filtering::menu(app, frame, palette);
         return;
     }
-    if matches!(app.dialog, Some(Dialog::Grouping(_))) {
-        super::grouping::menu(app, frame, palette);
+    if matches!(app.dialog, Some(Dialog::FieldMenu(_))) {
+        super::field_menu::menu(app, frame, palette);
         return;
     }
     if matches!(app.dialog, Some(Dialog::Columns(_))) {
@@ -159,7 +159,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         Dialog::CleanupHistory(_) => "Очистить данные undo/redo?",
         Dialog::Panel(_)
         | Dialog::FilterMenu(_)
-        | Dialog::Grouping(_)
+        | Dialog::FieldMenu(_)
         | Dialog::View(_)
         | Dialog::Columns(_)
         | Dialog::Details
@@ -182,7 +182,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     match dialog {
         Dialog::Panel(_)
         | Dialog::FilterMenu(_)
-        | Dialog::Grouping(_)
+        | Dialog::FieldMenu(_)
         | Dialog::View(_)
         | Dialog::Columns(_)
         | Dialog::Details

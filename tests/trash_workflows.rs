@@ -553,3 +553,22 @@ fn delete_group_captures_only_the_marked_files_and_empty_keeps_later_arrivals() 
     assert_eq!(app.trash.as_ref().unwrap().catalog.entries.len(), 1);
     assert!(trash.directory.join("files/stored-099").exists());
 }
+
+#[test]
+fn sort_menu_labels_the_deletion_date_and_retains_chosen_order_on_refresh() {
+    let (_root, _trash, mut app) = setup(3);
+    app.action(Action::Sort);
+    let buffer = render(&mut app, 34, 14);
+    let menu = text(&buffer);
+    assert!(menu.contains("● Дата удаления") && menu.contains("● По убыванию"));
+    assert!(!menu.contains("Дата изменения"));
+    let name = hit(&app, |t| matches!(t, Target::FieldMenuRow { row: 0, .. }));
+    click(&mut app, name, false);
+    app.action(Action::Refresh);
+    settle(&mut app);
+    assert_eq!(
+        app.tab().sort.field(),
+        (basalgrim::columns::Column::Name, true)
+    );
+    assert_eq!(app.tab().entries[app.tab().visible[0]].name, "file-002.txt");
+}

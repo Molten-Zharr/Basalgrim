@@ -136,10 +136,12 @@ impl App {
             return;
         }
         self.active = c.owner.pane;
+        let (current, descending) = self.tab().sort.field();
+        self.apply_sort(fs::Sort::Field(column, current == column && !descending));
+    }
+    pub(super) fn apply_sort(&mut self, sort: fs::Sort) {
         self.cancel_file_drag();
         self.finish_marquee(true);
-        let (current, descending) = self.tab().sort.field();
-        let sort = fs::Sort::Field(column, current == column && !descending);
         let hidden = self.settings.hidden;
         self.tab_mut().sort = sort;
         self.tab_mut().follow_selection = true;

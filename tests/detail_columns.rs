@@ -490,3 +490,85 @@ fn all_border_styles_keep_header_and_checkbox_controls_inside_compact_windows() 
         }
     }
 }
+
+#[test]
+fn sort_chooser_exposes_all_fields_and_directions_in_every_view() {
+    for mode in ViewMode::ALL {
+        for (w, h) in [(34, 14), (80, 24), (170, 53)] {
+            let (_dir, mut app) = setup();
+            app.settings.view = Some(mode);
+            let focus = app.tab().entry().unwrap().path.clone();
+            app.tab_mut().marked.insert(focus.clone());
+            render(&mut app, w, h);
+            let button = hit(&app, |t| matches!(t, Target::Action(Action::Sort)));
+            let groups = hit(&app, |t| matches!(t, Target::Action(Action::Grouping)));
+            assert_eq!(button.y, groups.y);
+            assert!(button.x >= groups.right());
+            click(&mut app, button, false);
+            let screen = render(&mut app, w, h);
+            assert!(screen.contains("● Имя") && screen.contains("● По возрастанию"));
+            for field in Column::ALL {
+                assert!(screen.contains(field.label()));
+            }
+            let sort_menu = match &app.dialog {
+                Some(Dialog::FieldMenu(m)) => m.token,
+                _ => panic!("toolbar must open sort choices"),
+            };
+            key(&mut app, Key::End);
+            key(&mut app, Key::Escape);
+            assert_eq!(app.tab().sort, Sort::Name);
+
+            key(&mut app, Key::F(9));
+            render(&mut app, w, h);
+            app.choose_field_row(sort_menu, 1);
+            assert_eq!(app.tab().sort, Sort::Name, "stale click");
+            let size = hit(&app, |t| matches!(t, Target::FieldMenuRow { row: 1, .. }));
+            click(&mut app, size, false);
+            assert!(app.dialog.is_none());
+            let sizes = |app: &App| {
+                app.tab()
+                    .visible
+                    .iter()
+                    .map(|&i| app.tab().entries[i].size)
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(sizes(&app), [9, 20, 100]);
+            key(&mut app, Key::F(9));
+            key(&mut app, Key::End);
+            key(&mut app, Key::Enter);
+            assert_eq!(sizes(&app), [100, 20, 9]);
+            assert_eq!(app.tab().entry().unwrap().path, focus);
+            assert!(app.tab().marked.contains(&focus));
+        }
+    }
+}
+
+#[test]
+fn background_sort_chooser_targets_only_the_clicked_pane() {
+    let (_dir, mut app) = setup();
+    app.settings.dual = true;
+    app.settings.view = Some(ViewMode::Icons);
+    render(&mut app, 170, 53);
+    let area = app.file_areas[1];
+    app.handle(Input::SecondaryClick {
+        x: area.right() - 1,
+        y: area.bottom() - 1,
+    });
+    let sort = app
+        .command_items()
+        .iter()
+        .position(|item| item.action == Action::Sort)
+        .unwrap();
+    let Some(Dialog::Commands(menu)) = &mut app.dialog else {
+        panic!("directory menu")
+    };
+    menu.selected = sort;
+    key(&mut app, Key::Enter);
+    assert_eq!(app.active, 1);
+    let screen = render(&mut app, 170, 53);
+    assert!(screen.contains("● Имя") && screen.contains("Сортировка"));
+    key(&mut app, Key::Down);
+    key(&mut app, Key::Enter);
+    assert_eq!(app.panes[1].tab().sort.field(), (Column::Size, false));
+    assert_eq!(app.panes[0].tab().sort, Sort::Name);
+}

@@ -50,7 +50,7 @@ impl App {
         if self.filter_input(&input) {
             return;
         }
-        if self.grouping_input(&input) {
+        if self.field_menu_input(&input) {
             return;
         }
         if self.columns_input(&input) {
@@ -246,7 +246,7 @@ impl App {
                         revision,
                         path,
                     }) => self.toggle_tree(owner, request, revision, path),
-                    Some(Target::GroupControl { token, row }) => self.group_control(token, row),
+                    Some(Target::FieldMenuRow { token, row }) => self.choose_field_row(token, row),
                     Some(Target::ViewChoose { token, mode }) => {
                         self.view_control(token, Some(mode), 0)
                     }
@@ -452,7 +452,7 @@ impl App {
                                     | Dialog::Edit { .. }
                                     | Dialog::Panel(_)
                                     | Dialog::FilterMenu(_)
-                                    | Dialog::Grouping(_)
+                                    | Dialog::FieldMenu(_)
                                     | Dialog::View(_)
                                     | Dialog::Columns(_)
                             )

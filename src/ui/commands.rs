@@ -121,7 +121,9 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
             palette.text()
         };
         let shortcut = app.settings.shortcut(item.action);
-        let label = if item.action == Action::Grouping {
+        let label = if item.action == Action::Sort {
+            "Сортировка ›"
+        } else if item.action == Action::Grouping {
             "Группировка ›"
         } else if item.action == Action::SelectAll && app.tab().filter_run.is_some() {
             "Выбрать страницу"

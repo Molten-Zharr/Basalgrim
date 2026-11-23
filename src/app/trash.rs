@@ -10,7 +10,6 @@ pub struct TrashView {
     pub owner: PathOwner,
     pub files: Tab,
     by_path: BTreeMap<PathBuf, usize>,
-    pub sort_name: bool,
     pub generation: u64,
     pub destination: PathBuf,
     roots: Option<Vec<Root>>,
@@ -83,13 +82,6 @@ impl TrashView {
         } else {
             self.filter.to_lowercase()
         };
-        if !matches!(self.files.sort, fs::Sort::Field(..)) {
-            self.files.sort = if self.sort_name {
-                fs::Sort::Name
-            } else {
-                fs::Sort::Modified
-            };
-        }
         self.files.sort.sort(&mut self.files.entries);
         self.files.visible = self
             .files
@@ -145,6 +137,7 @@ impl App {
         let owner = PathOwner::current(self, self.active);
         let mut files = Tab::new(owner.cwd.clone());
         files.grouping = self.settings.grouping;
+        files.sort = fs::Sort::Modified;
         files.loading = false;
         let roots = roots.or_else(|| {
             self.trash_home_only
@@ -155,7 +148,6 @@ impl App {
             by_path: BTreeMap::new(),
             owner,
             files,
-            sort_name: false,
             generation: 0,
             destination: self.tab().cwd.clone(),
             roots,
@@ -363,17 +355,6 @@ impl App {
             }
             Action::CopyPath => self.request_text_copy("trash:///".into()),
             Action::Refresh => self.refresh_trash(),
-            Action::Sort => {
-                let view = self.trash.as_mut().unwrap();
-                view.sort_name = !view.sort_name;
-                view.files.sort = if view.sort_name {
-                    fs::Sort::Name
-                } else {
-                    fs::Sort::Modified
-                };
-                view.follow_selection = true;
-                view.rebuild();
-            }
             Action::Search => {
                 let original = self.tab().filter.clone();
                 let len = original.len();

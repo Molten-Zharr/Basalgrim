@@ -6,10 +6,10 @@ mod details;
 mod devices;
 mod dialogs;
 mod extensions;
+mod field_menu;
 mod files;
 mod filtering;
 mod folder_size;
-mod grouping;
 mod network;
 mod operations;
 mod palette;
@@ -447,11 +447,18 @@ fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
             (format!(" {search} "), Action::Search),
             (" Вид ".into(), Action::View),
             (" Группы ".into(), Action::Grouping),
+            (
+                (if width <= 35 { "Сорт" } else { "Сорт." }).into(),
+                Action::Sort,
+            ),
         ];
         if toolbar_rows(width, &commands) > 1 {
             for (label, _) in &mut commands {
                 *label = label.trim().to_owned();
             }
+        }
+        if toolbar_rows(width, &commands) > 1 {
+            commands[0].0 = "Меню".into();
         }
         return commands;
     }
@@ -486,6 +493,7 @@ fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
             },
             Action::Grouping,
         ),
+        (" Сортировка ".into(), Action::Sort),
     ];
     if app.in_trash() {
         commands.retain(|(_, action)| !matches!(action, Action::NewFolder));
@@ -496,6 +504,8 @@ fn toolbar_commands(app: &App, width: u16) -> Vec<(String, Action)> {
             match action {
                 Action::Search => *label = " Поиск ".into(),
                 Action::View => *label = " Вид ".into(),
+                Action::Grouping => *label = " Группы ".into(),
+                Action::Sort => *label = " Сорт. ".into(),
                 _ => {}
             }
         }

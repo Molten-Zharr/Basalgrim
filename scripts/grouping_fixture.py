@@ -9,8 +9,8 @@ from views_fixture import wait
 class Fixture(DesktopFixture):
     def __init__(self,base):
         super().__init__(base);self.file.unlink()
-        for name,year,month in [('a-old.txt',2025,11),('b-new.txt',2026,11),('c-mid.txt',2026,10)]:
-            p=self.root/name;p.write_text(name)
+        for name,year,month,size in [('a-old.txt',2025,11,90),('b-new.txt',2026,11,10),('c-mid.txt',2026,10,45)]:
+            p=self.root/name;p.write_bytes(b'x' * size)
             timestamp=datetime.datetime(year,month,15,12,tzinfo=datetime.timezone.utc).timestamp()
             os.utime(p,(timestamp,timestamp))
         self.settings=base/'config/molten-zharr/basalgrim/settings.json'
@@ -27,6 +27,16 @@ def controls(cells):
     return button_x + 2, button_y, first_x, first_y
 
 def exercise(f,key,text,click,screenshot,cells=(170,53)):
+    if cells[0] >= 100:
+        # Open Sort from the directory background in Icons. Pick Size and
+        # rename the first file to verify which entry actually moved there.
+        key('g','ctrl','shift');key('Up');key('Return')
+        click(45,20,3);click(48,25)
+        screenshot('sort-context')
+        click(48,22)
+        rename_first(f,key,text,'b-new.txt','smallest.txt')
+        rename_first(f,key,text,'smallest.txt','b-new.txt')
+        key('g','ctrl','shift');key('Down');key('Return')
     bx,by,x,y = controls(cells)
     click(bx,by)
     screenshot('menu-off')
@@ -76,3 +86,37 @@ def compact(f,key,text,click,screenshot,cells=(50,22)):
     key('g','ctrl','alt');key('Home');key('Return')
     wait(lambda:not f.config()['grouping']['enabled'],'keyboard disables grouping')
     print('Grouping: restart, four views, compact toolbar and direct disabling passed',flush=True)
+
+    sort_in_each_view(f,key,text,click,screenshot,cells)
+
+def rename_first(f,key,text,old,new):
+    key('Home');key('F2');key('a','ctrl');text(new);key('Return')
+    wait(lambda:(f.root/new).exists(),'renaming first sorted entry to '+new)
+    assert not (f.root/old).exists(), 'expected first entry '+old
+    time.sleep(.3)
+
+def sort_in_each_view(f,key,text,click,screenshot,cells):
+    w,h = cells
+    button_x = 30 if w == 34 else 44
+    button_y = 2 if h < 20 else 3
+    first_y = min(button_y + 1,h - 14) + 1
+    first_x = w - 34 + 2
+    smallest, largest = 'newest.txt', 'persisted.txt'
+    for mode in range(4):
+        key('g','ctrl','shift')
+        for _ in range(3): key('Up')
+        for _ in range(mode): key('Down')
+        key('Return')
+        click(button_x,button_y)
+        screenshot('sort-menu-'+str(mode))
+        click(first_x,first_y+1)  # Size
+        key('F9');key('End')
+        if mode % 2 == 0:
+            key('Up')  # ascending
+        key('Return')
+        old = smallest if mode % 2 == 0 else largest
+        new = 'sorted-'+str(mode)+'.txt'
+        rename_first(f,key,text,old,new)
+        if mode % 2 == 0: smallest = new
+        else: largest = new
+    print('Sorting: toolbar and F9 select a criterion and direction in all four views',flush=True)

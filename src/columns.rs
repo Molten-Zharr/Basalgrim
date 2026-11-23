@@ -45,6 +45,13 @@ impl Column {
             Self::Location => "Расположение",
         }
     }
+    pub fn sort_label(self, trash: bool) -> &'static str {
+        if trash && self == Self::Modified {
+            "Дата удаления"
+        } else {
+            self.label()
+        }
+    }
     pub fn text(self, e: &Entry) -> String {
         match self {
             Self::Name => e.name.clone(),

@@ -21,19 +21,6 @@ impl Default for Grouping {
     }
 }
 impl Grouping {
-    pub const ORDER_ROW: usize = Column::ALL.len() + 1;
-
-    pub fn selected_row(self) -> usize {
-        if self.enabled {
-            1 + Column::ALL
-                .iter()
-                .position(|&field| field == self.field)
-                .unwrap()
-        } else {
-            0
-        }
-    }
-
     pub fn date(self) -> bool {
         matches!(
             self.field,

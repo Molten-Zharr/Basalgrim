@@ -319,8 +319,8 @@ impl App {
                 _ => Position::new(2, 4),
             };
             self.dialog = None;
-            if action == Action::Grouping {
-                self.open_grouping(anchor);
+            if matches!(action, Action::Grouping | Action::Sort) {
+                self.open_field_menu(action, anchor);
                 return;
             }
             if action == Action::ExtensionCommands {

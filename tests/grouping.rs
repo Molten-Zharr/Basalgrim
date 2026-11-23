@@ -290,7 +290,7 @@ fn toolbar_opens_all_group_choices_and_applies_only_the_selected_row() {
         for row in 0..=Column::ALL.len() {
             let area = hit(
                 &app,
-                |t| matches!(t, Target::GroupControl {row: r,..} if *r == row),
+                |t| matches!(t, Target::FieldMenuRow {row: r,..} if *r == row),
             );
             assert!(area.bottom() <= h && area.width > 15);
         }
@@ -298,7 +298,7 @@ fn toolbar_opens_all_group_choices_and_applies_only_the_selected_row() {
         assert!(text.contains("● Без группировки"));
         assert!(text.contains("Дата изменения · месяц"));
         let old = match &app.dialog {
-            Some(Dialog::Grouping(m)) => m.token,
+            Some(Dialog::FieldMenu(m)) => m.token,
             _ => panic!(),
         };
         key(&mut app, Key::Escape);
@@ -310,16 +310,16 @@ fn toolbar_opens_all_group_choices_and_applies_only_the_selected_row() {
             ..KeyPress::ctrl('g')
         }));
         render(&mut app, w, h);
-        app.group_control(old, 1);
+        app.choose_field_row(old, 1);
         assert_eq!(app.settings.grouping, off);
-        let r = hit(&app, |t| matches!(t, Target::GroupControl { row: 6, .. }));
+        let r = hit(&app, |t| matches!(t, Target::FieldMenuRow { row: 6, .. }));
         click(&mut app, r);
         assert!(app.dialog.is_none() && !app.tab().groups.is_empty());
         assert_eq!(app.settings.grouping.field, Column::Modified);
 
         render(&mut app, w, h);
         click(&mut app, button);
-        assert!(matches!(&app.dialog, Some(Dialog::Grouping(m)) if m.selected == 6));
+        assert!(matches!(&app.dialog, Some(Dialog::FieldMenu(m)) if m.selected == 6));
         key(&mut app, Key::Home);
         key(&mut app, Key::Enter);
         assert!(app.dialog.is_none() && app.tab().groups.is_empty());
@@ -348,7 +348,7 @@ fn grouping_from_directory_menu_opens_without_changing_policy() {
         m.selected = index;
     }
     key(&mut app, Key::Enter);
-    assert!(matches!(app.dialog, Some(Dialog::Grouping(_))));
+    assert!(matches!(app.dialog, Some(Dialog::FieldMenu(_))));
     assert_eq!(app.settings.grouping, policy);
     key(&mut app, Key::End);
     key(&mut app, Key::Enter);

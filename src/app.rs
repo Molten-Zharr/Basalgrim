@@ -3,8 +3,8 @@ mod typeahead;
 pub use typeahead::Typeahead;
 mod filtering;
 pub use filtering::{FilterControl, FilterMenu, FilterOwner};
-mod grouping;
-pub use grouping::GroupMenu;
+mod field_menu;
+pub use field_menu::{FieldMenu, FieldMenuRow};
 mod columns;
 pub use columns::{ColumnOwner, ColumnsMenu};
 mod tree;
@@ -102,7 +102,7 @@ pub enum Target {
         menu: Option<u64>,
         control: FilterControl,
     },
-    GroupControl {
+    FieldMenuRow {
         token: u64,
         row: usize,
     },
@@ -331,7 +331,7 @@ impl EditKind {
 pub enum Dialog {
     FilterMenu(FilterMenu),
     Columns(ColumnsMenu),
-    Grouping(GroupMenu),
+    FieldMenu(FieldMenu),
     View(ViewMenu),
     Panel(PanelKind),
     Extensions,

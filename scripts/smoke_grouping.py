@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix='basalgrim-grouping-pty-') as tmp:
             if select.select([master],[],[],.01)[0]:output.extend(os.read(master,65536))
     def send(text):os.write(master,text.encode() if isinstance(text,str) else text);pump()
     def key(name,*mods):
-        keys={'Escape':b'\x1b','Return':b'\r','F10':b'\x1b[21~','Tab':b'\t','Home':b'\x1b[H','End':b'\x1b[F','Up':b'\x1b[A','Down':b'\x1b[B','F2':b'\x1bOQ'}
+        keys={'Escape':b'\x1b','Return':b'\r','F9':b'\x1b[20~','F10':b'\x1b[21~','Tab':b'\t','Home':b'\x1b[H','End':b'\x1b[F','Up':b'\x1b[A','Down':b'\x1b[B','F2':b'\x1bOQ'}
         code=b'\x1b[103;6u' if name=='g' and 'shift' in mods else bytes([ord(name)&31]) if 'ctrl' in mods else keys.get(name,name.encode())
         send((b'\x1b' if 'alt' in mods else b'')+code)
     def click(x,y,button=1):
@@ -47,6 +47,9 @@ with tempfile.TemporaryDirectory(prefix='basalgrim-grouping-pty-') as tmp:
         Path('target/preview/grouping-pty-'+name+'.txt').write_text(visible)
         if name in ('menu-off', 'menu'):
             for label in ('Без группировки','Дата изменения · месяц','Расположение','Порядок'):
+                assert label in visible, visible
+        elif name.startswith('sort-menu-'):
+            for label in ('Сортировка','Размер','Расположение','По возрастанию','По убыванию'):
                 assert label in visible, visible
         elif name == 'off':
             assert 'Группы' in visible and 'Ноябрь' not in visible, visible

@@ -39,13 +39,6 @@ pub enum Sort {
     Field(crate::columns::Column, bool),
 }
 impl Sort {
-    pub fn next(self) -> Self {
-        match self {
-            Self::Name => Self::Size,
-            Self::Size => Self::Modified,
-            Self::Modified | Self::Field(..) => Self::Name,
-        }
-    }
     pub fn field(self) -> (crate::columns::Column, bool) {
         use crate::columns::Column;
         match self {

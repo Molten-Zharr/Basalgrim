@@ -1247,11 +1247,7 @@ fn detail_list(
         if width == 0 {
             continue;
         }
-        let label = if app.trash_in(pane) && spec.column == Column::Modified {
-            "Дата удаления"
-        } else {
-            spec.column.label()
-        };
+        let label = spec.column.sort_label(app.trash_in(pane));
         let title = format!(
             "{}{}{}",
             label,
