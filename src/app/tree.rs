@@ -110,7 +110,8 @@ impl App {
                             if super::directories::fingerprint(&branch.entries)
                                 != super::directories::fingerprint(&entries)
                             {
-                                self.folder_sizes.invalidate(path);
+                                self.folder_sizes
+                                    .listing_changed(path, &branch.entries, &entries);
                             }
                             branch.entries = entries;
                             branch.error = None;

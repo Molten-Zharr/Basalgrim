@@ -441,7 +441,7 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                 terminal_fixture.exercise(source,key,lambda value:run('wtype','-s','100',value,'-s','100'),shell_paste,click,shell_shot,wait_for)
                 key('q','ctrl');process.wait(timeout=5);assert process.returncode==0;process=None
                 return
-            if '--folder-size-only' in sys.argv[2:]:
+            if {'--folder-size-only','--auto-folder-sizes-only'}.intersection(sys.argv[2:]):
                 import folder_size_fixture
                 source=folder_size_fixture.prepare(base)
                 settings.write_text(json.dumps({'preview':True,'grid':False,'font_size':16,'theme':'light','icon_mode':'symbols'}))
@@ -450,7 +450,10 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                     path=out/('native-wayland-folder-'+name+'.png')
                     run('grim','-g','0,0 1360x860',str(path))
                     with Image.open(path) as image:return image.copy()
-                folder_size_fixture.exercise(source,key,click,size_shot,wait_for)
+                if '--auto-folder-sizes-only' in sys.argv[2:]:
+                    folder_size_fixture.exercise_automatic(source,key,click,size_shot,wait_for,settings)
+                else:
+                    folder_size_fixture.exercise(source,key,click,size_shot,wait_for)
                 key('q','ctrl');process.wait(timeout=5);process=None
                 return
             if '--syntax-only' in sys.argv[2:]:

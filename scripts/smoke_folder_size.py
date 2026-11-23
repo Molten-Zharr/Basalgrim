@@ -36,7 +36,37 @@ def main():
         def click(x,y):send(f'\x1b[<0;{x+1};{y+1}M'.encode());send(f'\x1b[<0;{x+1};{y+1}m'.encode())
         try:
             wait(lambda:'a-folder' in screen(),'initial folder')
-            send(b'\x1b[<2;36;12M');click(37,17)
+            if '--auto-folder-sizes-only' in sys.argv[2:]:
+                assert '≈12.0 KiB' not in screen()
+                send(b'\x1b[21~');click(5,11);click(155,9)
+                wait(lambda:json.loads(settings.read_text()).get('auto_folder_sizes') is True,'saved setting')
+                send(b'\x1b')
+                wait(lambda:'a-folder ≈12.0 KiB' in screen(),'automatic size in file pane')
+                output.clear();resize(34,14);child.send_signal(signal.SIGWINCH)
+                wait(lambda:'a-folder ≈12.0 KiB' in screen(),'compact folder size')
+                (source/'a-folder/plain').write_bytes(bytes(10240))
+                wait(lambda:'a-folder ≈16.0 KiB' in screen(),'external write to visible folder')
+                quit_when_ready(child,send)
+                output.clear()
+                child=subprocess.Popen([str(binary),'--no-session',str(source)],env=env,stdin=slave,stdout=slave,stderr=slave)
+                wait(lambda:'a-folder ≈16.0 KiB' in screen(),'enabled after restart at 34x14')
+                send(b'\x1b[21~');send(b'\x1b[F');send(b'\x1b[A');send(b'\x1b[A')
+                send(b'\r');send(b'\x1b[F')
+                wait(lambda:'Размеры папок' in screen(),'compact settings row')
+                send(b'\r')
+                wait(lambda:json.loads(settings.read_text()).get('auto_folder_sizes') is False,'disabled setting')
+                send(b'\x1b')
+                wait(lambda:'a-folder' in screen() and '≈16.0 KiB' not in screen(),'disabled compact label')
+                quit_when_ready(child,send)
+                print('Automatic folder sizes PTY: setting, visible rows, 34x14, external write, restart and disabling passed',flush=True)
+                return
+            send(b'\x1b[<2;36;11M')
+            def size_command():
+                for y,line in enumerate(screen().splitlines()):
+                    x=line.find('Размер папки',35,110)
+                    if x>=0:return x,y
+            wait(size_command,'folder size context command')
+            click(*size_command())
             wait(lambda:'Размер файлов: 12.0 KiB' in screen() and 'Подсчёт завершён' in screen(),'exact full result')
             assert 'Файлов: 3 · папок: 1' in screen()
             click(60,34);send(b'\x1b[1;2S') # Shift+F4 (F3's legacy encoding conflicts with cursor reports).

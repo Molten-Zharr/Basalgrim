@@ -2,6 +2,37 @@ use super::*;
 use crate::input::{Key, KeyPress};
 
 impl App {
+    fn measurable_folder(&self, pane: usize, entry: &fs::Entry) -> bool {
+        entry.directory
+            && !entry.symlink
+            && !self.trash_in(pane)
+            && self.file_tab(pane).archive.is_none()
+    }
+    pub(crate) fn folder_size_label(&self, pane: usize, entry: &fs::Entry) -> Option<String> {
+        (self.settings.auto_folder_sizes && self.measurable_folder(pane, entry))
+            .then(|| self.folder_sizes.row_label(&entry.path))
+    }
+    pub(crate) fn update_visible_folder_sizes(&mut self) {
+        let mut paths = BTreeSet::new();
+        if self.settings.auto_folder_sizes && self.dialog.is_none() && !self.busy {
+            for (_, target) in &self.hits {
+                match target {
+                    Target::Entry { pane, index } => {
+                        let tab = self.file_tab(*pane);
+                        let entry = &tab.entries[tab.visible[*index]];
+                        if self.measurable_folder(*pane, entry) {
+                            paths.insert(entry.path.clone());
+                        }
+                    }
+                    Target::FolderMeasure { path, .. } => {
+                        paths.insert(path.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.folder_sizes.update_visible(paths);
+    }
     pub(super) fn single_folder(&self) -> Option<PathBuf> {
         let targets = self.tab().targets();
         if targets.len() != 1 {
@@ -14,7 +45,12 @@ impl App {
             .map(|e| e.path.clone())
     }
     pub(super) fn folder_size_target(&self, background: bool) -> Option<PathBuf> {
-        if self.in_trash() || self.busy || self.tab().loading || self.tab().error.is_some() {
+        if self.in_trash()
+            || self.tab().archive.is_some()
+            || self.busy
+            || self.tab().loading
+            || self.tab().error.is_some()
+        {
             return None;
         }
         if background {
@@ -30,7 +66,7 @@ impl App {
         )
     }
     pub fn open_folder_size(&mut self, path: PathBuf) {
-        if self.busy || self.in_trash() {
+        if self.busy || self.in_trash() || self.tab().archive.is_some() {
             return;
         }
         self.folder_sizes.start(path, false);

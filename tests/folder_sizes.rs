@@ -320,3 +320,97 @@ fn settings_migration_preserves_custom_bindings_and_adds_folder_size() {
     );
     assert!(original.iter().all(|b| settings.bindings.contains(b)));
 }
+
+fn wait_for_label(app: &mut App, width: u16, height: u16, label: &str) -> String {
+    let deadline = Instant::now() + Duration::from_secs(6);
+    loop {
+        app.tick();
+        let frame = render(app, width, height);
+        if frame.contains(label) {
+            return frame;
+        }
+        assert!(Instant::now() < deadline, "Missing {label}: {frame}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn opt_in_sizes_follow_visible_folders_and_known_changes_without_rewalking_siblings() {
+    use basalgrim::app::{SettingControl, SettingsSection};
+    use basalgrim::view::ViewMode;
+
+    let root = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let settings_path = config.path().join("settings.json");
+    fs::write(&settings_path, r#"{"grid":false,"preview":false}"#).unwrap();
+    let settings = Settings::load(&settings_path).unwrap();
+    assert!(!settings.auto_folder_sizes);
+    let a = root.path().join("a");
+    let b = root.path().join("b");
+    fs::create_dir_all(a.join("nested")).unwrap();
+    fs::create_dir(&b).unwrap();
+    fs::write(a.join("nested/data"), [0; 120]).unwrap();
+    fs::write(a.join(".hidden"), [0; 3]).unwrap();
+    fs::write(b.join("file"), [0; 72]).unwrap();
+    symlink(&a, root.path().join("link")).unwrap();
+    let mut app = App::new(root.path().into(), settings);
+    settle(&mut app);
+    assert!(!render(&mut app, 110, 32).contains('≈'));
+    assert_eq!(app.folder_sizes.id, 0);
+
+    app.action(Action::Settings);
+    app.settings_section(SettingsSection::Panels);
+    let toggle = app
+        .settings_rows()
+        .iter()
+        .position(|r| matches!(r.control, SettingControl::AutoFolderSizes))
+        .unwrap();
+    render(&mut app, 110, 32);
+    let button = hit(
+        &app,
+        |t| matches!(t, Target::Setting { index, activate: true, .. } if *index == toggle),
+    );
+    click(&mut app, button);
+    app.persist_preferences(Some(&settings_path));
+    assert!(Settings::load(&settings_path).unwrap().auto_folder_sizes);
+    app.cancel_dialog();
+    wait_for_label(&mut app, 110, 32, "≈123 B");
+    wait_for_label(&mut app, 110, 32, "≈72 B");
+    assert!(app.folder_sizes.cached(&root.path().join("link")).is_none());
+    let measured_b = app.folder_sizes.cached(&b).unwrap().measured;
+    let focused = app.tab().entry().unwrap().path.clone();
+    // Give the watcher time to finish registering the visible roots.
+    std::thread::sleep(Duration::from_millis(300));
+    fs::write(a.join(".hidden"), [0; 9]).unwrap();
+    wait_for_label(&mut app, 110, 32, "≈129 B");
+    fs::write(root.path().join("unrelated"), b"x").unwrap();
+    wait_for_label(&mut app, 110, 32, "unrelated");
+    wait_for_label(&mut app, 110, 32, "≈72 B");
+    assert_eq!(app.folder_sizes.cached(&b).unwrap().measured, measured_b);
+    assert_eq!(app.tab().entry().unwrap().path, focused);
+
+    fs::write(a.join("nested/data"), [0; 500]).unwrap();
+    app.action(Action::Refresh);
+    wait_for_label(&mut app, 34, 14, "≈509 B");
+    for view in [
+        ViewMode::Icons,
+        ViewMode::Columns,
+        ViewMode::Tree,
+        ViewMode::List,
+    ] {
+        app.settings.view = Some(view);
+        wait_for_label(&mut app, 110, 32, "≈509 B");
+    }
+    app.settings
+        .list_columns
+        .toggle(basalgrim::columns::Column::Size);
+    assert!(render(&mut app, 110, 32).contains("≈509 B"));
+    app.action(Action::Settings);
+    app.settings_section(SettingsSection::Panels);
+    app.setting(toggle, true, 1);
+    app.cancel_dialog();
+    assert!(!render(&mut app, 110, 32).contains('≈'));
+    app.action(Action::FolderSize);
+    settle(&mut app);
+    assert_eq!(app.folder_sizes.result.bytes, 509);
+}

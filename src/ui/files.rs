@@ -594,6 +594,25 @@ fn grid(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
         draw_tile(app, frame, rect, pane, index, palette);
     }
 }
+fn name_suffix(app: &App, pane: usize, entry: &fs::Entry, width: u16, show_size: bool) -> String {
+    if entry.symlink {
+        return " ↗".into();
+    }
+    if show_size
+        && !app.renaming(pane, &entry.path)
+        && let Some(size) = app.folder_size_label(pane, entry)
+        && size.width() + 4 <= usize::from(width)
+    {
+        return format!(" {size}");
+    }
+    String::new()
+}
+
+fn size_text(app: &App, pane: usize, entry: &fs::Entry) -> String {
+    app.folder_size_label(pane, entry)
+        .unwrap_or_else(|| crate::columns::Column::Size.text(entry))
+}
+
 fn draw_tile(
     app: &mut App,
     frame: &mut Frame,
@@ -683,8 +702,21 @@ fn draw_tile(
     let mut rename_area = None;
     if rect.height > 0 && rect.width > 2 {
         let prefix = if marked { "● " } else { "" };
-        let suffix = if entry.symlink { " ↗" } else { "" };
         let label_width = rect.width - 2;
+        let tag = if !renaming
+            && (app.settings.auto_folder_sizes || app.file_tab(pane).filtered() || rect.height < 4)
+        {
+            folder_tag(decoration, label_width)
+        } else {
+            String::new()
+        };
+        let suffix = name_suffix(
+            app,
+            pane,
+            entry,
+            label_width.saturating_sub((tag.width() + prefix.width()) as u16),
+            rect.height < 4 || app.file_tab(pane).filtered(),
+        );
         let name_width = usize::from(label_width).saturating_sub(prefix.width() + suffix.width());
         let row = Rect::new(rect.x + 1, rect.y + 2.min(rect.height - 1), label_width, 1);
         if renaming && let Some(crate::app::Dialog::Edit { text, .. }) = &app.dialog {
@@ -706,16 +738,11 @@ fn draw_tile(
             let suffix_x = (field.x + width.min(name_width) as u16)
                 .min(row.right().saturating_sub(suffix.width() as u16));
             frame.render_widget(
-                Paragraph::new(suffix).style(base),
+                Paragraph::new(suffix.as_str()).style(base),
                 Rect::new(suffix_x, row.y, suffix.width() as u16, 1),
             );
             rename_area = Some(field);
         } else {
-            let tag = if app.file_tab(pane).filtered() || rect.height < 4 {
-                folder_tag(decoration, label_width)
-            } else {
-                String::new()
-            };
             let label = format!(
                 "{prefix}{}{suffix}{tag}",
                 shorten_name(
@@ -743,6 +770,8 @@ fn draw_tile(
     if rect.height > 3 {
         let detail = if app.file_tab(pane).filtered() {
             location_label(app, pane, entry)
+        } else if let Some(size) = app.folder_size_label(pane, entry) {
+            size
         } else if let Some(tag) = decoration.map(|d| &d.style.tag).filter(|t| !t.is_empty()) {
             format!("#{tag}")
         } else if entry.directory {
@@ -935,7 +964,16 @@ fn draw_name_row(
         }
     });
     let name = app.entry_name(pane, entry);
-    let suffix = if entry.symlink { " ↗" } else { "" };
+    let name_only = match app.settings.view_mode() {
+        crate::view::ViewMode::Tree => false,
+        crate::view::ViewMode::List => !app
+            .settings
+            .list_columns
+            .columns
+            .iter()
+            .any(|s| s.column == crate::columns::Column::Size),
+        _ => true,
+    };
     frame.render_widget(Block::default().style(style), rect);
     frame.render_widget(
         Paragraph::new(if mark_width == 1 {
@@ -965,6 +1003,13 @@ fn draw_name_row(
     } else {
         folder_tag(decoration, field.width)
     };
+    let suffix = name_suffix(
+        app,
+        pane,
+        entry,
+        field.width.saturating_sub(tag.width() as u16),
+        name_only,
+    );
     if has_icon && let Some(symbol) = symbol {
         frame.render_widget(
             Paragraph::new(symbol).style(style.fg(color)),
@@ -1076,11 +1121,7 @@ fn list(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: Pale
                 let entry = &tab.entries[tab.visible[index]];
                 Row::new(vec![
                     Cell::from(""),
-                    Cell::from(if entry.directory {
-                        "—".into()
-                    } else {
-                        fs::size(entry.size)
-                    }),
+                    Cell::from(size_text(app, pane, entry)),
                     Cell::from(fs::kind(entry)),
                     Cell::from(fs::date(entry.modified)),
                 ])
@@ -1222,13 +1263,15 @@ fn detail_list(
                 let tab = app.file_tab(pane);
                 let entry = &tab.entries[tab.visible[index]];
                 let style = row_style(app, pane, index, palette);
+                let value = if spec.column == Column::Size {
+                    size_text(app, pane, entry)
+                } else {
+                    spec.column.text(entry)
+                };
                 frame.render_widget(Block::default().style(style), cell);
                 frame.render_widget(
-                    Paragraph::new(shorten_name(
-                        &spec.column.text(entry),
-                        usize::from(width.saturating_sub(1)),
-                    ))
-                    .style(style),
+                    Paragraph::new(shorten_name(&value, usize::from(width.saturating_sub(1))))
+                        .style(style),
                     cell,
                 );
                 hit(app, cell, Target::Entry { pane, index });
@@ -1363,11 +1406,7 @@ fn grouped(app: &mut App, frame: &mut Frame, area: Rect, pane: usize, palette: P
                 Table::new(
                     [Row::new(vec![
                         String::new(),
-                        if e.directory {
-                            "—".into()
-                        } else {
-                            fs::size(e.size)
-                        },
+                        size_text(app, pane, e),
                         fs::kind(e).into(),
                         fs::date(e.modified),
                     ])

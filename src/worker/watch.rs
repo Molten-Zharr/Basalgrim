@@ -42,6 +42,8 @@ impl Pending {
 #[derive(Default)]
 pub struct Changes {
     pub paths: BTreeSet<PathBuf>,
+    /// Actual native events, excluding registration and polling hints.
+    pub modified: BTreeSet<PathBuf>,
     pub error: Option<String>,
 }
 
@@ -63,6 +65,7 @@ impl Watcher {
             let mut native = Native::default();
             let mut paths = BTreeSet::new();
             let mut pending = Pending::default();
+            let mut modified = BTreeSet::new();
             let mut retry = Instant::now();
             let mut last_error = None;
             loop {
@@ -74,6 +77,7 @@ impl Watcher {
                 if let Some(latest) = requests.lock().unwrap().take() {
                     paths = latest;
                     pending.0.retain(|path, _| paths.contains(path));
+                    modified.retain(|path| paths.contains(path));
                     retry = now;
                 }
                 let mut dirty = BTreeSet::new();
@@ -83,14 +87,21 @@ impl Watcher {
                     native.sync(&paths, &mut dirty, &mut error);
                     retry = now + RETRY;
                 }
-                native.poll(&mut dirty, &mut error);
+                let mut events = BTreeSet::new();
+                native.poll(&mut events, &mut error);
+                modified.extend(events.intersection(&paths).cloned());
+                dirty.extend(events);
                 for path in dirty.intersection(&paths) {
                     pending.mark(path.clone(), now);
                 }
                 let ready = pending.ready(now);
                 let mut output = output.lock().unwrap();
                 output.paths.retain(|path| paths.contains(path));
+                output.modified.retain(|path| paths.contains(path));
                 for path in ready {
+                    if modified.remove(&path) {
+                        output.modified.insert(path.clone());
+                    }
                     output.paths.insert(path);
                 }
                 if error.is_some() && error != last_error {

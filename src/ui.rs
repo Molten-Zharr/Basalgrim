@@ -76,6 +76,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     app.preview_slot = None;
     let palette = Palette::new(&app.settings);
     render_content(app, frame, palette);
+    app.update_visible_folder_sizes();
     app.validate_marquee();
     app.validate_file_drag();
     app.validate_column_drag();
@@ -781,7 +782,7 @@ fn preview(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
     let directory = app
         .tab()
         .entry()
-        .filter(|e| e.directory && !e.symlink && !app.in_trash());
+        .filter(|e| e.directory && !e.symlink && !app.in_trash() && app.tab().archive.is_none());
     let compact_preview = inner.height < 14;
     let header_height = if compact_preview {
         if directory.is_some() { 3 } else { 2 }
@@ -806,9 +807,13 @@ fn preview(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
     }
     if let Some(entry) = directory {
         let label = app
-            .folder_sizes
-            .cached(&entry.path)
-            .map(|r| format!(" Содержимое ~{} · кэш", fs::size(r.bytes)))
+            .folder_size_label(app.active, entry)
+            .map(|size| format!(" Содержимое {size}"))
+            .or_else(|| {
+                app.folder_sizes
+                    .cached(&entry.path)
+                    .map(|r| format!(" Содержимое ~{} · кэш", fs::size(r.bytes)))
+            })
             .unwrap_or_else(|| " Размер не подсчитан".into());
         if !compact_preview {
             header.push(Line::styled(label, palette.muted()));
@@ -819,7 +824,13 @@ fn preview(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
             parts[0].width,
             1,
         );
-        header.push(Line::styled(" Размер папки…", palette.accent()));
+        let button = if compact_preview && let Some(size) = app.folder_size_label(app.active, entry)
+        {
+            format!(" Размер папки… {size}")
+        } else {
+            " Размер папки…".into()
+        };
+        header.push(Line::styled(button, palette.accent()));
         if row.bottom() <= parts[0].bottom() {
             app.hits.push((
                 row,

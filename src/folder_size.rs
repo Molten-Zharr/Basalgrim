@@ -4,7 +4,7 @@ use anyhow::{Result, ensure};
 use rusqlite::{Connection, OptionalExtension, params};
 use rustix::fs::{self, AtFlags, Dir, FileType, Mode, OFlags, Stat};
 use std::{
-    collections::VecDeque,
+    collections::{BTreeMap, BTreeSet, VecDeque},
     ffi::OsString,
     os::{
         fd::OwnedFd,
@@ -18,6 +18,7 @@ use std::{
 
 const CACHE_AGE: Duration = Duration::from_secs(30);
 const CACHE_ENTRIES: usize = 64;
+const RECOUNT_QUIET: Duration = Duration::from_secs(1);
 const FLAGS: OFlags = OFlags::RDONLY
     .union(OFlags::DIRECTORY)
     .union(OFlags::NOFOLLOW)
@@ -346,6 +347,31 @@ struct Request {
 }
 type Inbox = Arc<Mutex<Option<Request>>>;
 type Output = Arc<Mutex<Option<(u64, Measurement)>>>;
+
+#[derive(Clone, Copy, Default)]
+enum RowSize {
+    #[default]
+    Pending,
+    Bytes(u64),
+    Unavailable,
+    Changed {
+        after: Instant,
+        previous: Option<u64>,
+    },
+}
+impl RowSize {
+    fn bytes(self) -> Option<u64> {
+        match self {
+            Self::Bytes(bytes) => Some(bytes),
+            Self::Changed { previous, .. } => previous,
+            _ => None,
+        }
+    }
+    fn ready(self, now: Instant) -> bool {
+        matches!(self, Self::Pending) || matches!(self, Self::Changed { after, .. } if now >= after)
+    }
+}
+
 pub struct FolderSizes {
     inbox: Inbox,
     output: Output,
@@ -356,6 +382,10 @@ pub struct FolderSizes {
     pub result: Measurement,
     cache: VecDeque<Cached>,
     invalidated: bool,
+    // Only the currently displayed rows retain their labels. Re-entering the
+    // viewport goes through the same validated, expiring cache as a manual scan.
+    visible: BTreeMap<PathBuf, RowSize>,
+    automatic: Option<PathBuf>,
 }
 impl Default for FolderSizes {
     fn default() -> Self {
@@ -405,6 +435,8 @@ impl Default for FolderSizes {
             },
             cache: VecDeque::new(),
             invalidated: false,
+            visible: BTreeMap::new(),
+            automatic: None,
         }
     }
 }
@@ -415,6 +447,13 @@ impl Drop for FolderSizes {
 }
 impl FolderSizes {
     pub fn start(&mut self, path: PathBuf, force: bool) {
+        self.automatic = None;
+        self.path = Some(path.clone());
+        self.result = Measurement::default();
+        self.invalidated = false;
+        self.submit(path, force);
+    }
+    fn submit(&mut self, path: PathBuf, force: bool) {
         self.cancel.cancel();
         self.cancel = Default::default();
         self.id += 1;
@@ -428,9 +467,6 @@ impl FolderSizes {
             .flatten();
         self.cache
             .retain(|c| (!force || c.path != path) && c.at.elapsed() < CACHE_AGE);
-        self.path = Some(path.clone());
-        self.result = Measurement::default();
-        self.invalidated = false;
         *self.inbox.lock().unwrap() = Some(Request {
             id: self.id,
             path,
@@ -450,18 +486,25 @@ impl FolderSizes {
         if let Some((id, mut result)) = self.output.lock().unwrap().take()
             && id == self.id
         {
+            let automatic = self.automatic.is_some();
+            if automatic && !result.done {
+                return;
+            }
             if self.cancel.is_cancelled() {
                 result.done = true;
                 result.stopped = true;
             }
-            result.stale |= self.invalidated;
+            result.stale |= !automatic && self.invalidated;
+            let Some(path) = self.automatic.as_ref().or(self.path.as_ref()) else {
+                return;
+            };
             if result.done && !result.complete() {
-                self.cache.retain(|c| Some(&c.path) != self.path.as_ref());
+                self.cache.retain(|c| c.path != *path);
             }
             if result.complete() && result.measured.is_some() && !result.cached {
-                self.cache.retain(|c| Some(&c.path) != self.path.as_ref());
+                self.cache.retain(|c| c.path != *path);
                 self.cache.push_back(Cached {
-                    path: self.path.clone().unwrap(),
+                    path: path.clone(),
                     result: result.clone(),
                     at: Instant::now(),
                 });
@@ -469,7 +512,57 @@ impl FolderSizes {
                     self.cache.pop_front();
                 }
             }
-            self.result = result;
+            if result.done
+                && let Some(row) = self.visible.get_mut(path)
+            {
+                *row = if result.complete() {
+                    RowSize::Bytes(result.bytes)
+                } else {
+                    RowSize::Unavailable
+                };
+            }
+            if automatic {
+                self.automatic = None;
+            } else {
+                self.result = result;
+            }
+        }
+    }
+    fn cancel_automatic(&mut self) {
+        if self.automatic.take().is_some() {
+            self.cancel.cancel();
+            self.id += 1;
+        }
+    }
+    pub(crate) fn update_visible(&mut self, paths: BTreeSet<PathBuf>) {
+        self.visible.retain(|path, _| paths.contains(path));
+        if self.automatic.as_ref().is_some_and(|p| !paths.contains(p)) {
+            self.cancel_automatic();
+        }
+        for path in paths {
+            self.visible.entry(path).or_default();
+        }
+        let now = Instant::now();
+        if self.result.done
+            && self.automatic.is_none()
+            && let Some((path, _)) = self.visible.iter().find(|(_, s)| s.ready(now))
+        {
+            let path = path.clone();
+            self.automatic = Some(path.clone());
+            self.submit(path, false);
+        }
+    }
+    pub(crate) fn visible_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.visible.keys()
+    }
+    pub(crate) fn row_label(&self, path: &Path) -> String {
+        let row = self.visible.get(path).copied().unwrap_or_default();
+        if let Some(bytes) = row.bytes() {
+            format!("≈{}", crate::fs::size(bytes))
+        } else if matches!(row, RowSize::Unavailable) {
+            "?".into()
+        } else {
+            "…".into()
         }
     }
     pub fn cached(&self, path: &Path) -> Option<&Measurement> {
@@ -479,13 +572,75 @@ impl FolderSizes {
             .map(|c| &c.result)
     }
     pub fn invalidate(&mut self, path: &Path) {
-        self.cache
-            .retain(|c| !c.path.starts_with(path) && !path.starts_with(&c.path));
-        if self
-            .path
-            .as_ref()
-            .is_some_and(|p| p.starts_with(path) || path.starts_with(p))
+        self.invalidate_matching(|p| p.starts_with(path) || path.starts_with(p), None);
+    }
+    pub(crate) fn invalidate_ancestors(&mut self, changed: &Path) {
+        // Keep the last visible estimate during a download or burst of writes.
+        // Other pending folders can be measured while this one settles.
+        self.invalidate_matching(
+            |p| changed.starts_with(p),
+            Some(Instant::now() + RECOUNT_QUIET),
+        );
+    }
+    pub(crate) fn listing_changed(
+        &mut self,
+        dir: &Path,
+        before: &[crate::fs::Entry],
+        after: &[crate::fs::Entry],
+    ) {
+        // A changed file in this directory affects its total, but not the
+        // contents of unrelated child folders. Compare only tracked branches.
+        let mut branches = BTreeMap::new();
+        for path in self
+            .visible
+            .keys()
+            .chain(self.cache.iter().map(|c| &c.path))
+            .chain(&self.path)
         {
+            if let Ok(relative) = path.strip_prefix(dir)
+                && let Some(child) = relative.iter().next()
+            {
+                branches.insert(dir.join(child), [None; 2]);
+            }
+        }
+        self.invalidate_ancestors(dir);
+        if branches.is_empty() {
+            return;
+        }
+        for (index, entries) in [before, after].into_iter().enumerate() {
+            for e in entries {
+                if let Some(stamps) = branches.get_mut(&e.path) {
+                    stamps[index] = Some((
+                        e.directory,
+                        e.symlink,
+                        e.modified,
+                        e.size,
+                        e.details.created,
+                        e.details.mode,
+                    ));
+                }
+            }
+        }
+        for (child, [old, new]) in branches {
+            if old != new {
+                self.invalidate(&child);
+            }
+        }
+    }
+    fn invalidate_matching(&mut self, affected: impl Fn(&Path) -> bool, after: Option<Instant>) {
+        self.cache.retain(|c| !affected(&c.path));
+        if self.automatic.as_deref().is_some_and(&affected) {
+            self.cancel_automatic();
+        }
+        for (path, row) in &mut self.visible {
+            if affected(path) {
+                *row = after.map_or(RowSize::Pending, |after| RowSize::Changed {
+                    after,
+                    previous: row.bytes(),
+                });
+            }
+        }
+        if self.path.as_deref().is_some_and(affected) {
             self.invalidated = true;
             self.result.stale = true;
         }
@@ -496,6 +651,70 @@ impl FolderSizes {
 mod tests {
     use super::*;
     use std::fs as disk;
+
+    #[test]
+    fn a_busy_folder_keeps_its_estimate_and_yields_to_other_visible_folders() {
+        let root = tempfile::tempdir().unwrap();
+        let busy = root.path().join("a");
+        let next = root.path().join("b");
+        let mut sizes = FolderSizes::default();
+        sizes.visible.insert(busy.clone(), RowSize::Bytes(50));
+        sizes.invalidate_ancestors(&busy);
+        assert_eq!(sizes.row_label(&busy), "≈50 B");
+        let row = sizes.visible[&busy];
+        let RowSize::Changed { after, .. } = row else {
+            panic!("recount was not deferred")
+        };
+        assert!(!row.ready(after - Duration::from_millis(1)));
+        assert!(row.ready(after));
+        sizes.update_visible(BTreeSet::from([busy, next.clone()]));
+        assert_eq!(sizes.automatic.as_deref(), Some(next.as_path()));
+    }
+
+    #[test]
+    fn obsolete_auto_results_cannot_replace_manual_or_visible_sizes() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("folder");
+        disk::create_dir(&folder).unwrap();
+        disk::write(folder.join("sample"), b"sample").unwrap();
+        let missing = root.path().join("missing");
+        let mut sizes = FolderSizes::default();
+        sizes.update_visible(BTreeSet::from([folder.clone()]));
+        let first = sizes.id;
+        sizes.start(missing.clone(), false);
+        // Rendering another viewport must leave the explicit request in control.
+        let second = sizes.id;
+        sizes.update_visible(BTreeSet::from([missing.clone()]));
+        assert_eq!(sizes.id, second);
+        let end = Instant::now() + Duration::from_secs(5);
+        while !sizes.result.done {
+            sizes.poll();
+            assert!(Instant::now() < end);
+            thread::yield_now();
+        }
+        assert!(sizes.result.failure.is_some());
+        assert_eq!(sizes.row_label(&missing), "?");
+        sizes.update_visible(BTreeSet::from([missing.clone()]));
+        assert_eq!(sizes.id, second, "failed rows must not spin");
+        assert!(sizes.cached(&folder).is_none());
+        sizes.update_visible(BTreeSet::from([folder.clone()]));
+        let cancelled = sizes.id;
+        sizes.update_visible(BTreeSet::new());
+        for id in [first, cancelled] {
+            *sizes.output.lock().unwrap() = Some((
+                id,
+                Measurement {
+                    bytes: 999,
+                    done: true,
+                    measured: Some(SystemTime::now()),
+                    ..Default::default()
+                },
+            ));
+            sizes.poll();
+            assert!(sizes.cached(&folder).is_none());
+            assert!(sizes.result.failure.is_some());
+        }
+    }
 
     #[test]
     fn cancelled_steps_and_storage_failures_keep_only_committed_totals() {
@@ -509,7 +728,10 @@ mod tests {
             cancel.clone(),
         )
         .unwrap();
-        scan.step().unwrap();
+        while scan.result.files == 0 {
+            scan.step().unwrap();
+            assert!(!scan.result.done);
+        }
         assert!(scan.result.files > 0 && scan.result.files < 1200);
         let bytes = scan.result.bytes;
         cancel.cancel();
@@ -522,9 +744,17 @@ mod tests {
         )
         .unwrap();
         scan.db.execute_batch("CREATE TRIGGER fail BEFORE INSERT ON seen WHEN (SELECT COUNT(*) FROM seen)>3 BEGIN SELECT RAISE(ABORT, 'simulated failure'); END;").unwrap();
-        assert!(scan.step().is_err());
-        assert_eq!(scan.result.bytes, 0);
-        assert_eq!(scan.result.files, 0);
+        // The 20 ms work budget may expire before reaching the trigger.
+        // Only the failing transaction rolls back; earlier batches stay committed.
+        loop {
+            let prior = (scan.result.bytes, scan.result.files);
+            if let Err(error) = scan.step() {
+                assert!(error.to_string().contains("simulated failure"));
+                assert_eq!((scan.result.bytes, scan.result.files), prior);
+                break;
+            }
+            assert!(!scan.result.done);
+        }
     }
 
     #[test]

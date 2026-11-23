@@ -159,6 +159,7 @@ fn compact_property_editor_saves_only_its_folder_and_all_views_use_the_decoratio
     let root = t.path().join("files");
     fs::create_dir(&root).unwrap();
     fs::create_dir(root.join("alpha")).unwrap();
+    fs::write(root.join("alpha/sample"), [0; 73]).unwrap();
     fs::create_dir(root.join("beta")).unwrap();
     let mut app = App::new(
         root.clone(),
@@ -210,6 +211,14 @@ fn compact_property_editor_saves_only_its_folder_and_all_views_use_the_decoratio
             assert_eq!(screen.matches("#Дела").count(), 1);
         }
     }
+    app.settings.view = Some(ViewMode::Icons);
+    app.settings.auto_folder_sizes = true;
+    draw(&mut app, 100, 35);
+    wait(&mut app, |a| {
+        a.folder_sizes.cached(&root.join("alpha")).is_some()
+    });
+    let screen = draw(&mut app, 100, 35);
+    assert!(screen.contains("#Дела") && screen.contains("≈73 B"));
     app.action(Action::Properties);
     wait(&mut app, |a| {
         a.detail_view

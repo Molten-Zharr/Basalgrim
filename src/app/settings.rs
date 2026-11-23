@@ -110,6 +110,7 @@ pub enum SettingControl {
     SidebarMode,
     PreviewMode,
     Animations,
+    AutoFolderSizes,
     Extensions,
     Desktop(crate::desktop::InstallAction),
     RestoreSession,
@@ -228,6 +229,16 @@ impl App {
                     },
                     SettingControl::Animations,
                     "Движение индикаторов занятости. Файлы и панели остаются на месте; наведение не меняет расположение.",
+                ),
+                (
+                    "Размеры папок",
+                    if self.settings.auto_folder_sizes {
+                        "Включены"
+                    } else {
+                        "Выключены"
+                    },
+                    SettingControl::AutoFolderSizes,
+                    "Считать содержимое видимых папок по очереди в фоне. Обход больших папок нагружает процессор и диск. F5 обновляет размеры.",
                 ),
             ] {
                 push(label.into(), value.into(), help.into(), control, true, None);
@@ -466,6 +477,9 @@ impl App {
                 appearance.preview_mode = cycle(appearance.preview_mode, &PanelMode::ALL, direction)
             }
             SettingControl::Animations => appearance.animations = !appearance.animations,
+            SettingControl::AutoFolderSizes => {
+                self.settings.auto_folder_sizes = !self.settings.auto_folder_sizes;
+            }
             SettingControl::Extensions => {
                 self.open_extensions(false, false);
                 return;

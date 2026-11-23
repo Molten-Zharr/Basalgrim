@@ -60,8 +60,17 @@ impl App {
                 paths
             })
             .collect();
-        self.worker.watch(paths.clone());
+        let mut watched = paths.clone();
+        if self.settings.auto_folder_sizes {
+            watched.extend(self.folder_sizes.visible_paths().cloned());
+        }
+        self.worker.watch(watched);
         let changes = self.worker.directory_changes();
+        if self.settings.auto_folder_sizes {
+            for changed in changes.modified {
+                self.folder_sizes.invalidate_ancestors(&changed);
+            }
+        }
         self.pending_directory_changes.extend(changes.paths);
         self.pending_directory_changes.retain(|p| paths.contains(p));
         if let Some(error) = changes.error {
@@ -159,6 +168,7 @@ impl App {
                     continue;
                 };
                 projection_changed = true;
+                let refreshing = tab.refreshing;
                 tab.loading = false;
                 tab.refreshing = false;
                 match result {
@@ -167,10 +177,11 @@ impl App {
                         if tab.archive.is_some() {
                             tab.filter_options.depth = Some(0);
                         }
-                        if fingerprint(tab.tree.as_ref().map_or(&tab.entries, |t| &t.roots))
-                            != fingerprint(&entries)
+                        let previous = tab.tree.as_ref().map_or(&tab.entries, |t| &t.roots);
+                        if (refreshing || !previous.is_empty())
+                            && fingerprint(previous) != fingerprint(&entries)
                         {
-                            self.folder_sizes.invalidate(&cwd);
+                            self.folder_sizes.listing_changed(&cwd, previous, &entries);
                         }
                         let focused = tab.entry().map(|e| e.path.clone());
                         let top = tab
