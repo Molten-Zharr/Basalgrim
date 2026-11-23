@@ -515,14 +515,28 @@ try:
             def place_key(name,*mods):chord(name,*[{'ctrl':'Control_L','shift':'Shift_L','alt':'Alt_L'}[m] for m in mods])
             try:
                 places_fixture.exercise(base,source,place_key,type_text,lambda cx,cy,b=1:click(window,cx,cy,b),lambda name:screenshot(window,'native-x11-places-'+name+'.png'),wait_for)
+                def drag_to_places(start, finish):
+                    band_begin(window, start, finish)
+                    band_end()
+                places_fixture.pin_entry(base, source, drag_to_places, wait_for)
                 quit_when_ready(process)
             finally:stop(process,log)
+            places_fixture.prepare_quick_access_scene(base)
             process,window,log=launch(source,config)
             try:
                 chord('b','Control_L');time.sleep(.3);screenshot(window,'native-x11-places-restart.png')
                 assert places_fixture.rows(base,0)[0][1]=='Work shelf' and len(places_fixture.rows(base,1))==1
+                assert (bytes(source/'Pinned'), 'Pinned') in places_fixture.rows(base,0)
                 assert bytes(base/'Imported') in places_fixture.hidden_bookmarks(base)
-                key('Escape');quit_when_ready(process)
+                key('Escape')
+                unpinned = places_fixture.open_pin_after_restart(base,source,lambda cx,cy:click(window,cx,cy),place_key,type_text,drag_to_places,lambda name:screenshot(window,"native-x11-quick-access-"+name+".png"),wait_for)
+                quit_when_ready(process)
+            finally:stop(process,log)
+            process,window,log=launch(source/'Pinned',config)
+            try:
+                click(window,4,7)
+                places_fixture.check_unpinned_restart(base,source,unpinned,screenshot(window))
+                quit_when_ready(process)
             finally:stop(process,log)
             sys.exit(0)
         if '--archives-only' in sys.argv[2:]:

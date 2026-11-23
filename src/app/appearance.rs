@@ -37,6 +37,8 @@ pub struct DesignState {
     pub panel_selected: usize,
     pub panel_max: usize,
     pub sidebar_visible: bool,
+    pub quick_access_offset: usize,
+    pub quick_access_max: usize,
     pub preview_visible: bool,
     pub epoch: Instant,
 }
@@ -51,6 +53,8 @@ impl Default for DesignState {
             panel_selected: 0,
             panel_max: 0,
             sidebar_visible: false,
+            quick_access_offset: 0,
+            quick_access_max: 0,
             preview_visible: false,
             epoch: Instant::now(),
         }
@@ -292,7 +296,9 @@ impl App {
             return false;
         }
         match key.key {
-            Key::Enter if matches!(self.dialog, Some(Dialog::Panel(PanelKind::Places))) => {
+            Key::Enter | Key::Delete
+                if matches!(self.dialog, Some(Dialog::Panel(PanelKind::Places))) =>
+            {
                 let i = self
                     .design
                     .panel_selected
@@ -304,8 +310,18 @@ impl App {
                     .nth(i)
                     .cloned()
                 {
+                    let x = if key.key == Key::Delete {
+                        let Some((button, _)) = self.hits.iter().find(|(area, target)| {
+                            area.y == r.y && matches!(target, Target::UnpinPlace { .. })
+                        }) else {
+                            return true;
+                        };
+                        button.x
+                    } else {
+                        r.x
+                    };
                     self.handle(Input::Click {
-                        x: r.x,
+                        x,
                         y: r.y,
                         double: false,
                         toggle: false,

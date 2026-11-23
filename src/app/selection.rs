@@ -62,6 +62,18 @@ impl App {
         {
             return;
         }
+        if self.dialog.is_none() {
+            let breadcrumb = match &target {
+                Some(Target::PathEdit(owner)) => Some((owner, &owner.cwd)),
+                Some(Target::PathGo { owner, path }) => Some((owner, path)),
+                _ => None,
+            };
+            if let Some((owner, path)) = breadcrumb
+                && self.begin_breadcrumb_drag(point, owner, path.clone())
+            {
+                return;
+            }
+        }
         let candidate = pane
             .filter(|_| {
                 self.dialog.is_none()

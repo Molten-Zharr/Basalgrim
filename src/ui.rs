@@ -135,6 +135,7 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
     app.pane_areas = [Rect::default(); 2];
     app.file_areas = [Rect::default(); 2];
     app.drop_regions.clear();
+    app.bookmark_drop_area = Rect::default();
     if matches!(app.dialog, Some(crate::app::Dialog::Conflict(_))) {
         conflicts::render(app, frame, palette);
         return;
@@ -344,7 +345,9 @@ fn render_content(app: &mut App, frame: &mut Frame, palette: Palette) {
         " · "
     };
     if let Some(feedback) = app.drag_feedback() {
-        let text = if feedback.count == 0 {
+        let text = if let Some(effect) = feedback.bookmark {
+            effect.hint().to_owned()
+        } else if feedback.count == 0 {
             format!(
                 "{} файлы → {}",
                 if feedback.copy {
@@ -589,28 +592,53 @@ fn toolbar(
     }
 }
 fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
+    app.bookmark_drop_area = area;
     let block = panel(palette, " МЕСТА ", false);
     let inner = block.inner(area);
-    let bookmarks: Vec<_> = app
-        .library
-        .snapshot
-        .bookmarks
-        .iter()
-        .filter(|item| !app.in_quick_access(&item.path))
-        .take(usize::from(inner.height))
-        .cloned()
-        .collect();
     frame.render_widget(block, area);
     let mut y = inner.y + 1;
     frame.render_widget(
         Paragraph::new(" БЫСТРЫЙ ДОСТУП").style(palette.text().fg(palette.color("sidebar_title"))),
         Rect::new(inner.x, y, inner.width, 1),
     );
+    let title_y = y;
     y += 2;
-    for i in 0..app.places.len() {
-        if y >= inner.bottom() {
-            break;
+    // Reserve space for Trash and the footer. Pinning never changes the two-row pitch.
+    let remaining = usize::from(inner.bottom().saturating_sub(y));
+    let reserve = remaining
+        .saturating_sub(2 * (app.places.len() + 1))
+        .clamp(if inner.height >= 23 { 6 } else { 2 }, 12);
+    let capacity = remaining
+        .saturating_sub(reserve)
+        .div_ceil(2)
+        .max(usize::from(remaining > 0));
+    let saved = app
+        .library
+        .snapshot
+        .bookmarks
+        .iter()
+        .filter(|item| !app.in_quick_access(&item.path));
+    let count = app.places.len() + saved.clone().count();
+    let max_offset = count.saturating_sub(capacity);
+    let offset = app.design.quick_access_offset.min(max_offset);
+    let bookmarks: Vec<_> = saved
+        .skip(offset.saturating_sub(app.places.len()))
+        .take(capacity.saturating_sub(app.places.len().saturating_sub(offset)))
+        .cloned()
+        .collect();
+    app.design.quick_access_max = max_offset;
+    app.design.quick_access_offset = offset;
+    if max_offset > 0 && capacity > 0 {
+        for (x, label, delta) in [
+            (inner.right() - 6, " ↑ ", -1),
+            (inner.right() - 3, " ↓ ", 1),
+        ] {
+            let rect = Rect::new(x, title_y, 3, 1);
+            frame.render_widget(Paragraph::new(label).style(palette.accent()), rect);
+            hit(app, rect, Target::QuickAccessScroll(delta));
         }
+    }
+    for i in (offset..app.places.len()).take(capacity) {
         let place = &app.places[i];
         let selected = !app.in_trash() && app.tab().cwd == place.path;
         let style = if selected {
@@ -631,7 +659,25 @@ fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
             rect,
         );
         hit(app, rect, Target::Place(place.path.clone()));
-        y += if bookmarks.is_empty() { 2 } else { 1 };
+        y += 2;
+    }
+    for item in bookmarks {
+        let rect = Rect::new(inner.x, y, inner.width, 1);
+        let style = if !app.in_trash() && app.tab().cwd == item.path {
+            palette.selection()
+        } else {
+            palette.text()
+        };
+        panels::saved_place(
+            app,
+            frame,
+            rect,
+            &format!("    {}", item.label),
+            item.path,
+            style,
+            None,
+        );
+        y += 2;
     }
     if y < inner.bottom() {
         let rect = Rect::new(inner.x, y, inner.width, 1);
@@ -730,21 +776,6 @@ fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
             },
         );
         y += 1;
-    }
-    if y + 2 < inner.bottom().saturating_sub(5) && !bookmarks.is_empty() {
-        y += 1;
-        for item in bookmarks {
-            if y >= inner.bottom().saturating_sub(5) {
-                break;
-            }
-            let rect = Rect::new(inner.x, y, inner.width, 1);
-            frame.render_widget(
-                Paragraph::new(format!("  {}", item.label)).style(palette.text()),
-                rect,
-            );
-            hit(app, rect, Target::SavedPlace(item.path));
-            y += 1;
-        }
     }
     if y + 5 < inner.bottom() {
         y += 1;

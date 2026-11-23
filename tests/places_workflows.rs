@@ -437,3 +437,268 @@ fn gtk_bookmarks_skip_quick_access_duplicates_and_recent_rows_hide_the_import_so
     );
     assert_eq!(fs::read_to_string(&c.bookmarks).unwrap(), gtk);
 }
+
+#[test]
+fn dragging_folders_and_breadcrumbs_pins_links_across_restart() {
+    use basalgrim::app::{BookmarkDrop, PanelKind};
+    for (width, height) in [(150, 40), (34, 14)] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("work");
+        let folder = root.join("project");
+        fs::create_dir_all(&folder).unwrap();
+        let file = root.join("file.txt");
+        fs::write(&file, "keep").unwrap();
+        let c = config(temp.path());
+        let mut app = App::new(
+            root.clone(),
+            Settings {
+                grid: false,
+                preview: false,
+                ..Default::default()
+            },
+        );
+        app.places.retain(|p| p.path == Path::new("/"));
+        app.configure_places(c.clone());
+        settle(&mut app);
+        for (source, expected) in [
+            (0, BookmarkDrop::Pin),
+            (0, BookmarkDrop::Pin),
+            (1, BookmarkDrop::FoldersOnly),
+            (2, BookmarkDrop::Pin),
+        ] {
+            render(&mut app, width, height);
+            let from = hit(&app, |t| match t {
+                Target::Entry { pane: 0, index } => *index == source,
+                Target::PathEdit(_) => source == 2,
+                _ => false,
+            });
+            let to = hit(&app, |t| {
+                matches!(t, Target::Place(_) | Target::PanelOpen(PanelKind::Places))
+            });
+            let x = from.x + from.width / 2;
+            app.handle(Input::PointerDown {
+                x,
+                y: from.y,
+                double: false,
+                toggle: false,
+            });
+            app.handle(Input::Drag { x: to.x, y: to.y });
+            app.handle(Input::DragModifiers { copy: true });
+            let feedback = app.drag_feedback().expect("held drag");
+            assert_eq!(feedback.bookmark, Some(expected));
+            assert_eq!(feedback.area.is_some(), expected == BookmarkDrop::Pin);
+            assert!(feedback.destination.is_none());
+            app.handle(Input::PointerUp { x: to.x, y: to.y });
+            settle(&mut app);
+            assert!(app.dialog.is_none() && !app.busy);
+            assert_eq!(app.tab().cwd, root);
+            assert_eq!(
+                app.library.snapshot.bookmarks.len(),
+                if source == 2 { 2 } else { 1 }
+            );
+        }
+        assert_eq!(fs::read_to_string(file).unwrap(), "keep");
+        drop(app);
+        let mut app = App::new(root.clone(), Settings::default());
+        app.places.retain(|p| p.path == Path::new("/"));
+        app.configure_places(c);
+        settle(&mut app);
+        render(&mut app, width, height);
+        if width == 34 {
+            let open = hit(&app, |t| matches!(t, Target::PanelOpen(PanelKind::Places)));
+            click(&mut app, open);
+            render(&mut app, width, height);
+        }
+        let link = hit(&app, |t| match t {
+            Target::SavedPlace(p) => *p == folder,
+            Target::PanelLink { target, .. } => {
+                matches!(target.as_ref(), Target::SavedPlace(p) if *p == folder)
+            }
+            _ => false,
+        });
+        click(&mut app, link);
+        settle(&mut app);
+        assert_eq!(app.tab().cwd, folder);
+    }
+}
+
+#[test]
+fn pinning_a_marked_group_preserves_selection_and_rejects_mixed_or_cancelled_drops() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("files");
+    let a = root.join("a");
+    let b = root.join("b");
+    let file = root.join("c.txt");
+    fs::create_dir_all(&a).unwrap();
+    fs::create_dir(&b).unwrap();
+    fs::write(&file, "contents").unwrap();
+    let mut app = App::new(root, Settings::default());
+    app.configure_places(config(temp.path()));
+    settle(&mut app);
+    for (include_file, cancel) in [(true, false), (false, true), (false, false)] {
+        let mut marks = std::collections::BTreeSet::from([a.clone(), b.clone()]);
+        if include_file {
+            marks.insert(file.clone());
+        }
+        app.tab_mut().marked = marks.clone();
+        app.tab_mut().explicit_selection = true;
+        render(&mut app, 150, 40);
+        let from = hit(&app, |t| matches!(t, Target::Entry { pane: 0, index: 0 }));
+        let dest = hit(&app, |t| matches!(t, Target::Place(_)));
+        app.handle(Input::PointerDown {
+            x: from.x + from.width / 2,
+            y: from.y,
+            double: false,
+            toggle: false,
+        });
+        app.handle(Input::Drag {
+            x: dest.x,
+            y: dest.y,
+        });
+        if cancel {
+            app.handle(Input::CancelDrag);
+        }
+        app.handle(Input::PointerUp {
+            x: dest.x,
+            y: dest.y,
+        });
+        settle(&mut app);
+        assert_eq!(app.tab().marked, marks);
+        let paths: std::collections::BTreeSet<_> = app
+            .library
+            .snapshot
+            .bookmarks
+            .iter()
+            .map(|i| i.path.clone())
+            .collect();
+        if cancel || include_file {
+            assert!(paths.is_empty());
+        } else {
+            assert_eq!(paths, marks);
+        }
+    }
+}
+
+#[test]
+fn first_pin_preserves_spacing_and_its_own_remove_button_survives_overflow() {
+    use basalgrim::app::Place;
+    let temp = tempfile::tempdir().unwrap();
+    let config = config(temp.path());
+    let folder = temp.path().join("ZedMono");
+    fs::create_dir(&folder).unwrap();
+    fs::write(folder.join("keep"), b"keep").unwrap();
+    let mut app = App::new(temp.path().into(), Settings::default());
+    app.places = [
+        "Домой",
+        "Загрузки",
+        "Документы",
+        "Музыка",
+        "Изображения",
+        "Проекты",
+        "/",
+    ]
+    .map(|label| Place {
+        label,
+        path: temp.path().join(label),
+    })
+    .into();
+    app.configure_places(config.clone());
+    settle(&mut app);
+    let positions = |app: &App| -> Vec<Rect> {
+        app.hits
+            .iter()
+            .filter_map(|(r, t)| matches!(t, Target::Place(_)).then_some(*r))
+            .collect()
+    };
+    render(&mut app, 150, 40);
+    let before = positions(&app);
+    assert_eq!(before.len(), 7);
+    assert!(before.windows(2).all(|rows| rows[1].y == rows[0].y + 2));
+    app.library.send(Command::Bookmark(folder.clone()));
+    settle(&mut app);
+    render(&mut app, 150, 40);
+    assert_eq!(before, positions(&app));
+    let link = hit(&app, |t| matches!(t, Target::SavedPlace(p) if p == &folder));
+    let cross = hit(
+        &app,
+        |t| matches!(t, Target::UnpinPlace{path,..} if path == &folder),
+    );
+    assert_eq!(link.y, before.last().unwrap().y + 2);
+    assert_eq!((link.y, link.right()), (cross.y, cross.x));
+    let cwd = app.tab().cwd.clone();
+    click(&mut app, cross);
+    settle(&mut app);
+    render(&mut app, 150, 40);
+    assert_eq!(before, positions(&app));
+    assert!(app.library.snapshot.bookmarks.is_empty());
+    assert_eq!(app.tab().cwd, cwd);
+    drop(app);
+
+    let mut app = App::new(cwd, Settings::default());
+    app.configure_places(config);
+    settle(&mut app);
+    assert!(app.library.snapshot.bookmarks.is_empty());
+    assert_eq!(fs::read(folder.join("keep")).unwrap(), b"keep");
+
+    let extras: Vec<_> = (0..24)
+        .map(|i| temp.path().join(format!("folder-{i}")))
+        .collect();
+    for p in &extras {
+        fs::create_dir(p).unwrap();
+    }
+    app.library.send(Command::BookmarkFolders(extras.clone()));
+    settle(&mut app);
+    render(&mut app, 100, 24);
+    let down = hit(&app, |t| matches!(t, Target::QuickAccessScroll(1)));
+    for _ in 0..app.design.quick_access_max {
+        click(&mut app, down);
+        render(&mut app, 100, 24);
+    }
+    let last = extras.last().unwrap();
+    let cross = hit(
+        &app,
+        |t| matches!(t, Target::UnpinPlace{path,..} if path == last),
+    );
+    click(&mut app, cross);
+    settle(&mut app);
+    assert!(
+        app.library
+            .snapshot
+            .bookmarks
+            .iter()
+            .all(|p| p.path != *last)
+    );
+    assert_eq!(app.library.snapshot.bookmarks.len(), extras.len() - 1);
+}
+
+#[test]
+fn compact_places_delete_unpins_only_the_current_saved_row() {
+    use basalgrim::{app::PanelKind, input::Key};
+    let temp = tempfile::tempdir().unwrap();
+    let folder = temp.path().join("imported");
+    fs::create_dir(&folder).unwrap();
+    let c = config(temp.path());
+    let gtk = format!(
+        "{} Imported\n",
+        basalgrim::clipboard::files::uri(&folder).unwrap()
+    );
+    fs::write(&c.bookmarks, &gtk).unwrap();
+    let mut app = App::new(temp.path().into(), Settings::default());
+    app.places.retain(|place| place.path == Path::new("/"));
+    app.configure_places(c.clone());
+    settle(&mut app);
+    render(&mut app, 34, 14);
+    let open = hit(&app, |t| matches!(t, Target::PanelOpen(PanelKind::Places)));
+    click(&mut app, open);
+    render(&mut app, 34, 14);
+    app.handle(Input::Key(KeyPress::plain(Key::Delete)));
+    assert_eq!(app.library.pending, 0);
+    app.handle(Input::Key(KeyPress::plain(Key::Down)));
+    render(&mut app, 34, 14);
+    app.handle(Input::Key(KeyPress::plain(Key::Delete)));
+    settle(&mut app);
+    assert!(matches!(app.dialog, Some(Dialog::Panel(PanelKind::Places))));
+    assert!(app.library.snapshot.bookmarks.is_empty());
+    assert!(folder.is_dir());
+    assert_eq!(fs::read_to_string(c.bookmarks).unwrap(), gtk);
+}

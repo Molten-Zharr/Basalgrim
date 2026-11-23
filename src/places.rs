@@ -102,6 +102,7 @@ pub enum Command {
     },
     Refresh,
     Bookmark(PathBuf),
+    BookmarkFolders(Vec<PathBuf>),
     Favorite {
         paths: Vec<PathBuf>,
         add: bool,
@@ -124,7 +125,10 @@ pub enum Command {
 pub enum Event {
     StyleSaved(u64, Result<Snapshot, String>),
     Refreshed(Result<Snapshot, String>),
-    Updated(Result<Snapshot, String>),
+    Updated {
+        bookmark_notice: Option<&'static str>,
+        result: Result<Snapshot, String>,
+    },
     Resolved(u64, Result<bool, String>),
 }
 struct Runtime {
@@ -141,6 +145,7 @@ impl Drop for Runtime {
     }
 }
 pub struct Library {
+    pub(crate) bookmark_notice: Option<&'static str>,
     pub style_result: Option<(u64, Result<(), String>)>,
     pub snapshot: Snapshot,
     pub revision: u64,
@@ -154,6 +159,7 @@ pub struct Library {
 impl Default for Library {
     fn default() -> Self {
         Self {
+            bookmark_notice: None,
             style_result: None,
             snapshot: Snapshot::default(),
             revision: 0,
@@ -186,6 +192,16 @@ impl Library {
                         store = Store::open(&config.database).map_err(|e| format!("{e:#}"));
                     }
                     let refresh = matches!(command, Command::Refresh);
+                    let bookmark_notice = match &command {
+                        Command::Bookmark(_) | Command::BookmarkFolders(_) => {
+                            Some("Сохранено в быстром доступе")
+                        }
+                        Command::Remove {
+                            section: Section::Bookmarks,
+                            ..
+                        } => Some("Закладка убрана"),
+                        _ => None,
+                    };
                     let token = match &command {
                         Command::SetStyle { token, .. } => Some(*token),
                         _ => None,
@@ -200,7 +216,10 @@ impl Library {
                     match token {
                         Some(token) => Event::StyleSaved(token, result),
                         None if refresh => Event::Refreshed(result),
-                        None => Event::Updated(result),
+                        None => Event::Updated {
+                            bookmark_notice,
+                            result,
+                        },
                     }
                 };
                 if done.send(event).is_err() {
@@ -251,7 +270,15 @@ impl Library {
                         self.pending_refreshes -= 1;
                         result
                     }
-                    Event::Updated(result) => result,
+                    Event::Updated {
+                        bookmark_notice,
+                        result,
+                    } => {
+                        if result.is_ok() && bookmark_notice.is_some() {
+                            self.bookmark_notice = bookmark_notice;
+                        }
+                        result
+                    }
                     Event::Resolved(id, result) => {
                         resolved.push((id, result));
                         continue;

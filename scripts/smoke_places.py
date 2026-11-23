@@ -91,8 +91,42 @@ def main():
                 send(b"\x02"); click(25, 1); click(23, 10)
                 wait(lambda: len(rows(base, 2)) == 0, "forget recent only")
                 assert (root / "note.txt").read_text() == "personal places proof\n"
-                send(b"\x1b"); quit_when_ready(child, send)
-                print(f"Places PTY grid={grid}: 34x14 mouse tabs/add/label/open/reveal/forget, Unicode, GTK/private records and persistence passed", flush=True)
+                send(b"\x1b")
+                folder = root / "Pinned"
+                folder.mkdir()
+                def show_first_folder():
+                    send(b"\x1b[H")  # Watch refresh preserves focus; reveal the new first entry.
+                    return "Pinned" in screen()
+                wait(show_first_folder, "new folder visible")
+                def locate(label):
+                    for y, line in enumerate(screen().splitlines()):
+                        if label in line:
+                            return line.index(label) + 1, y + 1
+                    raise AssertionError(screen())
+                def drag_pin(source):
+                    x, y = source
+                    dx, dy = locate("Места")
+                    send(f"\x1b[<0;{x};{y}M\x1b[<32;{dx};{dy}M\x1b[<0;{dx};{dy}m")
+                drag_pin(locate("Pinned"))
+                wait(lambda: (bytes(folder), "Pinned") in rows(base, 0), "drop on compact Places button")
+                # Drag the current path after removing its bookmark; it must save again.
+                send(b"\x02"); click(4, 1); click(4, 2); click(23, 10)
+                wait(lambda: len(rows(base, 0)) == 1, "remove current bookmark")
+                send(b"\x1b")
+                x, y = locate("Коп.")
+                drag_pin((x - 3, y))
+                wait(lambda: any(p == bytes(root) for p, _ in rows(base, 0)), "drag current breadcrumb")
+                assert folder.is_dir()
+                x, y = locate("Места")
+                click(x-1, y-1)
+                wait(lambda: "Pinned" in screen() and "↑" in screen(), "compact Places overlay")
+                row = next(i for i, line in enumerate(screen().splitlines()) if "Pinned" in line and "×" in line)
+                click(screen().splitlines()[row].index("×"), row)
+                wait(lambda: all(p != bytes(folder) for p,_ in rows(base, 0)), "unpin from compact Places")
+                assert folder.is_dir()
+                send(b"\x1b")
+                quit_when_ready(child, send)
+                print(f"Places PTY grid={grid}: 34x14 mouse folder and breadcrumb drops on Places, tabs/add/label/open/reveal/forget, Unicode, GTK/private records and persistence passed", flush=True)
             except BaseException:
                 Path("target/places-pty-failure.txt").write_text(screen())
                 raise

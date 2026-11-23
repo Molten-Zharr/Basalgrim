@@ -36,7 +36,7 @@ pub use conflicts::ConflictDialog;
 mod directories;
 mod drag_drop;
 pub use commands::{CommandItem, CommandMenu, MenuContext};
-pub use drag_drop::DragFeedback;
+pub use drag_drop::{BookmarkDrop, DragFeedback};
 mod editing;
 mod events;
 pub use editing::TextCommand;
@@ -167,6 +167,12 @@ pub enum Target {
     },
     PlacesSection(crate::places::Section),
     SavedPlace(PathBuf),
+    UnpinPlace {
+        path: PathBuf,
+        revision: u64,
+        panel: Option<u64>,
+    },
+    QuickAccessScroll(isize),
     PlacesRow {
         revision: u64,
         index: usize,
@@ -455,6 +461,7 @@ pub struct App {
     marquee: Option<selection::Marquee>,
     file_drag: Option<drag_drop::FileDrag>,
     external_drop: drag_drop::ExternalDropState,
+    pub(crate) bookmark_drop_area: Rect,
     pub(crate) drop_regions: Vec<drag_drop::DropRegion>,
     pub operation_count: usize,
     pub operations: std::collections::VecDeque<crate::operations::OperationRecord>,
@@ -590,6 +597,7 @@ impl App {
             marquee: None,
             file_drag: None,
             external_drop: Default::default(),
+            bookmark_drop_area: Rect::default(),
             drop_regions: Vec::new(),
             operation_count: 0,
             operations: Default::default(),

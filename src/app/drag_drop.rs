@@ -24,6 +24,14 @@ pub(super) struct FileDrag {
     origin: Position,
     current: Position,
     sources: Vec<PathBuf>,
+    folders: bool,
+    entry_press: Option<EntryPress>,
+    copy: bool,
+    started: bool,
+    external: Option<u64>,
+    last_scroll: Instant,
+}
+struct EntryPress {
     initial: BTreeSet<PathBuf>,
     initial_explicit: bool,
     initial_focus: Option<PathBuf>,
@@ -32,12 +40,26 @@ pub(super) struct FileDrag {
     toggle: bool,
     double: bool,
     extend: bool,
-    copy: bool,
-    started: bool,
-    external: Option<u64>,
-    last_scroll: Instant,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BookmarkDrop {
+    Pin,
+    FoldersOnly,
+    Unavailable,
+    ChooseTarget,
+}
+impl BookmarkDrop {
+    pub fn hint(self) -> &'static str {
+        match self {
+            Self::Pin => "Закрепить в быстром доступе",
+            Self::FoldersOnly => "В быстром доступе можно закрепить только папки",
+            Self::Unavailable => "Закладки сейчас недоступны",
+            Self::ChooseTarget => "Перетащите папку в быстрый доступ",
+        }
+    }
 }
 pub struct DragFeedback {
+    pub bookmark: Option<BookmarkDrop>,
     pub area: Option<Rect>,
     pub destination: Option<PathBuf>,
     pub count: usize,
@@ -249,7 +271,7 @@ impl App {
         if let Some(origin) = self
             .file_drag
             .as_ref()
-            .filter(|d| !d.started)
+            .filter(|d| !d.started && d.entry_press.is_some())
             .map(|d| d.origin)
         {
             self.move_file_drag(origin.x.saturating_add(1), origin.y);
@@ -258,7 +280,7 @@ impl App {
         let drag = self
             .file_drag
             .as_mut()
-            .filter(|d| d.started && d.external.is_none())?;
+            .filter(|d| d.started && d.external.is_none() && d.entry_press.is_some())?;
         drag.external = Some(id);
         Some(Outgoing {
             id,
@@ -351,12 +373,76 @@ impl App {
         let Some(entry) = tab.visible.get(index).and_then(|&i| tab.entries.get(i)) else {
             return false;
         };
-        let sources = if tab.marked.contains(&entry.path) {
-            tab.targets()
-        } else {
-            vec![entry.path.clone()]
+        let press = EntryPress {
+            index,
+            toggle,
+            double,
+            extend,
+            initial: tab.marked.clone(),
+            initial_explicit: tab.explicit_selection,
+            initial_focus: tab.entry().map(|e| e.path.clone()),
+            initial_range: tab.range.clone(),
         };
-        let mut drag = FileDrag {
+        let (sources, folders) = if !extend && !tab.marked.contains(&entry.path) {
+            (vec![entry.path.clone()], entry.directory)
+        } else {
+            if extend {
+                self.file_tab_mut(pane).select_range(index, toggle);
+            }
+            let tab = self.file_tab(pane);
+            let sources = tab.targets();
+            let mut remaining: BTreeSet<_> = sources.iter().collect();
+            for entry in tab.entries.iter().filter(|e| e.directory) {
+                remaining.remove(&entry.path);
+            }
+            if let Some(run) = &tab.filter_run {
+                for path in &run.marked_directories {
+                    remaining.remove(path);
+                }
+            }
+            let folders = remaining.is_empty();
+            (sources, folders)
+        };
+        if sources.is_empty() {
+            return false;
+        }
+        self.start_drag(point, pane, sources, folders, Some(press));
+        self.active = pane;
+        if extend {
+            self.update_preview();
+        }
+        true
+    }
+    pub(super) fn begin_breadcrumb_drag(
+        &mut self,
+        point: Position,
+        owner: &PathOwner,
+        path: PathBuf,
+    ) -> bool {
+        if !owner.valid(self)
+            || self.trash_in(owner.pane)
+            || self.busy
+            || self.clipboard_reads_pending()
+        {
+            return false;
+        }
+        let tab = self.file_tab(owner.pane);
+        if tab.archive.is_some() || tab.error.is_some() || (tab.loading && !tab.refreshing) {
+            return false;
+        }
+        self.start_drag(point, owner.pane, vec![path], true, None);
+        true
+    }
+    fn start_drag(
+        &mut self,
+        point: Position,
+        pane: usize,
+        sources: Vec<PathBuf>,
+        folders: bool,
+        entry_press: Option<EntryPress>,
+    ) {
+        let tab = self.file_tab(pane);
+        self.file_drag = Some(FileDrag {
             pane,
             tab: self.panes[pane].active,
             cwd: tab.cwd.clone(),
@@ -365,31 +451,13 @@ impl App {
             origin: point,
             current: point,
             sources,
-            initial: tab.marked.clone(),
-            initial_explicit: tab.explicit_selection,
-            initial_focus: tab.entry().map(|e| e.path.clone()),
-            initial_range: tab.range.clone(),
-            index,
-            toggle,
-            double,
-            extend,
-            copy: toggle,
+            folders,
+            copy: entry_press.as_ref().is_some_and(|p| p.toggle),
+            entry_press,
             started: false,
             external: None,
             last_scroll: Instant::now(),
-        };
-        // Capture Shift at press: releasing the modifier before the button must
-        // not collapse the range or turn a rapid Shift-click into an open.
-        if extend {
-            self.file_tab_mut(pane).select_range(index, toggle);
-            drag.sources = self.file_tab(pane).targets();
-        }
-        self.file_drag = Some(drag);
-        self.active = pane;
-        if extend {
-            self.update_preview();
-        }
-        true
+        });
     }
     pub fn dragging_files(&self) -> bool {
         self.file_drag.as_ref().is_some_and(|d| d.started)
@@ -405,6 +473,7 @@ impl App {
             .filter(|h| self.drop_region_valid(&h.region))
         {
             return Some(DragFeedback {
+                bookmark: None,
                 area: Some(hover.region.area),
                 destination: hover.region.destination.clone(),
                 count: 0,
@@ -415,6 +484,25 @@ impl App {
             .file_drag
             .as_ref()
             .filter(|d| d.started && d.external.is_none())?;
+        let over_bookmarks = self.bookmark_drop_area.contains(drag.current);
+        if over_bookmarks || drag.entry_press.is_none() {
+            let effect = if !over_bookmarks {
+                BookmarkDrop::ChooseTarget
+            } else if !drag.folders {
+                BookmarkDrop::FoldersOnly
+            } else if !self.library.writable() {
+                BookmarkDrop::Unavailable
+            } else {
+                BookmarkDrop::Pin
+            };
+            return Some(DragFeedback {
+                bookmark: Some(effect),
+                area: (effect == BookmarkDrop::Pin).then_some(self.bookmark_drop_area),
+                destination: None,
+                count: drag.sources.len(),
+                copy: false,
+            });
+        }
         let region = self
             .drop_regions
             .iter()
@@ -441,6 +529,7 @@ impl App {
                 })
         });
         Some(DragFeedback {
+            bookmark: None,
             area: valid.map(|r| r.area),
             destination: valid.and_then(|r| r.destination.clone()),
             count: drag.sources.len(),
@@ -459,6 +548,9 @@ impl App {
         self.pointer = Some(drag.current);
         if !drag.started && drag.current != drag.origin {
             drag.started = true;
+            if drag.entry_press.is_none() {
+                return;
+            }
             let pane = drag.pane;
             let sources = drag.sources.clone();
             let tab = self.file_tab_mut(pane);
@@ -489,8 +581,31 @@ impl App {
             return;
         };
         if !drag.started {
-            self.select_entry(drag.pane, drag.index, drag.toggle, drag.double, drag.extend);
-            self.update_preview();
+            if let Some(press) = drag.entry_press {
+                self.select_entry(
+                    drag.pane,
+                    press.index,
+                    press.toggle,
+                    press.double,
+                    press.extend,
+                );
+                self.update_preview();
+            } else {
+                let owner = PathOwner::current(self, drag.pane);
+                let path = drag.sources.into_iter().next().unwrap();
+                if path == owner.cwd {
+                    self.edit_path(owner);
+                } else {
+                    self.go_path(owner, path);
+                }
+            }
+        } else if let Some(effect) = feedback.as_ref().and_then(|f| f.bookmark) {
+            self.restore_file_drag(&drag);
+            if effect == BookmarkDrop::Pin {
+                self.pin_folders(drag.sources);
+            } else {
+                self.message(effect.hint(), false);
+            }
         } else if let Some(destination) = feedback.and_then(|f| f.destination) {
             self.start_operation(Operation::Transfer {
                 sources: drag.sources,
@@ -503,20 +618,28 @@ impl App {
         }
     }
     fn restore_file_drag(&mut self, drag: &FileDrag) {
+        let Some(press) = &drag.entry_press else {
+            return;
+        };
         if self.panes[drag.pane].active != drag.tab || self.file_tab(drag.pane).cwd != drag.cwd {
             return;
         }
         let tab = self.file_tab_mut(drag.pane);
-        let visible: BTreeSet<_> = tab
-            .visible
-            .iter()
-            .map(|&i| tab.entries[i].path.clone())
-            .collect();
-        tab.marked = drag.initial.intersection(&visible).cloned().collect();
-        tab.explicit_selection = drag.initial_explicit;
-        tab.range = drag.initial_range.clone();
+        if tab.filter_run.is_some() && tab.request == drag.request {
+            tab.marked.clone_from(&press.initial);
+        } else {
+            tab.marked = tab
+                .visible
+                .iter()
+                .map(|&i| &tab.entries[i].path)
+                .filter(|p| press.initial.contains(*p))
+                .cloned()
+                .collect();
+        }
+        tab.explicit_selection = press.initial_explicit;
+        tab.range = press.initial_range.clone();
         tab.retain_range();
-        if let Some(index) = drag
+        if let Some(index) = press
             .initial_focus
             .as_ref()
             .and_then(|p| tab.visible.iter().position(|&i| tab.entries[i].path == *p))
@@ -578,7 +701,10 @@ impl App {
         let Some(drag) = &mut self.file_drag else {
             return;
         };
-        if !drag.started || drag.last_scroll.elapsed() < Duration::from_millis(100) {
+        if drag.entry_press.is_none()
+            || !drag.started
+            || drag.last_scroll.elapsed() < Duration::from_millis(100)
+        {
             return;
         }
         let Some(pane) = self

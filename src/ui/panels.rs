@@ -1,6 +1,6 @@
 use super::*;
 use crate::app::{Dialog, PanelKind};
-use ratatui::widgets::Clear;
+use ratatui::{style::Style, widgets::Clear};
 
 pub fn buttons(
     app: &mut App,
@@ -22,8 +22,52 @@ pub fn buttons(
         x = x.saturating_sub(w);
         let r = Rect::new(x, area.y, w, 1);
         frame.render_widget(Paragraph::new(label).style(palette.accent()), r);
+        if kind == PanelKind::Places {
+            app.bookmark_drop_area = r;
+        }
         hit(app, r, Target::PanelOpen(kind));
     }
+}
+pub(super) fn saved_place(
+    app: &mut App,
+    frame: &mut Frame,
+    area: Rect,
+    label: &str,
+    path: std::path::PathBuf,
+    style: Style,
+    panel: Option<u64>,
+) {
+    let button = Rect::new(area.right() - 3, area.y, 3, 1);
+    let link = Rect {
+        width: area.width - button.width,
+        ..area
+    };
+    frame.render_widget(
+        Paragraph::new(files::shorten_name(label, usize::from(link.width))).style(style),
+        link,
+    );
+    frame.render_widget(Paragraph::new(" × ").style(style), button);
+    let target = Target::SavedPlace(path.clone());
+    hit(
+        app,
+        link,
+        match panel {
+            Some(token) => Target::PanelLink {
+                token,
+                target: Box::new(target),
+            },
+            None => target,
+        },
+    );
+    hit(
+        app,
+        button,
+        Target::UnpinPlace {
+            path,
+            revision: app.library.revision,
+            panel,
+        },
+    );
 }
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     let Some(Dialog::Panel(kind)) = app.dialog else {
@@ -89,12 +133,6 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
             .iter()
             .map(|p| (p.label.to_owned(), Target::Place(p.path.clone())))
             .collect();
-        rows.push(("Корзина".into(), Target::Action(Action::TrashView)));
-        for section in crate::places::Section::ALL {
-            rows.push((section.label().into(), Target::PlacesSection(section)));
-        }
-        rows.push(("Накопители".into(), Target::Action(Action::Devices)));
-        rows.push(("Сеть".into(), Target::Action(Action::Network)));
         for p in app
             .library
             .snapshot
@@ -104,6 +142,12 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         {
             rows.push((p.label.clone(), Target::SavedPlace(p.path.clone())));
         }
+        rows.push(("Корзина".into(), Target::Action(Action::TrashView)));
+        for section in crate::places::Section::ALL {
+            rows.push((section.label().into(), Target::PlacesSection(section)));
+        }
+        rows.push(("Накопители".into(), Target::Action(Action::Devices)));
+        rows.push(("Сеть".into(), Target::Action(Action::Network)));
         for d in app.devices.snapshot.devices() {
             rows.push((
                 d.label.clone(),
@@ -140,14 +184,17 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
                 body.width,
                 1,
             );
+            let style = if i == app.design.panel_selected {
+                palette.selection()
+            } else {
+                palette.text()
+            };
+            if let Target::SavedPlace(path) = target {
+                saved_place(app, frame, r, &label, path, style, Some(token));
+                continue;
+            }
             frame.render_widget(
-                Paragraph::new(files::shorten_name(&label, r.width as usize)).style(
-                    if i == app.design.panel_selected {
-                        palette.selection()
-                    } else {
-                        palette.text()
-                    },
-                ),
+                Paragraph::new(files::shorten_name(&label, r.width as usize)).style(style),
                 r,
             );
             hit(

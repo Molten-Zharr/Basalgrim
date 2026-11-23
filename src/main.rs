@@ -427,13 +427,17 @@ fn run() -> Result<()> {
             ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
         if let Some(feedback) = app.drag_feedback() {
-            ctx.set_cursor_icon(if feedback.destination.is_none() {
-                egui::CursorIcon::NotAllowed
-            } else if feedback.copy {
-                egui::CursorIcon::Copy
-            } else {
-                egui::CursorIcon::Grabbing
-            });
+            ctx.set_cursor_icon(
+                if feedback.bookmark == Some(basalgrim::app::BookmarkDrop::Pin) {
+                    egui::CursorIcon::Alias
+                } else if feedback.destination.is_none() {
+                    egui::CursorIcon::NotAllowed
+                } else if feedback.copy {
+                    egui::CursorIcon::Copy
+                } else {
+                    egui::CursorIcon::Grabbing
+                },
+            );
         }
         if !app.native_text_clipboard()
             && let Some(copy) = app.take_text_copy()

@@ -48,7 +48,7 @@ def exercise(base, root, key, type_text, click, capture, wait_for):
     # Favorite from the actual file context menu, not a direct App call.
     click(34, 10, 3)
     capture("context")
-    click(36, 18)
+    click(36, 20)
     wait_for(lambda: len(rows(base, 1)) == 1, "context-menu add to favorites")
     key("b", "ctrl")
     time.sleep(.3)
@@ -94,3 +94,69 @@ def exercise(base, root, key, type_text, click, capture, wait_for):
     assert (base / "data/recently-used.xbel").read_bytes() == xbel
     key("Escape")
     print("Places GUI: contextual favorite, mouse bookmark creation/label, hide imported bookmark, favorites open, successful-open recent, reveal and forget; GTK inputs preserved", flush=True)
+
+
+def pin_entry(base, root, drag, wait_for):
+    folder = root / "Pinned"
+    folder.mkdir()
+    time.sleep(.8)  # Let the directory watcher put the new folder in the first row.
+    drag((34, 10), (9, 7))
+    wait_for(lambda: (bytes(folder), "Pinned") in rows(base, 0), "drag folder onto Quick Access")
+    assert folder.is_dir()
+
+
+def prepare_quick_access_scene(base):
+    path = base / "config/molten-zharr/basalgrim/settings.json"
+    settings = json.loads(path.read_text())
+    settings["theme"] = "light"
+    path.write_text(json.dumps(settings))
+    entries = {"DOWNLOAD": "Downloads", "DOCUMENTS": "Documents", "MUSIC": "Music", "PICTURES": "Pictures"}
+    for folder in [*entries.values(), "projects"]:
+        (base / folder).mkdir(exist_ok=True)
+    (base / "config/user-dirs.dirs").write_text("".join(
+        f'XDG_{key}_DIR="$HOME/{folder}"\n' for key, folder in entries.items()
+    ))
+
+
+def open_pin_after_restart(base, root, click, key, type_text, drag, capture, wait_for):
+    # Two rows per standard location, with seven locations in this private HOME.
+    click(8, 25)  # Saved Pinned link below Work shelf.
+    time.sleep(.3)
+    key("F7")
+    type_text("ZedMono")
+    key("Return")
+    folder = root / "Pinned/ZedMono"
+    wait_for(folder.is_dir, "saved sidebar link opens its folder")
+    sentinel = folder / "keep.txt"
+    sentinel.write_text("keep")
+    for y, remaining in [(25, 1), (23, 0)]:
+        click(21, y)
+        wait_for(lambda: len(rows(base, 0)) == remaining, "unpin directly from the sidebar")
+        time.sleep(.2)
+
+    def shot(name):
+        click(4, 7)  # Park the pointer over the title in all three captures.
+        return capture(name).convert("RGB")
+
+    before = shot("empty")
+    drag((34, 10), (9, 7))
+    wait_for(lambda: rows(base, 0) == [(bytes(folder), "ZedMono")], "pin first bookmark")
+    time.sleep(.3)
+    pinned = shot("first-pin")
+    standards = (8, 9*16, 23*8, 23*16)
+    assert before.crop(standards).tobytes() == pinned.crop(standards).tobytes(), "standard rows moved"
+    click(21, 23)
+    wait_for(lambda: not rows(base, 0), "unpin ZedMono")
+    time.sleep(.3)
+    after = shot("unpinned")
+    sidebar = (8, 9*16, 23*8, 39*16)
+    assert before.crop(sidebar).tobytes() == after.crop(sidebar).tobytes(), "sidebar layout did not return"
+    assert sentinel.read_text() == "keep"
+    return after.crop(sidebar)
+
+
+def check_unpinned_restart(base, root, expected, screenshot):
+    sidebar = screenshot.convert("RGB").crop((8, 9*16, 23*8, 39*16))
+    assert sidebar.tobytes() == expected.tobytes(), "unpinned folder reappeared after restart"
+    assert not rows(base, 0) and (root / "Pinned/ZedMono/keep.txt").read_text() == "keep"
+    print("Quick Access GUI: seven standard rows retained exact pixels across the first pin, direct unpin restored the sidebar after restart and preserved the folder", flush=True)

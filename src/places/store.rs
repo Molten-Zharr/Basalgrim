@@ -94,19 +94,27 @@ impl Store {
             tx.execute("INSERT INTO places(section,path,label,visited) VALUES(?1,?2,?3,?4) ON CONFLICT(section,path) DO UPDATE SET visited=excluded.visited", params![section.key(), item.path.as_os_str().as_encoded_bytes(), item.label, now])?;
             Ok(())
         };
+        let bookmark = |path: PathBuf| -> Result<()> {
+            valid_path(&path)?;
+            ensure!(
+                fs::metadata(&path)?.is_dir(),
+                "В закладки можно добавить только папки"
+            );
+            tx.execute(
+                "DELETE FROM hidden_bookmarks WHERE path=?1",
+                [path.as_os_str().as_encoded_bytes()],
+            )?;
+            insert(Section::Bookmarks, Item::new(path))
+        };
         match command {
             Command::SetStyle { .. } => unreachable!(),
             Command::Refresh | Command::Resolve { .. } => return Ok(()),
-            Command::Bookmark(path) => {
-                ensure!(
-                    fs::metadata(&path)?.is_dir(),
-                    "В закладки можно добавить папку"
-                );
-                insert(Section::Bookmarks, Item::new(path.clone()))?;
-                tx.execute(
-                    "DELETE FROM hidden_bookmarks WHERE path=?1",
-                    [path.as_os_str().as_encoded_bytes()],
-                )?;
+            Command::Bookmark(path) => bookmark(path)?,
+            Command::BookmarkFolders(paths) => {
+                ensure!(paths.len() <= MAX_ITEMS, "Слишком много выбранных папок");
+                for path in paths {
+                    bookmark(path)?;
+                }
             }
             Command::Favorite { paths, add } => {
                 ensure!(paths.len() <= MAX_ITEMS, "Слишком много выбранных файлов");

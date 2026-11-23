@@ -147,6 +147,14 @@ fn failed_group_favorite_is_atomic_and_forgotten_recent_returns_only_on_a_new_op
             .is_err()
     );
     assert!(store.snapshot(&c).unwrap().favorites.is_empty());
+    let folder = root.path().join("folder");
+    fs::create_dir(&folder).unwrap();
+    assert!(
+        store
+            .apply(Command::BookmarkFolders(vec![folder, path.clone()]))
+            .is_err()
+    );
+    assert!(store.snapshot(&c).unwrap().bookmarks.is_empty());
     store.apply(Command::Recent(path.clone())).unwrap();
     store
         .apply(Command::Remove {

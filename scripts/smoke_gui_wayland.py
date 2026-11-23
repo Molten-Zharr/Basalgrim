@@ -427,12 +427,29 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                 settings.write_text(json.dumps({'preview':False,'grid':False,'font_size':16,'theme':'molten-zharr','icon_mode':'symbols'}))
                 process=launch(source)
                 places_fixture.exercise(base,source,key,lambda text:run('wtype',text),click,lambda name:run('grim','-g','0,0 1360x860',str(out/('native-wayland-places-'+name+'.png'))),wait_for)
+                def drag_to_places(start, finish):
+                    click(*start, 10)
+                    click(*finish, 11)
+                    click(*finish, 12)
+                places_fixture.pin_entry(base, source, drag_to_places, wait_for)
                 key('q','ctrl');process.wait(timeout=5);process=None
+                places_fixture.prepare_quick_access_scene(base)
+                def quick_access_shot(name):
+                    path = out / ("native-wayland-quick-access-" + name + ".png")
+                    run("grim", "-g", "0,0 1360x860", str(path))
+                    return Image.open(path)
                 process=launch(source);key('b','ctrl');time.sleep(.3)
                 run('grim','-g','0,0 1360x860',str(out/'native-wayland-places-restart.png'))
                 assert places_fixture.rows(base,0)[0][1]=='Work shelf' and len(places_fixture.rows(base,1))==1
+                assert (bytes(source/'Pinned'), 'Pinned') in places_fixture.rows(base,0)
                 assert bytes(base/'Imported') in places_fixture.hidden_bookmarks(base)
-                key('Escape');key('q','ctrl');process.wait(timeout=5);process=None
+                key('Escape')
+                unpinned = places_fixture.open_pin_after_restart(base,source,click,key,lambda text:run('wtype',text),drag_to_places,quick_access_shot,wait_for)
+                key('q','ctrl');process.wait(timeout=5);process=None
+                process=launch(source/'Pinned')
+                click(4,7)
+                places_fixture.check_unpinned_restart(base,source,unpinned,quick_access_shot("restart"))
+                key('q','ctrl');process.wait(timeout=5);process=None
                 return
             if '--archives-only' in sys.argv[2:]:
                 import archive_fixture

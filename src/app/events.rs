@@ -261,6 +261,14 @@ impl App {
                     Some(Target::Profile { revision, control }) => {
                         self.profile_control(revision, control)
                     }
+                    Some(Target::UnpinPlace {
+                        path,
+                        revision,
+                        panel,
+                    }) => self.unpin_place(path, revision, panel),
+                    Some(Target::QuickAccessScroll(delta)) if self.dialog.is_none() => {
+                        self.scroll_quick_access(delta)
+                    }
                     Some(Target::PanelOpen(kind)) if self.dialog.is_none() => self.open_panel(kind),
                     Some(Target::PanelClose(token))
                         if matches!(self.dialog, Some(Dialog::Panel(_)))
@@ -695,7 +703,11 @@ impl App {
                 self.scroll_folder_size(delta as isize * 3)
             }
             Input::Scroll { x, y, delta } if self.dialog.is_none() || self.inline_filter() => {
-                if self.preview_area.contains(Position::new(x, y)) {
+                if self.design.sidebar_visible
+                    && self.bookmark_drop_area.contains(Position::new(x, y))
+                {
+                    self.scroll_quick_access(delta as isize);
+                } else if self.preview_area.contains(Position::new(x, y)) {
                     let max = self
                         .preview
                         .as_ref()

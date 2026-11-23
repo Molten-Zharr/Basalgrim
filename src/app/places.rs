@@ -144,6 +144,53 @@ impl App {
             self.library.send(Command::Bookmark(self.tab().cwd.clone()));
         }
     }
+    pub(super) fn pin_folders(&mut self, mut paths: Vec<PathBuf>) {
+        let saved: std::collections::BTreeSet<_> = self
+            .library
+            .snapshot
+            .bookmarks
+            .iter()
+            .map(|b| &b.path)
+            .collect();
+        paths.retain(|p| !self.in_quick_access(p) && !saved.contains(p));
+        if paths.is_empty() {
+            self.message("Уже в быстром доступе", false);
+        } else if self.library.send(Command::BookmarkFolders(paths)) {
+            self.message("Добавление в быстрый доступ…", false);
+        } else if let Some(error) = self.library.error.clone() {
+            self.message(error, true);
+        }
+    }
+    pub(super) fn scroll_quick_access(&mut self, delta: isize) {
+        self.design.quick_access_offset = self
+            .design
+            .quick_access_offset
+            .saturating_add_signed(delta)
+            .min(self.design.quick_access_max);
+    }
+    pub(super) fn unpin_place(&mut self, path: PathBuf, revision: u64, panel: Option<u64>) {
+        let current_panel = match self.dialog {
+            None => None,
+            Some(Dialog::Panel(PanelKind::Places)) => Some(self.design.panel_token),
+            _ => return,
+        };
+        if panel == current_panel
+            && revision == self.library.revision
+            && self.library.writable()
+            && !self.in_quick_access(&path)
+            && self
+                .library
+                .snapshot
+                .bookmarks
+                .iter()
+                .any(|b| b.path == path)
+        {
+            self.library.send(Command::Remove {
+                section: Section::Bookmarks,
+                path,
+            });
+        }
+    }
     pub(super) fn favorite_selection(&mut self, add: bool) {
         if self.can_favorite(add) {
             self.library.send(Command::Favorite {
@@ -171,6 +218,11 @@ impl App {
         let results = self.library.poll();
         if let Some((token, result)) = self.library.style_result.take() {
             self.finish_folder_style(token, result);
+        }
+        if let Some(notice) = self.library.bookmark_notice.take()
+            && self.library.error.is_none()
+        {
+            self.message(notice, false);
         }
         if self.library.error != old_error
             && let Some(error) = &self.library.error
