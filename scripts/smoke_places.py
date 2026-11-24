@@ -59,36 +59,46 @@ def main():
                 send(f"\x1b[<0;{x+1};{y+1}M")
                 send(f"\x1b[<0;{x+1};{y+1}m")
 
+            def locate(label):
+                for y, line in enumerate(screen().splitlines()):
+                    if label in line:
+                        return line.index(label) + 1, y + 1
+                raise AssertionError(screen())
+
+            def click_label(label):
+                x, y = locate(label)
+                click(x-1, y-1)
+
             try:
                 wait(lambda: "note.txt" in screen(), "initial files")
                 pump(.3)
                 send(b"\x1b\x06")
                 wait(lambda: len(rows(base, 1)) == 1, "favorite shortcut")
                 send(b"\x02")
-                wait(lambda: "Закладки" in screen(), "places shortcut")
+                wait(lambda: "Быстрый доступ" in screen(), "places shortcut")
                 assert "Imported folder" in screen() and "DUPLICATE" not in screen() and "[GTK]" not in screen(), screen()
                 click(5, 11)
                 wait(lambda: len(rows(base, 0)) == 1, "compact add bookmark")
-                click(4, 2); click(20, 11)
+                click_label(root.name); click(20, 11)
                 wait(lambda: "Название места" in screen(), "compact label button")
                 send(b"\x15"); send("Рабочая папка"); send(b"\r")
                 wait(lambda: rows(base, 0)[0][1] == "Рабочая папка", "Unicode bookmark label")
-                click(4, 3); click(23, 10)
+                click_label("Imported folder"); click(23, 10)
                 wait(lambda: bytes(base / "Imported") in hidden_bookmarks(base), "remove imported bookmark")
                 click(15, 12)
                 wait(lambda: "Imported folder" not in screen(), "removed import stays hidden after refresh")
                 assert (base / "Imported").is_dir()
-                click(14, 1); click(4, 10)
+                click_label("Избранное"); click(4, 10)
                 wait(lambda: (base / "opened.txt").exists(), "open favorite")
                 wait(lambda: len(rows(base, 2)) == 1, "record successful open")
                 assert (base / "opened.txt").read_text() == str(root / "note.txt")
-                send(b"\x02"); click(25, 1)
+                send(b"\x02"); click_label("Недавние")
                 wait(lambda: "Old document" in screen(), "GTK recent merged")
                 assert "private-hidden" not in screen()
                 assert "GTK" not in screen(), screen()
                 click(12, 10)
                 wait(lambda: "ФАЙЛЫ" in screen(), "reveal file in ordinary pane")
-                send(b"\x02"); click(25, 1); click(23, 10)
+                send(b"\x02"); click_label("Недавние"); click(23, 10)
                 wait(lambda: len(rows(base, 2)) == 0, "forget recent only")
                 assert (root / "note.txt").read_text() == "personal places proof\n"
                 send(b"\x1b")
@@ -98,11 +108,6 @@ def main():
                     send(b"\x1b[H")  # Watch refresh preserves focus; reveal the new first entry.
                     return "Pinned" in screen()
                 wait(show_first_folder, "new folder visible")
-                def locate(label):
-                    for y, line in enumerate(screen().splitlines()):
-                        if label in line:
-                            return line.index(label) + 1, y + 1
-                    raise AssertionError(screen())
                 def drag_pin(source):
                     x, y = source
                     dx, dy = locate("Места")
@@ -110,7 +115,7 @@ def main():
                 drag_pin(locate("Pinned"))
                 wait(lambda: (bytes(folder), "Pinned") in rows(base, 0), "drop on compact Places button")
                 # Drag the current path after removing its bookmark; it must save again.
-                send(b"\x02"); click(4, 1); click(4, 2); click(23, 10)
+                send(b"\x02"); click_label("Рабочая папка"); click(23, 10)
                 wait(lambda: len(rows(base, 0)) == 1, "remove current bookmark")
                 send(b"\x1b")
                 x, y = locate("Коп.")
@@ -120,7 +125,11 @@ def main():
                 x, y = locate("Места")
                 click(x-1, y-1)
                 wait(lambda: "Pinned" in screen() and "↑" in screen(), "compact Places overlay")
-                row = next(i for i, line in enumerate(screen().splitlines()) if "Pinned" in line and "×" in line)
+                x, y = locate("Pinned")
+                assert "×" not in screen().splitlines()[y-1], screen()
+                send(f"\x1b[<35;{x};{y}M")
+                wait(lambda: "×" in screen().splitlines()[y-1], "hover reveals unpin")
+                row = y - 1
                 click(screen().splitlines()[row].index("×"), row)
                 wait(lambda: all(p != bytes(folder) for p,_ in rows(base, 0)), "unpin from compact Places")
                 assert folder.is_dir()

@@ -94,26 +94,30 @@ impl Store {
             tx.execute("INSERT INTO places(section,path,label,visited) VALUES(?1,?2,?3,?4) ON CONFLICT(section,path) DO UPDATE SET visited=excluded.visited", params![section.key(), item.path.as_os_str().as_encoded_bytes(), item.label, now])?;
             Ok(())
         };
-        let bookmark = |path: PathBuf| -> Result<()> {
+        let bookmark = |path: PathBuf, standard: bool| -> Result<()> {
             valid_path(&path)?;
             ensure!(
                 fs::metadata(&path)?.is_dir(),
-                "В закладки можно добавить только папки"
+                "В быстром доступе можно закрепить только папки"
             );
             tx.execute(
                 "DELETE FROM hidden_bookmarks WHERE path=?1",
                 [path.as_os_str().as_encoded_bytes()],
             )?;
-            insert(Section::Bookmarks, Item::new(path))
+            if !standard {
+                insert(Section::Bookmarks, Item::new(path))?;
+            }
+            Ok(())
         };
         match command {
             Command::SetStyle { .. } => unreachable!(),
             Command::Refresh | Command::Resolve { .. } => return Ok(()),
-            Command::Bookmark(path) => bookmark(path)?,
-            Command::BookmarkFolders(paths) => {
+            Command::Bookmark(path) => bookmark(path, false)?,
+            Command::BookmarkFolders { paths, standard } => {
                 ensure!(paths.len() <= MAX_ITEMS, "Слишком много выбранных папок");
                 for path in paths {
-                    bookmark(path)?;
+                    let builtin = standard.contains(&path);
+                    bookmark(path, builtin)?;
                 }
             }
             Command::Favorite { paths, add } => {
@@ -180,7 +184,7 @@ impl Store {
         })?;
         ensure!(
             count <= MAX_ITEMS as i64,
-            "Можно сохранить до {MAX_ITEMS} закладок и избранных файлов"
+            "Можно сохранить до {MAX_ITEMS} закреплённых папок и избранных объектов"
         );
         let bytes: i64 = tx.query_row(
             "SELECT coalesce(sum(length(path)+length(CAST(label AS BLOB))),0) FROM places",
@@ -204,7 +208,7 @@ impl Store {
         )?;
         ensure!(
             count <= MAX_ITEMS as i64 && path <= 65536 && bytes <= 8 * 1024 * 1024,
-            "Список скрытых закладок превышает ограничения"
+            "Список скрытых мест превышает ограничения"
         );
         Ok(())
     }
@@ -232,7 +236,7 @@ impl Store {
                 path: std::ffi::OsString::from_vec(path).into(),
                 label: row.get(2)?,
                 visited: row.get(3)?,
-                desktop: false,
+                source: PlaceSource::Personal,
             };
             valid_path(&item.path)?;
             valid_label(&item.label)?;
@@ -259,20 +263,20 @@ impl Store {
                     &config.legacy_bookmarks
                 })
             });
-        let mut seen: std::collections::BTreeSet<_> =
-            snapshot.bookmarks.iter().map(|i| i.path.clone()).collect();
+        let mut seen: BTreeSet<_> = snapshot.bookmarks.iter().map(|i| i.path.clone()).collect();
         Self::check_hidden_bookmarks(&self.db)?;
-        let mut hidden_bookmarks = BTreeSet::new();
         let mut query = self.db.prepare("SELECT path FROM hidden_bookmarks")?;
         for row in query.query_map([], |r| r.get::<_, Vec<u8>>(0))? {
             let path: PathBuf = std::ffi::OsString::from_vec(row?).into();
             valid_path(&path)?;
-            hidden_bookmarks.insert(path);
+            snapshot.hidden_bookmarks.insert(path);
         }
         match bookmarks {
             Ok(items) => {
                 for item in items {
-                    if !hidden_bookmarks.contains(&item.path) && seen.insert(item.path.clone()) {
+                    if !snapshot.hidden_bookmarks.contains(&item.path)
+                        && seen.insert(item.path.clone())
+                    {
                         snapshot.bookmarks.push(item);
                     }
                 }

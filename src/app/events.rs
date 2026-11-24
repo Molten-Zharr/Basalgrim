@@ -282,9 +282,14 @@ impl App {
                     {
                         self.panel_scroll(delta)
                     }
-                    Some(Target::PanelLink { token, target })
-                        if matches!(self.dialog, Some(Dialog::Panel(_)))
-                            && token == self.design.panel_token =>
+                    Some(Target::PanelLink {
+                        token,
+                        revision,
+                        target,
+                    }) if matches!(self.dialog, Some(Dialog::Panel(_)))
+                        && token == self.design.panel_token
+                        && (!matches!(*target, Target::Place(_) | Target::SavedPlace(_))
+                            || revision == self.library.revision) =>
                     {
                         self.dialog = None;
                         self.hits.clear();

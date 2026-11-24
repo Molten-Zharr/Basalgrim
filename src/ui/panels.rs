@@ -28,12 +28,12 @@ pub fn buttons(
         hit(app, r, Target::PanelOpen(kind));
     }
 }
-pub(super) fn saved_place(
+pub(super) fn quick_access_row(
     app: &mut App,
     frame: &mut Frame,
     area: Rect,
     label: &str,
-    path: std::path::PathBuf,
+    target: Target,
     style: Style,
     panel: Option<u64>,
 ) {
@@ -42,32 +42,45 @@ pub(super) fn saved_place(
         width: area.width - button.width,
         ..area
     };
+    let hovered = app.pointer.is_some_and(|point| area.contains(point))
+        && !app.dragging_files()
+        && !app.external_drag_active()
+        && app.selection_area().is_none()
+        && (panel.is_some() || app.dialog.is_none())
+        && app.library.writable();
+    let label_area = if hovered { link } else { area };
     frame.render_widget(
-        Paragraph::new(files::shorten_name(label, usize::from(link.width))).style(style),
-        link,
+        Paragraph::new(files::shorten_name(label, usize::from(label_area.width))).style(style),
+        label_area,
     );
-    frame.render_widget(Paragraph::new(" × ").style(style), button);
-    let target = Target::SavedPlace(path.clone());
+    let unpin = if hovered {
+        match &target {
+            Target::Place(path) | Target::SavedPlace(path) => Some(Target::UnpinPlace {
+                path: path.clone(),
+                revision: app.library.revision,
+                panel,
+            }),
+            _ => None,
+        }
+    } else {
+        None
+    };
     hit(
         app,
-        link,
+        label_area,
         match panel {
             Some(token) => Target::PanelLink {
                 token,
+                revision: app.library.revision,
                 target: Box::new(target),
             },
             None => target,
         },
     );
-    hit(
-        app,
-        button,
-        Target::UnpinPlace {
-            path,
-            revision: app.library.revision,
-            panel,
-        },
-    );
+    if let Some(target) = unpin {
+        frame.render_widget(Paragraph::new(" × ").style(style), button);
+        hit(app, button, target);
+    }
 }
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     let Some(Dialog::Panel(kind)) = app.dialog else {
@@ -120,6 +133,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
             if matches!(target, Target::FolderMeasure { .. }) {
                 *target = Target::PanelLink {
                     token,
+                    revision: app.library.revision,
                     target: Box::new(target.clone()),
                 };
             }
@@ -128,22 +142,22 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         let block = panel(palette, " МЕСТА ", true);
         let inner = block.inner(area);
         frame.render_widget(block, area);
-        let mut rows: Vec<_> = app
-            .places
-            .iter()
-            .map(|p| (p.label.to_owned(), Target::Place(p.path.clone())))
-            .collect();
-        for p in app
-            .library
-            .snapshot
-            .bookmarks
-            .iter()
-            .filter(|p| !app.in_quick_access(&p.path))
-        {
-            rows.push((p.label.clone(), Target::SavedPlace(p.path.clone())));
-        }
+        use crate::places::{PlaceSource, Section};
+        let mut rows = vec![(
+            Section::Bookmarks.label().to_owned(),
+            Target::PlacesSection(Section::Bookmarks),
+        )];
+        rows.extend(app.quick_access_items().map(|i| {
+            let i = i.into_owned();
+            let target = if i.source == PlaceSource::Standard {
+                Target::Place(i.path)
+            } else {
+                Target::SavedPlace(i.path)
+            };
+            (format!("  {}", i.label), target)
+        }));
         rows.push(("Корзина".into(), Target::Action(Action::TrashView)));
-        for section in crate::places::Section::ALL {
+        for section in [Section::Favorites, Section::Recent] {
             rows.push((section.label().into(), Target::PlacesSection(section)));
         }
         rows.push(("Накопители".into(), Target::Action(Action::Devices)));
@@ -159,9 +173,9 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         }
         let body = Rect::new(
             inner.x,
-            inner.y + 1,
+            inner.y,
             inner.width,
-            inner.height.saturating_sub(3),
+            inner.height.saturating_sub(2),
         );
         let page = usize::from(body.height).max(1);
         app.design.panel_max = rows.len().saturating_sub(1);
@@ -189,8 +203,8 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
             } else {
                 palette.text()
             };
-            if let Target::SavedPlace(path) = target {
-                saved_place(app, frame, r, &label, path, style, Some(token));
+            if matches!(target, Target::SavedPlace(_) | Target::Place(_)) {
+                quick_access_row(app, frame, r, &label, target, style, Some(token));
                 continue;
             }
             frame.render_widget(
@@ -201,6 +215,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
                 app,
                 r,
                 Target::PanelLink {
+                    revision: app.library.revision,
                     token,
                     target: Box::new(target),
                 },

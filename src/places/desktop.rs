@@ -43,7 +43,7 @@ pub(super) fn bookmarks(path: &Path) -> Result<Vec<Item>> {
             valid_label(label)?;
             item.label = label.into();
         }
-        item.desktop = true;
+        item.source = super::PlaceSource::Desktop;
         if seen.insert(item.path.clone()) {
             result.push(item);
         }
@@ -96,7 +96,7 @@ pub(super) fn recent(path: &Path) -> Result<Vec<Item>> {
                         pending = crate::clipboard::files::path(&uri).ok().map(|p| {
                             let mut i = Item::new(p);
                             i.visited = visited;
-                            i.desktop = true;
+                            i.source = super::PlaceSource::Desktop;
                             i
                         });
                         private = false;

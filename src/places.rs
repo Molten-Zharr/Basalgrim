@@ -23,7 +23,7 @@ impl Section {
     pub const ALL: [Self; 3] = [Self::Bookmarks, Self::Favorites, Self::Recent];
     pub fn label(self) -> &'static str {
         match self {
-            Self::Bookmarks => "Закладки",
+            Self::Bookmarks => "Быстрый доступ",
             Self::Favorites => "Избранное",
             Self::Recent => "Недавние",
         }
@@ -36,11 +36,17 @@ impl Section {
         }
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlaceSource {
+    Standard,
+    Personal,
+    Desktop,
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Item {
     pub path: PathBuf,
     pub label: String,
-    pub desktop: bool,
+    pub source: PlaceSource,
     pub visited: i64,
 }
 impl Item {
@@ -54,7 +60,7 @@ impl Item {
         Self {
             path,
             label,
-            desktop: false,
+            source: PlaceSource::Personal,
             visited: 0,
         }
     }
@@ -64,6 +70,7 @@ pub struct Snapshot {
     pub styles:
         std::collections::BTreeMap<crate::folder_style::FolderId, crate::folder_style::Decoration>,
     pub bookmarks: Vec<Item>,
+    pub hidden_bookmarks: std::collections::BTreeSet<PathBuf>,
     pub favorites: Vec<Item>,
     pub recent: Vec<Item>,
     pub warnings: Vec<String>,
@@ -102,7 +109,10 @@ pub enum Command {
     },
     Refresh,
     Bookmark(PathBuf),
-    BookmarkFolders(Vec<PathBuf>),
+    BookmarkFolders {
+        paths: Vec<PathBuf>,
+        standard: Vec<PathBuf>,
+    },
     Favorite {
         paths: Vec<PathBuf>,
         add: bool,
@@ -193,13 +203,13 @@ impl Library {
                     }
                     let refresh = matches!(command, Command::Refresh);
                     let bookmark_notice = match &command {
-                        Command::Bookmark(_) | Command::BookmarkFolders(_) => {
+                        Command::Bookmark(_) | Command::BookmarkFolders { .. } => {
                             Some("Сохранено в быстром доступе")
                         }
                         Command::Remove {
                             section: Section::Bookmarks,
                             ..
-                        } => Some("Закладка убрана"),
+                        } => Some("Папка убрана из быстрого доступа"),
                         _ => None,
                     };
                     let token = match &command {
@@ -286,7 +296,7 @@ impl Library {
                 };
                 match result {
                     Ok(snapshot) => {
-                        if snapshot != self.snapshot {
+                        if !self.ready || snapshot != self.snapshot {
                             self.revision += 1;
                             self.snapshot = snapshot;
                         }

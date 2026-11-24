@@ -92,7 +92,8 @@ fn aliases(action: Action) -> &'static str {
         Redo => "redo повтор",
         ArchiveCreate => "create archive zip tar архив",
         ArchiveExtract => "extract unpack archive zip tar извлечь архив",
-        Places | Bookmark => "places bookmarks закладки",
+        Places => "quick access places bookmarks закладки места",
+        Bookmark => "bookmark pin закрепить добавить папку",
         Favorites | Favorite | Unfavorite => "favorites избранное",
         Recent => "recent недавние",
         Devices => "devices drives mount eject диски накопители подключить извлечь",
@@ -273,7 +274,7 @@ impl App {
             SelectAll => "В списке нет файлов",
             RestoreTrash | RestoreTrashHere | DeleteTrash => "Выберите доступные элементы корзины",
             EmptyTrash => "Корзина пуста или ещё читается",
-            Bookmark => "Папка уже в быстром доступе или хранилище закладок недоступно",
+            Bookmark => "Папка уже в быстром доступе или хранилище мест недоступно",
             Favorite | Unfavorite => "Проверьте выбор файлов и их наличие в избранном",
             _ => "Команда сейчас недоступна",
         })

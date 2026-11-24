@@ -444,11 +444,11 @@ for_window [title="Basalgrim.*"] floating enable, resize set 1360 px 860 px, mov
                 assert (bytes(source/'Pinned'), 'Pinned') in places_fixture.rows(base,0)
                 assert bytes(base/'Imported') in places_fixture.hidden_bookmarks(base)
                 key('Escape')
-                unpinned = places_fixture.open_pin_after_restart(base,source,click,key,lambda text:run('wtype',text),drag_to_places,quick_access_shot,wait_for)
+                unpinned = places_fixture.open_pin_after_restart(base,source,click,lambda x,y:click(x,y,11),key,lambda text:run('wtype',text),drag_to_places,quick_access_shot,wait_for)
                 key('q','ctrl');process.wait(timeout=5);process=None
                 process=launch(source/'Pinned')
-                click(4,7)
-                places_fixture.check_unpinned_restart(base,source,unpinned,quick_access_shot("restart"))
+                click(4,7,11)
+                places_fixture.check_unpinned_restart(base,source,unpinned,quick_access_shot("restart"),navigate,key,wait_for)
                 key('q','ctrl');process.wait(timeout=5);process=None
                 return
             if '--archives-only' in sys.argv[2:]:

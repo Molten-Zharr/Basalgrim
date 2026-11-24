@@ -1,6 +1,6 @@
 use basalgrim::{
     app::{App, Dialog, EditKind, PlaceControl, Target},
-    input::{Action, Input, KeyPress},
+    input::{Action, Input, Key, KeyPress},
     places::{Command, Config, Section},
     settings::Settings,
     ui,
@@ -61,6 +61,29 @@ fn click(app: &mut App, r: Rect) {
         double: false,
         toggle: false,
     });
+}
+fn select_place(app: &mut App, path: &Path) {
+    let index = app
+        .places_view
+        .rows
+        .iter()
+        .position(|item| item.path == path)
+        .unwrap();
+    app.handle(Input::Key(KeyPress::plain(Key::Home)));
+    for _ in 0..index {
+        app.handle(Input::Key(KeyPress::plain(Key::Down)));
+    }
+    render(app, 34, 14);
+    let row = hit(
+        app,
+        |t| matches!(t, Target::PlacesRow { index: i, .. } if *i == index),
+    );
+    click(app, row);
+    render(app, 34, 14);
+}
+fn hover(app: &mut App, row: Rect, w: u16, h: u16) {
+    app.handle(Input::Pointer(Some((row.x, row.y).into())));
+    render(app, w, h);
 }
 fn control(app: &mut App, c: PlaceControl) {
     let expected = std::mem::discriminant(&c);
@@ -139,7 +162,7 @@ fn places_use_mouse_at_minimum_size_and_save_bookmark_labels_without_renaming_fo
         control(&mut app, PlaceControl::Add);
         settle(&mut app);
         assert_eq!(app.library.snapshot.bookmarks[0].path, root);
-        render(&mut app, 34, 14);
+        select_place(&mut app, &root);
         control(&mut app, PlaceControl::Rename);
         assert!(matches!(
             app.dialog,
@@ -162,7 +185,7 @@ fn places_use_mouse_at_minimum_size_and_save_bookmark_labels_without_renaming_fo
         control(&mut app, PlaceControl::Filter);
         app.handle(Input::Key(KeyPress::ctrl('u')));
         app.confirm_dialog();
-        render(&mut app, 34, 14);
+        select_place(&mut app, &root);
         control(&mut app, PlaceControl::Remove);
         settle(&mut app);
         assert!(app.library.snapshot.bookmarks.is_empty());
@@ -271,7 +294,7 @@ fn gtk_refresh_sidebar_navigation_missing_paths_and_cancelled_resolutions_are_gu
     settle(&mut app);
     app.open_places(Section::Bookmarks);
     settle(&mut app);
-    render(&mut app, 34, 14);
+    select_place(&mut app, Path::new("/missing-basalgrim-place"));
     control(&mut app, PlaceControl::Open);
     settle(&mut app);
     assert!(app.notice.contains("missing-basalgrim-place"));
@@ -314,16 +337,18 @@ fn imported_bookmark_can_be_removed_with_mouse_and_stays_removed_after_restart()
         settle(&mut app);
         app.action(Action::Places);
         settle(&mut app);
-        assert_eq!(app.places_view.rows[0].path, videos);
-        assert!(app.places_view.rows[0].desktop);
-        render(&mut app, 34, 14);
+        select_place(&mut app, &videos);
+        assert_eq!(
+            app.places_view.rows[app.places_view.selected].source,
+            basalgrim::places::PlaceSource::Desktop
+        );
         control(&mut app, PlaceControl::Remove);
         settle(&mut app);
-        assert!(app.places_view.rows.is_empty());
+        assert!(app.places_view.rows.iter().all(|i| i.path != videos));
         render(&mut app, 34, 14);
         control(&mut app, PlaceControl::Refresh);
         settle(&mut app);
-        assert!(app.places_view.rows.is_empty());
+        assert!(app.places_view.rows.iter().all(|i| i.path != videos));
         app.cancel_dialog();
         render(&mut app, 150, 40);
         assert!(
@@ -341,8 +366,15 @@ fn imported_bookmark_can_be_removed_with_mouse_and_stays_removed_after_restart()
         render(&mut restarted, 34, 14);
         control(&mut restarted, PlaceControl::Add);
         settle(&mut restarted);
-        assert_eq!(restarted.places_view.rows.len(), 1);
-        assert_eq!(restarted.places_view.rows[0].path, videos);
+        assert_eq!(
+            restarted
+                .places_view
+                .rows
+                .iter()
+                .filter(|i| i.path == videos)
+                .count(),
+            1
+        );
         assert_eq!(fs::read_to_string(videos.join("keep.txt")).unwrap(), "keep");
         assert_eq!(fs::read_to_string(&c.bookmarks).unwrap(), gtk);
     }
@@ -408,8 +440,9 @@ fn gtk_bookmarks_skip_quick_access_duplicates_and_recent_rows_hide_the_import_so
     );
     app.action(Action::Places);
     settle(&mut app);
-    assert_eq!(app.places_view.rows.len(), 1);
-    assert_eq!(app.places_view.rows[0].path, custom);
+    assert_eq!(app.places_view.rows.len(), 2);
+    assert_eq!(app.places_view.rows[0].path, built_in);
+    assert_eq!(app.places_view.rows[1].path, custom);
     for (w, h) in [(150, 40), (34, 14)] {
         let frame = render(&mut app, w, h);
         assert!(!frame.contains("GTK") && !frame.contains("Duplicate standard"));
@@ -418,7 +451,13 @@ fn gtk_bookmarks_skip_quick_access_duplicates_and_recent_rows_hide_the_import_so
     // Adding a standard folder does not create an invisible duplicate in our store.
     control(&mut app, PlaceControl::Add);
     settle(&mut app);
-    assert!(app.library.snapshot.bookmarks.iter().all(|i| i.desktop));
+    assert!(
+        app.library
+            .snapshot
+            .bookmarks
+            .iter()
+            .all(|i| i.source == basalgrim::places::PlaceSource::Desktop)
+    );
     assert!(app.notice.contains("быстром доступе"));
     app.open_places(Section::Recent);
     settle(&mut app);
@@ -433,7 +472,7 @@ fn gtk_bookmarks_skip_quick_access_duplicates_and_recent_rows_hide_the_import_so
         app.places_view
             .rows
             .iter()
-            .any(|i| i.path == built_in && !i.desktop)
+            .any(|i| i.path == built_in && i.source == basalgrim::places::PlaceSource::Personal)
     );
     assert_eq!(fs::read_to_string(&c.bookmarks).unwrap(), gtk);
 }
@@ -618,6 +657,13 @@ fn first_pin_preserves_spacing_and_its_own_remove_button_survives_overflow() {
     settle(&mut app);
     render(&mut app, 150, 40);
     assert_eq!(before, positions(&app));
+    assert!(
+        !app.hits
+            .iter()
+            .any(|(_, t)| matches!(t, Target::UnpinPlace { .. }))
+    );
+    let row = hit(&app, |t| matches!(t, Target::SavedPlace(p) if p == &folder));
+    hover(&mut app, row, 150, 40);
     let link = hit(&app, |t| matches!(t, Target::SavedPlace(p) if p == &folder));
     let cross = hit(
         &app,
@@ -646,7 +692,10 @@ fn first_pin_preserves_spacing_and_its_own_remove_button_survives_overflow() {
     for p in &extras {
         fs::create_dir(p).unwrap();
     }
-    app.library.send(Command::BookmarkFolders(extras.clone()));
+    app.library.send(Command::BookmarkFolders {
+        paths: extras.clone(),
+        standard: vec![],
+    });
     settle(&mut app);
     render(&mut app, 100, 24);
     let down = hit(&app, |t| matches!(t, Target::QuickAccessScroll(1)));
@@ -655,6 +704,8 @@ fn first_pin_preserves_spacing_and_its_own_remove_button_survives_overflow() {
         render(&mut app, 100, 24);
     }
     let last = extras.last().unwrap();
+    let row = hit(&app, |t| matches!(t, Target::SavedPlace(p) if p == last));
+    hover(&mut app, row, 100, 24);
     let cross = hit(
         &app,
         |t| matches!(t, Target::UnpinPlace{path,..} if path == last),
@@ -672,7 +723,7 @@ fn first_pin_preserves_spacing_and_its_own_remove_button_survives_overflow() {
 }
 
 #[test]
-fn compact_places_delete_unpins_only_the_current_saved_row() {
+fn compact_places_delete_unpins_the_focused_standard_or_imported_row() {
     use basalgrim::{app::PanelKind, input::Key};
     let temp = tempfile::tempdir().unwrap();
     let folder = temp.path().join("imported");
@@ -698,7 +749,86 @@ fn compact_places_delete_unpins_only_the_current_saved_row() {
     app.handle(Input::Key(KeyPress::plain(Key::Delete)));
     settle(&mut app);
     assert!(matches!(app.dialog, Some(Dialog::Panel(PanelKind::Places))));
+    assert!(
+        app.library
+            .snapshot
+            .hidden_bookmarks
+            .contains(Path::new("/"))
+    );
+    assert_eq!(app.library.snapshot.bookmarks[0].path, folder);
+    render(&mut app, 34, 14);
+    app.handle(Input::Key(KeyPress::plain(Key::Delete)));
+    settle(&mut app);
     assert!(app.library.snapshot.bookmarks.is_empty());
     assert!(folder.is_dir());
+    assert_eq!(fs::read_to_string(c.bookmarks).unwrap(), gtk);
+}
+
+#[test]
+fn all_standard_places_can_be_hidden_and_restored_from_the_empty_quick_access_list() {
+    use basalgrim::app::Place;
+    let temp = tempfile::tempdir().unwrap();
+    let downloads = temp.path().join("Downloads");
+    fs::create_dir(&downloads).unwrap();
+    let c = config(temp.path());
+    let gtk = format!(
+        "{} GTK Downloads\n",
+        basalgrim::clipboard::files::uri(&downloads).unwrap()
+    );
+    fs::write(&c.bookmarks, &gtk).unwrap();
+    let launch = || {
+        let mut app = App::new(downloads.clone(), Settings::default());
+        app.places = vec![Place {
+            label: "Загрузки",
+            path: downloads.clone(),
+        }];
+        app.configure_places(c.clone());
+        settle(&mut app);
+        app
+    };
+    let mut app = launch();
+    render(&mut app, 150, 40);
+    let row = hit(&app, |t| matches!(t, Target::Place(p) if *p == downloads));
+    hover(&mut app, row, 150, 40);
+    assert_eq!(
+        app.hits
+            .iter()
+            .filter(|(_, t)| matches!(t, Target::UnpinPlace { .. }))
+            .count(),
+        1
+    );
+    app.handle(Input::Pointer(None));
+    render(&mut app, 150, 40);
+    assert!(
+        !app.hits
+            .iter()
+            .any(|(_, t)| matches!(t, Target::UnpinPlace { .. }))
+    );
+    hover(&mut app, row, 150, 40);
+    let cross = hit(
+        &app,
+        |t| matches!(t, Target::UnpinPlace { path, .. } if *path == downloads),
+    );
+    click(&mut app, cross);
+    settle(&mut app);
+    assert_eq!(app.tab().cwd, downloads);
+    drop(app);
+
+    let mut app = launch();
+    let frame = render(&mut app, 150, 40);
+    assert!(!frame.contains("Загрузки") && !frame.contains("GTK Downloads"));
+    let header = hit(&app, |t| {
+        matches!(t, Target::PlacesSection(Section::Bookmarks))
+    });
+    click(&mut app, header);
+    settle(&mut app);
+    assert!(app.places_view.rows.is_empty());
+    assert!(render(&mut app, 34, 14).contains("В быстром доступе пока пусто"));
+    control(&mut app, PlaceControl::Add);
+    settle(&mut app);
+    assert_eq!(app.places_view.rows.len(), 1);
+    assert_eq!(app.places_view.rows[0].label, "Загрузки");
+    assert_eq!(app.places_view.rows[0].path, downloads);
+    assert!(app.library.snapshot.hidden_bookmarks.is_empty());
     assert_eq!(fs::read_to_string(c.bookmarks).unwrap(), gtk);
 }

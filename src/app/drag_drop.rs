@@ -53,7 +53,7 @@ impl BookmarkDrop {
         match self {
             Self::Pin => "Закрепить в быстром доступе",
             Self::FoldersOnly => "В быстром доступе можно закрепить только папки",
-            Self::Unavailable => "Закладки сейчас недоступны",
+            Self::Unavailable => "Быстрый доступ сейчас недоступен",
             Self::ChooseTarget => "Перетащите папку в быстрый доступ",
         }
     }

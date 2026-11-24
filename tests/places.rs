@@ -41,7 +41,7 @@ fn desktop_imports_decode_labels_paths_and_private_recent_entries_without_rewrit
     store.apply(Command::Bookmark(folder.clone())).unwrap();
     let snapshot = store.snapshot(&c).unwrap();
     assert_eq!(snapshot.bookmarks.len(), 2);
-    assert!(!snapshot.bookmarks[0].desktop);
+    assert!(snapshot.bookmarks[0].source == basalgrim::places::PlaceSource::Personal);
     store
         .apply(Command::Remove {
             section: Section::Recent,
@@ -151,7 +151,10 @@ fn failed_group_favorite_is_atomic_and_forgotten_recent_returns_only_on_a_new_op
     fs::create_dir(&folder).unwrap();
     assert!(
         store
-            .apply(Command::BookmarkFolders(vec![folder, path.clone()]))
+            .apply(Command::BookmarkFolders {
+                paths: vec![folder, path.clone()],
+                standard: vec![]
+            })
             .is_err()
     );
     assert!(store.snapshot(&c).unwrap().bookmarks.is_empty());
@@ -254,7 +257,7 @@ fn removed_imported_bookmarks_stay_hidden_and_can_be_added_again_across_instance
     let s = restarted.snapshot(&c).unwrap();
     assert_eq!(s.bookmarks.len(), 1);
     assert_eq!(s.bookmarks[0].path, folder);
-    assert!(!s.bookmarks[0].desktop);
+    assert!(s.bookmarks[0].source == basalgrim::places::PlaceSource::Personal);
     // Removing a personal copy must not expose the underlying import again.
     restarted
         .apply(Command::Remove {

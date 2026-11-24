@@ -303,29 +303,32 @@ impl App {
                     .design
                     .panel_selected
                     .saturating_sub(self.design.panel_offset);
-                if let Some((r, _)) = self
+                if let Some((
+                    r,
+                    Target::PanelLink {
+                        token,
+                        revision,
+                        target,
+                    },
+                )) = self
                     .hits
                     .iter()
                     .filter(|(_, t)| matches!(t, Target::PanelLink { .. }))
                     .nth(i)
                     .cloned()
                 {
-                    let x = if key.key == Key::Delete {
-                        let Some((button, _)) = self.hits.iter().find(|(area, target)| {
-                            area.y == r.y && matches!(target, Target::UnpinPlace { .. })
-                        }) else {
-                            return true;
-                        };
-                        button.x
+                    if key.key == Key::Delete {
+                        if let Target::Place(path) | Target::SavedPlace(path) = *target {
+                            self.unpin_place(path, revision, Some(token));
+                        }
                     } else {
-                        r.x
-                    };
-                    self.handle(Input::Click {
-                        x,
-                        y: r.y,
-                        double: false,
-                        toggle: false,
-                    });
+                        self.handle(Input::Click {
+                            x: r.x,
+                            y: r.y,
+                            double: false,
+                            toggle: false,
+                        });
+                    }
                 }
             }
             Key::Escape => self.cancel_dialog(),

@@ -131,6 +131,7 @@ pub enum Target {
     },
     PanelLink {
         token: u64,
+        revision: u64,
         target: Box<Target>,
     },
     ExtensionStop(u64),
@@ -500,14 +501,17 @@ impl App {
             ("▧  Изображения", dirs::picture_dir()),
             ("◇  Проекты", Some(home.join("projects"))),
         ] {
-            if let Some(path) = path.filter(|p| p.is_dir() && *p != home) {
+            if let Some(path) = path.filter(|p| p.is_dir() && !places.iter().any(|q| q.path == *p))
+            {
                 places.push(Place { label, path });
             }
         }
-        places.push(Place {
-            label: "/  Файловая система",
-            path: PathBuf::from("/"),
-        });
+        if !places.iter().any(|p| p.path == Path::new("/")) {
+            places.push(Place {
+                label: "/  Файловая система",
+                path: PathBuf::from("/"),
+            });
+        }
         let mut app = Self {
             extensions: Default::default(),
             extension_view: None,

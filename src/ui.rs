@@ -612,20 +612,19 @@ fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
         .saturating_sub(reserve)
         .div_ceil(2)
         .max(usize::from(remaining > 0));
-    let saved = app
-        .library
-        .snapshot
-        .bookmarks
-        .iter()
-        .filter(|item| !app.in_quick_access(&item.path));
-    let count = app.places.len() + saved.clone().count();
-    let max_offset = count.saturating_sub(capacity);
+    let items = app.quick_access_items();
+    let max_offset = items.clone().count().saturating_sub(capacity);
     let offset = app.design.quick_access_offset.min(max_offset);
-    let bookmarks: Vec<_> = saved
-        .skip(offset.saturating_sub(app.places.len()))
-        .take(capacity.saturating_sub(app.places.len().saturating_sub(offset)))
-        .cloned()
+    let visible: Vec<_> = items
+        .skip(offset)
+        .take(capacity)
+        .map(|i| i.into_owned())
         .collect();
+    hit(
+        app,
+        Rect::new(inner.x, title_y, " БЫСТРЫЙ ДОСТУП".width() as u16, 1),
+        Target::PlacesSection(crate::places::Section::Bookmarks),
+    );
     app.design.quick_access_max = max_offset;
     app.design.quick_access_offset = offset;
     if max_offset > 0 && capacity > 0 {
@@ -638,48 +637,39 @@ fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
             hit(app, rect, Target::QuickAccessScroll(delta));
         }
     }
-    for i in (offset..app.places.len()).take(capacity) {
-        let place = &app.places[i];
-        let selected = !app.in_trash() && app.tab().cwd == place.path;
-        let style = if selected {
-            palette
-                .text()
-                .fg(palette.color(if palette.light() {
-                    "text"
-                } else {
-                    "background"
-                }))
-                .bg(palette.color("selection_accent"))
-        } else {
-            palette.text()
-        };
+    for item in visible {
         let rect = Rect::new(inner.x, y, inner.width, 1);
-        frame.render_widget(
-            Paragraph::new(format!(" {}", place.label)).style(style),
-            rect,
-        );
-        hit(app, rect, Target::Place(place.path.clone()));
-        y += 2;
-    }
-    for item in bookmarks {
-        let rect = Rect::new(inner.x, y, inner.width, 1);
+        let standard = item.source == crate::places::PlaceSource::Standard;
         let style = if !app.in_trash() && app.tab().cwd == item.path {
-            palette.selection()
+            if standard {
+                palette
+                    .text()
+                    .fg(palette.color(if palette.light() {
+                        "text"
+                    } else {
+                        "background"
+                    }))
+                    .bg(palette.color("selection_accent"))
+            } else {
+                palette.selection()
+            }
         } else {
             palette.text()
         };
-        panels::saved_place(
-            app,
-            frame,
-            rect,
-            &format!("    {}", item.label),
-            item.path,
-            style,
-            None,
-        );
+        let (label, target) = if standard {
+            (format!(" {}", item.label), Target::Place(item.path))
+        } else {
+            (format!("    {}", item.label), Target::SavedPlace(item.path))
+        };
+        panels::quick_access_row(app, frame, rect, &label, target, style, None);
         y += 2;
     }
     if y < inner.bottom() {
+        frame.render_widget(
+            Paragraph::new(" ────────────────────")
+                .style(palette.text().fg(palette.color("separator"))),
+            Rect::new(inner.x, y - 1, inner.width, 1),
+        );
         let rect = Rect::new(inner.x, y, inner.width, 1);
         let images = app.icon_backend.supports_images()
             && app.settings.appearance.icon_mode == crate::preferences::IconMode::Images;
@@ -713,9 +703,12 @@ fn places(app: &mut App, frame: &mut Frame, area: Rect, palette: Palette) {
             });
         }
         hit(app, rect, Target::Action(Action::TrashView));
-        y += 2;
+        y += 1;
     }
-    for section in crate::places::Section::ALL {
+    for section in [
+        crate::places::Section::Favorites,
+        crate::places::Section::Recent,
+    ] {
         if y >= inner.bottom().saturating_sub(5) {
             break;
         }

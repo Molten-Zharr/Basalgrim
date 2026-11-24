@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     input::{Key, KeyPress},
-    places::{Command, Config, Item, Section},
+    places::{Command, Config, Item, PlaceSource, Section},
 };
 
 #[derive(Clone, Copy)]
@@ -65,21 +65,25 @@ impl App {
         let v = &self.places_view;
         let selected = v.rows.get(v.selected).map(|i| i.path.clone());
         let filter = v.filter.to_lowercase();
-        let rows = self
-            .library
-            .snapshot
-            .items(v.section)
-            .iter()
-            .filter(|i| {
-                v.section != Section::Bookmarks || !i.desktop || !self.in_quick_access(&i.path)
-            })
-            .filter(|i| {
-                filter.is_empty()
-                    || i.label.to_lowercase().contains(&filter)
-                    || i.path.to_string_lossy().to_lowercase().contains(&filter)
-            })
-            .cloned()
-            .collect();
+        let matches = |i: &Item| {
+            filter.is_empty()
+                || i.label.to_lowercase().contains(&filter)
+                || i.path.to_string_lossy().to_lowercase().contains(&filter)
+        };
+        let rows = if v.section == Section::Bookmarks {
+            self.quick_access_items()
+                .filter(|i| matches(i))
+                .map(|i| i.into_owned())
+                .collect()
+        } else {
+            self.library
+                .snapshot
+                .items(v.section)
+                .iter()
+                .filter(|i| matches(i))
+                .cloned()
+                .collect()
+        };
         let v = &mut self.places_view;
         v.rows = rows;
         v.selected = selected
@@ -107,8 +111,53 @@ impl App {
             self.library.send(Command::Refresh);
         }
     }
+    pub(crate) fn quick_access_items(
+        &self,
+    ) -> impl Iterator<Item = std::borrow::Cow<'_, Item>> + Clone {
+        use std::borrow::Cow;
+        let snapshot = &self.library.snapshot;
+        let loading =
+            !self.library.ready && self.library.pending > 0 && self.library.error.is_none();
+        let defaults = self
+            .places
+            .iter()
+            .filter(move |p| !loading && !snapshot.hidden_bookmarks.contains(&p.path))
+            .map(|p| {
+                // A personal label saved by older versions still belongs to this row.
+                snapshot
+                    .bookmarks
+                    .iter()
+                    .find(|i| i.path == p.path && i.source == PlaceSource::Personal)
+                    .map(Cow::Borrowed)
+                    .unwrap_or_else(|| {
+                        Cow::Owned(Item {
+                            path: p.path.clone(),
+                            label: p.label.into(),
+                            source: PlaceSource::Standard,
+                            visited: 0,
+                        })
+                    })
+            });
+        defaults.chain(
+            snapshot
+                .bookmarks
+                .iter()
+                .filter(|i| {
+                    !self.places.iter().any(|p| p.path == i.path)
+                        && !snapshot.hidden_bookmarks.contains(&i.path)
+                })
+                .map(Cow::Borrowed),
+        )
+    }
     pub(crate) fn in_quick_access(&self, path: &Path) -> bool {
-        self.places.iter().any(|p| p.path == path)
+        !self.library.snapshot.hidden_bookmarks.contains(path)
+            && (self.places.iter().any(|p| p.path == path)
+                || self
+                    .library
+                    .snapshot
+                    .bookmarks
+                    .iter()
+                    .any(|i| i.path == path))
     }
     pub(crate) fn can_bookmark(&self) -> bool {
         !self.busy
@@ -141,21 +190,25 @@ impl App {
             return;
         }
         if self.can_bookmark() {
-            self.library.send(Command::Bookmark(self.tab().cwd.clone()));
+            self.pin_folders(vec![self.tab().cwd.clone()]);
         }
     }
     pub(super) fn pin_folders(&mut self, mut paths: Vec<PathBuf>) {
-        let saved: std::collections::BTreeSet<_> = self
-            .library
-            .snapshot
+        let snapshot = &self.library.snapshot;
+        let saved: BTreeSet<_> = snapshot
             .bookmarks
             .iter()
             .map(|b| &b.path)
+            .chain(self.places.iter().map(|p| &p.path))
             .collect();
-        paths.retain(|p| !self.in_quick_access(p) && !saved.contains(p));
+        paths.retain(|p| snapshot.hidden_bookmarks.contains(p) || !saved.contains(p));
+        let standard = self.places.iter().map(|p| p.path.clone()).collect();
         if paths.is_empty() {
             self.message("Уже в быстром доступе", false);
-        } else if self.library.send(Command::BookmarkFolders(paths)) {
+        } else if self
+            .library
+            .send(Command::BookmarkFolders { paths, standard })
+        {
             self.message("Добавление в быстрый доступ…", false);
         } else if let Some(error) = self.library.error.clone() {
             self.message(error, true);
@@ -177,13 +230,7 @@ impl App {
         if panel == current_panel
             && revision == self.library.revision
             && self.library.writable()
-            && !self.in_quick_access(&path)
-            && self
-                .library
-                .snapshot
-                .bookmarks
-                .iter()
-                .any(|b| b.path == path)
+            && self.in_quick_access(&path)
         {
             self.library.send(Command::Remove {
                 section: Section::Bookmarks,
@@ -324,7 +371,9 @@ impl App {
                 }
             }
             PlaceControl::Rename if self.library.writable() => {
-                if let Some(item) = item.filter(|i| !i.desktop && section != Section::Recent) {
+                if let Some(item) =
+                    item.filter(|i| i.source == PlaceSource::Personal && section != Section::Recent)
+                {
                     let end = item.label.len();
                     self.begin_edit(
                         EditKind::PlaceLabel {

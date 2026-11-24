@@ -1,9 +1,11 @@
 use super::*;
-use crate::{app::PlaceControl, places::Section};
+use crate::{
+    app::PlaceControl,
+    places::{PlaceSource, Section},
+};
 use ratatui::widgets::Clear;
 
 pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
-    let current_in_quick_access = app.in_quick_access(&app.tab().cwd);
     let area = frame.area();
     let rect = Rect::new(
         area.x + area.width.saturating_sub(84) / 2,
@@ -27,10 +29,15 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     let close = Rect::new(rect.right() - 4, rect.y, 3, 1);
     frame.render_widget(Paragraph::new(" × ").style(palette.accent()), close);
     hit(app, close, Target::Cancel);
-    let mut x = inner.x;
+    let (mut x, mut y) = (inner.x, inner.y);
     for section in Section::ALL {
         let label = format!(" {} ", section.label());
-        let r = Rect::new(x, inner.y, label.width() as u16, 1);
+        let width = label.width() as u16;
+        if x + width > inner.right() {
+            x = inner.x;
+            y += 1;
+        }
+        let r = Rect::new(x, y, width, 1);
         frame.render_widget(
             Paragraph::new(label).style(if section == app.places_view.section {
                 palette.selection()
@@ -43,7 +50,8 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         x = r.right();
     }
     let view = &mut app.places_view;
-    view.page = usize::from(inner.height - 7);
+    let first_row = y + 1;
+    view.page = usize::from(inner.bottom() - 6 - first_row);
     if view.selected < view.offset {
         view.offset = view.selected;
     }
@@ -61,7 +69,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     {
         let r = Rect::new(
             inner.x,
-            inner.y + 1 + (index - view.offset) as u16,
+            first_row + (index - view.offset) as u16,
             inner.width,
             1,
         );
@@ -84,7 +92,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         .unwrap_or_else(|| {
             if view.filter.is_empty() {
                 if view.section == Section::Bookmarks {
-                    "Дополнительных закладок нет".into()
+                    "В быстром доступе пока пусто".into()
                 } else {
                     "Здесь пока пусто".into()
                 }
@@ -105,16 +113,11 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
         .or_else(|| app.library.snapshot.warnings.first().map(String::as_str))
         .unwrap_or(if app.library.pending > 0 {
             "Чтение / сохранение…"
-        } else if selected.is_some_and(|i| i.desktop) && view.section == Section::Bookmarks {
-            "Убрать — скрыть из закладок"
-        } else if view.section == Section::Bookmarks
-            && view.rows.is_empty()
-            && view.filter.is_empty()
-        {
-            if current_in_quick_access {
-                "Стандартные папки — слева"
+        } else if view.section == Section::Bookmarks {
+            if selected.is_some() {
+                "Delete — убрать из списка"
             } else {
-                "Добавьте нужную папку в закладки"
+                "Закрепите нужную папку"
             }
         } else {
             "Удаление из списка сохраняет файл"
@@ -146,7 +149,7 @@ pub fn render(app: &mut App, frame: &mut Frame, palette: Palette) {
     let rename = has_item
         && app.library.writable()
         && view.section != Section::Recent
-        && !selected.is_some_and(|i| i.desktop);
+        && selected.is_some_and(|i| i.source == PlaceSource::Personal);
     for (r, target) in hits {
         hit(app, r, target);
     }
